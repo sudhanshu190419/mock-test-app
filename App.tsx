@@ -1,45 +1,27 @@
 /**
- * Sample React Native App
- * https://github.com/facebook/react-native
+ * Root Application Component
  *
- * @format
+ * Sets up the application-wide provider hierarchy:
+ *
+ * 1. **Redux Provider** — makes the store available to all connected components
+ * 2. **AuthProvider** — bridges Supabase auth lifecycle events to Redux state
+ * 3. **AppNavigator** — renders the navigation tree
+ *
+ * @module App
  */
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import React from 'react';
+import { Provider } from 'react-redux';
+import { store } from './src/store/store';
+import { AuthProvider } from './src/providers/AuthProvider';
+import AuthNavigator from './src/navigation/AuthNavigator';
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
-
+export default function App(): React.JSX.Element {
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
+    <Provider store={store}>
+      <AuthProvider>
+        <AuthNavigator />
+      </AuthProvider>
+    </Provider>
   );
 }
-
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});
-
-export default App;
