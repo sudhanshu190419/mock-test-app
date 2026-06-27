@@ -39,7 +39,7 @@ type RegisterNavProp = NativeStackNavigationProp<AuthStackParamList, 'Register'>
 export default function RegisterScreen(): React.JSX.Element {
   const navigation = useNavigation<RegisterNavProp>();
 
-  const [fullName, setFullName] = useState('');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -47,7 +47,7 @@ export default function RegisterScreen(): React.JSX.Element {
   const { register, loading, error } = useAuth();
 
   const handleSignUp = async () => {
-    if (!fullName.trim()) {
+    if (!name.trim()) {
       Alert.alert('Validation', 'Please enter your full name.');
       return;
     }
@@ -68,39 +68,21 @@ export default function RegisterScreen(): React.JSX.Element {
       return;
     }
 
-    const result = await register(email.trim(), password, fullName.trim());
+    const result = await register(email.trim(), password, name.trim());
 
     if (result.success) {
-      if ('warning' in result && result.warning) {
-        // Profile creation failed but auth account was created.
-        // Show a detailed alert so the developer knows what went wrong.
-        Alert.alert(
-          'Account Created (Profile Warning)',
-          'Your auth account was created, but the profile setup failed.\n\n' +
-            result.warning + '\n\n' +
-            'You can still sign in, but some profile features may not work ' +
-            'until the profile is created.',
-          [
-            {
-              text: 'Go to Login',
-              onPress: () => navigation.navigate('Login'),
-            },
-          ],
-        );
-      } else {
-        Alert.alert(
-          'Account Created',
-          'Your account has been created successfully.\n\n' +
-            'If email confirmation is enabled, please check your inbox ' +
-            'before signing in.',
-          [
-            {
-              text: 'Go to Login',
-              onPress: () => navigation.navigate('Login'),
-            },
-          ],
-        );
-      }
+      Alert.alert(
+        'Account Created',
+        'Your account has been created successfully.\n\n' +
+          'If email confirmation is enabled, please check your inbox ' +
+          'before signing in.',
+        [
+          {
+            text: 'Go to Login',
+            onPress: () => navigation.navigate('Login'),
+          },
+        ],
+      );
     } else {
       Alert.alert('Registration Failed', result.error);
     }
@@ -132,8 +114,8 @@ export default function RegisterScreen(): React.JSX.Element {
             style={styles.input}
             placeholder="Full Name"
             placeholderTextColor="#999"
-            value={fullName}
-            onChangeText={setFullName}
+            value={name}
+            onChangeText={setName}
             autoCapitalize="words"
             autoCorrect={false}
             editable={!loading}

@@ -162,13 +162,13 @@ export function useAuth() {
    *
    * @param email    - The new user's email address.
    * @param password - The new user's password (minimum 6 characters).
-   * @param fullName - The user's display / full name.
+   * @param name - The user's display / full name.
    */
   const register = useCallback(
     async (
       email: string,
       password: string,
-      fullName: string,
+      name: string,
     ): Promise<AuthHookResult> => {
       if (pendingRef.current) {
         return { success: false, error: 'An authentication operation is already in progress.' };
@@ -179,7 +179,7 @@ export function useAuth() {
       dispatch(clearError());
 
       try {
-        const result = await authSignUp({ email, password, fullName });
+        const result = await authSignUp({ email, password, name });
 
         if (!result.success) {
           dispatch(setError(result.error ?? 'Registration failed.'));
@@ -191,14 +191,6 @@ export function useAuth() {
         // email (if confirmation is enabled) or through AuthProvider.
         if (result.data) {
           dispatch(setUser(result.data));
-        }
-
-        // Surface any non-fatal warning (e.g. profile creation failure)
-        // so the RegisterScreen can display it to the developer.
-        // Note: we do NOT dispatch setError() here because a warning is not
-        // an error — the primary operation (auth account creation) succeeded.
-        if (result.warning) {
-          return { success: true, warning: result.warning };
         }
 
         return { success: true };

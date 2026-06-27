@@ -46,8 +46,11 @@ const DEMO_USER: UserProfile = {
   id: 'demo-user-000001',
   email: 'demo@mocktestapp.com',
   emailVerified: true,
-  fullName: 'Demo Tester',
+  name: 'Demo Tester',
   role: 'admin',
+  instituteId: null,
+  phone: null,
+  avatarUrl: null,
   createdAt: new Date().toISOString(),
 };
 

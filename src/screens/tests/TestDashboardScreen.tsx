@@ -96,7 +96,7 @@ export default function TestDashboardScreen(): React.JSX.Element {
             ? {
                 id: user.id,
                 email: user.email,
-                fullName: user.fullName,
+                name: user.name,
                 role: user.role,
                 emailVerified: user.emailVerified,
               }
@@ -128,7 +128,7 @@ export default function TestDashboardScreen(): React.JSX.Element {
           <>
             <Text style={styles.userInfo}>
               <Text style={styles.label}>Name: </Text>
-              {user.fullName || 'N/A'}
+              {user.name || 'N/A'}
             </Text>
             <Text style={styles.userInfo}>
               <Text style={styles.label}>Email: </Text>

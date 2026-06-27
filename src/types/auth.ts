@@ -55,24 +55,22 @@ export type UserRole = 'student' | 'teacher' | 'admin';
 /**
  * Mirrors the `profiles` table schema in PostgreSQL.
  *
- * Although this service can create a profile row on sign-up, the
- * **recommended production pattern** is to pair this with a database
- * trigger (`AFTER INSERT ON auth.users`) that auto-creates the profile
- * as a reliable fallback.
+ * Profile creation is handled entirely by the database trigger
+ * (`on_auth_user_created` → `handle_new_user()`). The frontend
+ * never inserts into `public.profiles`.
  *
  * @see https://supabase.com/docs/guides/auth/managing-user-data
  */
 export interface DbProfile {
-  id: string;
+  profile_id: string;
+  institute_id: string;
+  name: string;
   email: string;
-  full_name: string;
+  phone: string | null;
+  avatar_url: string | null;
   role: UserRole;
+  is_active: boolean;
   created_at: string;
-  /**
-   * Optional — only present if the profiles table has an `updated_at` column.
-   * If your table schema doesn't include this column, omit it from SELECT
-   * queries or use `select('*')` and this will be undefined (not null).
-   */
   updated_at?: string;
 }
 
@@ -83,13 +81,13 @@ export interface DbProfile {
  *
  * Derived from two sources:
  * 1. `auth.users` – for `id`, `email`, `createdAt`, `emailVerified`
- * 2. `public.profiles` – for `fullName` and `role`
+ * 2. `public.profiles` – for `name`, `role`, `instituteId`, `phone`, `avatarUrl`
  *
- * This ensures the role is always authoritative (profiles.role) and that
- * email verification status reflects the server-side truth.
+ * The DB profile is the authoritative source. Auth metadata is used only
+ * as a fallback before the database trigger creates the profile row.
  */
 export interface UserProfile {
-  /** Unique identifier (matches `auth.users.id` and `profiles.id`). */
+  /** Unique identifier (matches `auth.users.id` and `profiles.profile_id`). */
   id: string;
 
   /** Verified email address from `auth.users.email`. */
@@ -98,8 +96,8 @@ export interface UserProfile {
   /** Whether the email has been confirmed (`auth.users.email_confirmed_at`). */
   emailVerified: boolean;
 
-  /** Display / full name from `profiles.full_name`. */
-  fullName: string;
+  /** Display / full name from `profiles.name`. */
+  name: string;
 
   /**
    * Role from `profiles.role`.
@@ -107,6 +105,15 @@ export interface UserProfile {
    * @default 'student'
    */
   role: UserRole;
+
+  /** Institute the user belongs to (`profiles.institute_id`). */
+  instituteId: string | null;
+
+  /** Phone number from `profiles.phone`. */
+  phone: string | null;
+
+  /** Avatar URL from `profiles.avatar_url`. */
+  avatarUrl: string | null;
 
   /** ISO-8601 timestamp of when the user was created. */
   createdAt: string;
@@ -143,7 +150,7 @@ export interface SessionData {
 export interface SignUpInput {
   email: string;
   password: string;
-  fullName: string;
+  name: string;
 }
 
 /**

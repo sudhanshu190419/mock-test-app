@@ -65,7 +65,7 @@ export default function HomeScreen(): React.JSX.Element {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.greeting}>
-          Hello, {user?.fullName || 'User'} 👋
+          Hello, {user?.name || 'User'} 👋
         </Text>
         <Text style={styles.subtitle}>Demo Testing Hub</Text>
       </View>
@@ -74,11 +74,11 @@ export default function HomeScreen(): React.JSX.Element {
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
-            {(user?.fullName || 'U').charAt(0).toUpperCase()}
+            {(user?.name || 'U').charAt(0).toUpperCase()}
           </Text>
         </View>
         <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>{user?.fullName || 'Unknown'}</Text>
+          <Text style={styles.profileName}>{user?.name || 'Unknown'}</Text>
           <Text style={styles.profileEmail}>{user?.email || ''}</Text>
           <View style={styles.roleRow}>
             <View style={styles.rolePill}>

@@ -14,12 +14,10 @@
  *    user's `raw_user_meta_data.role` is NOT used—the service always
  *    queries `public.profiles` after authentication.
  *
- * 2. **Profile creation is best-effort on sign-up.**
- *    The service attempts to create a `profiles` row on sign-up, but
- *    does NOT gate the auth account creation on success. The recommended
- *    production pattern is to **pair this with a database trigger**
- *    (`AFTER INSERT ON auth.users`) that auto-creates the profile as a
- *    reliable fallback.
+ * 2. **Profile creation is owned by the database.**
+ *    The `on_auth_user_created` trigger (→ `handle_new_user()`) is the
+ *    sole mechanism for inserting into `public.profiles`. The frontend
+ *    **never** writes to the profiles table during sign-up.
  *
  * 3. **Input validation hooks are designed for future Zod migration.**
  *    The `validateSignUpInput` / `validateSignInInput` helpers perform
@@ -74,7 +72,7 @@ export function validateSignUpInput(input: SignUpInput): ValidationResult {
     return { valid: false, error: 'Password must be at least 6 characters.' };
   }
 
-  if (!input.fullName?.trim()) {
+  if (!input.name?.trim()) {
     return { valid: false, error: 'Full name is required.' };
   }
 
@@ -103,14 +101,17 @@ export function validateSignInInput(input: SignInInput): ValidationResult {
 /**
  * Fetches a single profile row from the `profiles` table.
  *
- * @param userId - The `auth.users.id` (also the primary key of `profiles`).
+ * Profile creation is handled entirely by the `on_auth_user_created` database
+ * trigger. The frontend never inserts into `public.profiles`.
+ *
+ * @param userId - The `auth.users.id` (matches `profiles.profile_id`).
  * @returns The profile row, or `null` when the row doesn't exist.
  */
 async function fetchProfile(userId: string): Promise<DbProfile | null> {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', userId)
+    .eq('profile_id', userId)
     .single<DbProfile>();
 
   if (error) {
@@ -127,49 +128,17 @@ async function fetchProfile(userId: string): Promise<DbProfile | null> {
   return data;
 }
 
-/**
- * Inserts a new row into the `profiles` table.
- *
- * This is **best-effort**: if the insert fails (e.g. due to an RLS policy or
- * a duplicate key), the error is surfaced to the caller but the auth account
- * creation is NOT rolled back.  A database trigger on `auth.users` should
- * serve as the reliable fallback.
- *
- * @param userId - The `auth.users.id` to link the profile to.
- * @param email  - The user's email.
- * @param fullName - The display / full name.
- */
-async function createProfile(
-  userId: string,
-  email: string,
-  fullName: string,
-): Promise<DbProfile> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .insert({
-      id: userId,
-      email,
-      full_name: fullName,
-      role: 'student',
-    })
-    .select('*')
-    .single<DbProfile>();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
-}
-
 // ─── Profile Mapping ────────────────────────────────────────────────────────
 
 /**
  * Merges a Supabase `User` with an optional `DbProfile` into a `UserProfile`.
  *
- * The `role` is always sourced from `profile.role` when available, falling
- * back to `'student'`. The `emailVerified` flag reflects whether the auth
- * server has confirmed the user's email address.
+ * The DB profile is the **primary source of truth**. Auth metadata is used
+ * only as a fallback when the profile has not yet been created by the
+ * database trigger (e.g. immediately after sign-up).
+ *
+ * The `role` defaults to `'student'`, `instituteId` to `null`, when no
+ * profile row exists yet.
  */
 function buildUserProfile(
   authUser: {
@@ -187,8 +156,11 @@ function buildUserProfile(
     id: authUser.id,
     email: authUser.email ?? '',
     emailVerified: !!authUser.email_confirmed_at,
-    fullName: profile?.full_name ?? authUser.user_metadata?.full_name ?? '',
+    name: profile?.name ?? authUser.user_metadata?.full_name ?? '',
     role: profile?.role ?? 'student',
+    instituteId: profile?.institute_id ?? null,
+    phone: profile?.phone ?? null,
+    avatarUrl: profile?.avatar_url ?? null,
     createdAt: authUser.created_at ?? new Date().toISOString(),
   };
 }
@@ -222,7 +194,10 @@ function extractErrorMessage(error: unknown): string {
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 /**
- * Register a new user account and create a corresponding profile row.
+ * Register a new user account.
+ *
+ * Profile creation is handled entirely by the `on_auth_user_created` database
+ * trigger. The frontend never inserts into `public.profiles`.
  *
  * On success, Supabase may send a confirmation email depending on the
  * project's `auth.confirmations.disable_signup_email` setting.
@@ -233,7 +208,7 @@ function extractErrorMessage(error: unknown): string {
  *          indicates whether the email still requires confirmation.
  *
  * @example
- * const result = await signUp({ email: 'a@b.com', password: '...', fullName: 'Alice' });
+ * const result = await signUp({ email: 'a@b.com', password: '...', name: 'Alice' });
  * if (!result.success) {
  *   // display result.error to the user
  * }
@@ -246,15 +221,17 @@ export async function signUp(input: SignUpInput): Promise<AuthResponse<UserProfi
       return { success: false, error: validation.error };
     }
 
-    const { email, password, fullName } = input;
+    const { email, password, name } = input;
 
     // 2. Create auth user --------------------------------------------------
+    // The database trigger (on_auth_user_created → handle_new_user())
+    // automatically creates the profile row after this succeeds.
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
-          full_name: fullName,
+          full_name: name,
         },
       },
     });
@@ -271,42 +248,10 @@ export async function signUp(input: SignUpInput): Promise<AuthResponse<UserProfi
       };
     }
 
-    // 3. Create profile row (best-effort) ----------------------------------
-    // If the insert fails (e.g. RLS policy not yet configured), the auth
-    // account is still created.  A database trigger should serve as the
-    // reliable fallback.  We build a minimal profile from auth metadata so the
-    // caller has something to work with immediately.
-    let profile: DbProfile | null = null;
-
-    try {
-      profile = await createProfile(authData.user.id, email, fullName);
-      console.log(
-        '[authService] Profile created for', email, '(' + authData.user.id + ')',
-      );
-    } catch (profileError) {
-      // Log the full error so developers can debug RLS / schema issues,
-      // but do NOT gate the auth account creation on profile creation success.
-      const message = extractErrorMessage(profileError);
-      console.error(
-        '[authService] Profile creation FAILED for',
-        email,
-        '(' + authData.user.id + '):',
-        message,
-      );
-      // The profile row will be created on first sign-in / by the DB trigger.
-
-      // Return the warning so the UI can display it to the developer.
-      return {
-        success: true,
-        data: buildUserProfile(authData.user, null),
-        warning: 'Account created, but profile setup failed: ' + message + '. ' +
-          'The profile will be created when you sign in.' +
-          ' If the issue persists, check your Supabase RLS policies and' +
-          ' ensure the database trigger is installed.',
-      };
-    }
-
-    const userProfile = buildUserProfile(authData.user, profile);
+    // 3. Return result -----------------------------------------------------
+    // The profile will be created by the database trigger. No frontend
+    // insert into public.profiles is performed here.
+    const userProfile = buildUserProfile(authData.user, null);
 
     return { success: true, data: userProfile };
   } catch (err) {
