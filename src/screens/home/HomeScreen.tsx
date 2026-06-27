@@ -58,6 +58,20 @@ export default function HomeScreen(): React.JSX.Element {
       color: '#FF9800',
       onPress: () => navigation.navigate('TestDashboard'),
     },
+    // DEV ONLY - Remove after frontend integration
+    {
+      title: '📡 Stream Service Test',
+      description: 'Test Stream CRUD operations (Create, Read, Update, Delete)',
+      color: '#D32F2F',
+      onPress: () => navigation.navigate('StreamServiceTest'),
+    },
+    // DEV ONLY - Remove after frontend integration
+    {
+      title: '📘 Subject Service Test',
+      description: 'Test Subject CRUD operations (Create, Read, Update, Delete)',
+      color: '#2196F3',
+      onPress: () => navigation.navigate('SubjectServiceTest'),
+    },
   ];
 
   return (
