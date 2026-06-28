@@ -9,3 +9,7 @@ export { default as BatchTestScreen } from './BatchTestScreen';
 export { default as ContentTestScreen } from './ContentTestScreen';
 export { default as TagTestScreen } from './TagTestScreen';
 export { default as ApprovalTestScreen } from './ApprovalTestScreen';
+export { default as QuestionTestScreen } from './QuestionTestScreen';
+export { default as QuestionOptionTestScreen } from './QuestionOptionTestScreen';
+export { default as QuestionExplanationTestScreen } from './QuestionExplanationTestScreen';
+export { default as QuestionImageTestScreen } from './QuestionImageTestScreen';

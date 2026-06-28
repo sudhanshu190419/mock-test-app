@@ -2,7 +2,8 @@
  * Storage Service
  *
  * Clean-architecture service layer encapsulating ALL interaction with
- * Supabase Storage for the Content Management module.
+ * Supabase Storage, generalised to support every resource type — content,
+ * question images, profile pictures, certificates, etc.
  *
  * Every public method returns a standardised response so that consumers
  * (services, hooks, screens) never need to handle raw Supabase Storage
@@ -25,6 +26,10 @@
  *    retried automatically using configured constants. 4xx client errors
  *    are not retried.
  *
+ * 5. **Resource-agnostic.** The `uploadFile` and `uploadResource` methods
+ *    both delegate to a shared internal `_performUpload` helper. The only
+ *    difference is how they determine bucket/storage-path.
+ *
  * @module storageService
  */
 
@@ -32,10 +37,13 @@ import { supabase } from '../../config/supabase';
 import { extractErrorMessage } from '../../utils/supabase';
 import {
   validateUpload,
+  validateResourceUpload,
   buildStoragePath,
+  buildResourceStoragePath,
   buildThumbnailPath,
   getBucketForContentType,
   getSignedUrlExpiry,
+  sanitizeFileName,
 } from '../../utils/storage';
 import {
   CONTENT_THUMBNAILS,
@@ -44,8 +52,10 @@ import {
   UPLOAD_RETRY_MAX_DELAY_MS,
   THUMBNAIL_MIME_TYPES,
   THUMBNAIL_MAX_SIZE_BYTES,
+  getResourceConfig,
 } from '../../config/storage';
 import type { ContentType } from '../../types/content';
+import type { StorageResourceType } from '../../config/storage';
 import type { ApiResponse } from '../../types/academic';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -67,7 +77,10 @@ export interface UploadResult {
 }
 
 /**
- * Parameters for the `uploadFile` function.
+ * Parameters for content-type-based uploads (backward compatible).
+ *
+ * Used by the Content module. The bucket and storage path are derived
+ * from `contentType`, `instituteId`, and `contentId`.
  */
 export interface UploadFileParams {
   /** The file data to upload (File, Blob, or ArrayBuffer). */
@@ -80,6 +93,33 @@ export interface UploadFileParams {
   contentId: string;
   /** Optional signal for upload cancellation. */
   signal?: AbortSignal;
+  /** Optional progress callback receiving (loaded, total) bytes. */
+  onProgress?: (loaded: number, total: number) => void;
+}
+
+/**
+ * Parameters for resource-type-based uploads.
+ *
+ * Used by non-content modules (question images, profile pictures,
+ * certificates, etc.). The bucket and storage path are derived from
+ * `resourceType` and `pathParams` via the resource configuration.
+ */
+export interface UploadResourceParams {
+  /** The file data to upload (File, Blob, or ArrayBuffer). */
+  file: File | Blob | ArrayBuffer;
+  /**
+   * The resource type discriminator — determines bucket, validation
+   * rules, and path template.
+   */
+  resourceType: StorageResourceType;
+  /**
+   * Path parameter values for template substitution.
+   * Keys must match `{param}` placeholders in the resource type's
+   * path template.
+   *
+   * @example `{ instituteId, questionId, imageId, ext }` for question images
+   */
+  pathParams: Record<string, string>;
   /** Optional progress callback receiving (loaded, total) bytes. */
   onProgress?: (loaded: number, total: number) => void;
 }
@@ -305,12 +345,68 @@ function sleep(ms: number): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  1. uploadFile()
+//  Internal Upload Core
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Uploads a file to Supabase Storage after validating MIME type, file
- * extension, and file size.
+ * Internal upload parameters — the normalised shape produced by both
+ * `uploadFile` (content-type path) and `uploadResource` (resource-type
+ * path) before delegating to the shared upload logic.
+ */
+interface InternalUploadParams {
+  fileBytes: ArrayBuffer;
+  fileSize: number;
+  mimeType: string;
+  bucket: string;
+  storagePath: string;
+  onProgress?: (loaded: number, total: number) => void;
+}
+
+/**
+ * Performs the actual Supabase Storage upload with retry and progress.
+ *
+ * This is the single internal point where the storage SDK is called.
+ * Both `uploadFile` and `uploadResource` normalise their inputs and
+ * delegate here.
+ */
+async function _performUpload(
+  params: InternalUploadParams,
+): Promise<ApiResponse<UploadResult>> {
+  const { fileBytes, fileSize, mimeType, bucket, storagePath, onProgress } = params;
+
+  try {
+    const uploadResult = await retryUpload(async () => {
+      return supabase.storage.from(bucket).upload(storagePath, fileBytes, {
+        contentType: mimeType,
+        cacheControl: '3600',
+        upsert: false,
+        ...(onProgress ? { onUploadProgress: onProgress } : {}),
+      });
+    });
+
+    if (uploadResult.error) {
+      return { success: false, error: extractStorageError(uploadResult.error) };
+    }
+
+    return {
+      success: true,
+      data: { bucket, storagePath, fileSize, mimeType },
+    };
+  } catch (err) {
+    return { success: false, error: extractStorageError(err) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  1. uploadFile() — Content-Type-Based Upload (Backward Compatible)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Uploads a file to Supabase Storage, determining the destination from
+ * the content type and content ID.
+ *
+ * This is the backward-compatible API for the Content module. For new
+ * modules, prefer `uploadResource()` with a resource type and path params.
  *
  * The upload destination (bucket and path) is determined entirely by the
  * content type and content ID — no client input influences the storage
@@ -320,7 +416,7 @@ function sleep(ms: number): Promise<void> {
  * backoff. 4xx client errors are returned immediately.
  *
  * @param params - Upload parameters (file, contentType, instituteId, contentId,
- *                 optional AbortSignal, optional progress callback).
+ *                 optional progress callback).
  *
  * @returns Structured response with storage metadata on success.
  *
@@ -368,29 +464,93 @@ export async function uploadFile(
     const bucket = getBucketForContentType(contentType);
     const storagePath = buildStoragePath(instituteId, contentId, originalFileName);
 
-    // ── 4. Upload with retry and progress ────────────────────────────────
-    const uploadResult = await retryUpload(async () => {
-      return supabase.storage.from(bucket).upload(storagePath, fileBytes, {
-        contentType: mimeType,
-        cacheControl: '3600',
-        upsert: false,
-        ...(onProgress ? { onUploadProgress: onProgress } : {}),
-      });
+    // ── 4. Upload via shared core ────────────────────────────────────────
+    return _performUpload({ fileBytes, fileSize, mimeType, bucket, storagePath, onProgress });
+  } catch (err) {
+    return { success: false, error: extractStorageError(err) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  1b. uploadResource() — Resource-Type-Based Upload
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Uploads a file to Supabase Storage, determining the destination from
+ * the resource type and path params.
+ *
+ * This is the generalised upload API usable by every module — content,
+ * question images, profile pictures, certificates, etc. It:
+ *
+ * 1. Validates MIME type, file extension, and file size against the
+ *    resource type's configuration.
+ * 2. Builds the storage path from the resource type's path template
+ *    and the provided path parameters.
+ * 3. Delegates to the same internal upload core used by `uploadFile()`.
+ *
+ * @param params - Upload parameters (file, resourceType, pathParams,
+ *                 optional progress callback).
+ *
+ * @returns Structured response with storage metadata on success.
+ *
+ * @example
+ * ```ts
+ * const result = await uploadResource({
+ *   file: imageFile,
+ *   resourceType: 'question_image',
+ *   pathParams: {
+ *     instituteId: 'inst-123',
+ *     questionId: 'q-456',
+ *     imageId: 'img-789',
+ *     ext: 'png',
+ *   },
+ * });
+ *
+ * if (result.success) {
+ *   // store result.data.bucket and result.data.storagePath on the image row
+ * }
+ * ```
+ */
+export async function uploadResource(
+  params: UploadResourceParams,
+): Promise<ApiResponse<UploadResult>> {
+  const { file, resourceType, pathParams, onProgress } = params;
+
+  try {
+    // ── 1. Determine file metadata (React Native compatible) ─────────────
+    const metadata = await extractFileMetadata(file);
+    const { bytes: fileBytes, size: fileSize, mimeType, fileName: originalFileName } = metadata;
+
+    // ── 2. Validate upload ───────────────────────────────────────────────
+    const validation = validateResourceUpload({
+      fileName: originalFileName,
+      mimeType,
+      fileSizeBytes: fileSize,
+      resourceType,
     });
 
-    if (uploadResult.error) {
-      return { success: false, error: extractStorageError(uploadResult.error) };
+    if (!validation.valid) {
+      const errors = [validation.mime.error, validation.extension.error, validation.size.error]
+        .filter(Boolean)
+        .join('; ');
+      return { success: false, error: errors };
     }
 
-    return {
-      success: true,
-      data: {
-        bucket,
-        storagePath,
-        fileSize,
-        mimeType,
-      },
-    };
+    // ── 3. Determine destination ─────────────────────────────────────────
+    const config = getResourceConfig(resourceType);
+    const bucket = config.bucket;
+
+    // Build path from resource template + caller-provided path params.
+    // If the template has {sanitisedFileName}, derive it from the file name.
+    let resolvedPathParams = { ...pathParams };
+    if (!resolvedPathParams.sanitisedFileName && config.pathTemplate.includes('{sanitisedFileName}')) {
+      resolvedPathParams.sanitisedFileName = sanitizeFileName(originalFileName);
+    }
+
+    const storagePath = buildResourceStoragePath(resourceType, resolvedPathParams);
+
+    // ── 4. Upload via shared core ────────────────────────────────────────
+    return _performUpload({ fileBytes, fileSize, mimeType, bucket, storagePath, onProgress });
   } catch (err) {
     return { success: false, error: extractStorageError(err) };
   }

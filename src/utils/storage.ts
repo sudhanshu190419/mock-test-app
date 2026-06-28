@@ -16,6 +16,7 @@
  */
 
 import type { ContentType } from '../types/content';
+import type { StorageResourceType, ResourceConfig } from '../config/storage';
 import {
   CONTENT_BUCKET_MAP,
   CONTENT_EXPIRY_MAP,
@@ -25,6 +26,8 @@ import {
   CONTENT_PATH_TEMPLATE,
   THUMBNAIL_PATH_TEMPLATE,
   THUMBNAIL_EXTENSION,
+  getResourceConfig,
+  RESOURCE_CONFIG_MAP,
 } from '../config/storage';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -395,7 +398,247 @@ export function getAllowedExtensions(contentType: ContentType): readonly string[
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  11. validateUpload
+//  11. Resource-Based Utilities
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Returns the full resource configuration for a given resource type.
+ *
+ * Convenience wrapper around `getResourceConfig()` from config that
+ * avoids importing the config module directly in service files.
+ *
+ * @param resourceType - The storage resource type.
+ * @returns The complete resource configuration.
+ */
+export function getResourceConfigForType(resourceType: StorageResourceType): ResourceConfig {
+  return getResourceConfig(resourceType);
+}
+
+/**
+ * Returns the Supabase Storage bucket name for the given resource type.
+ *
+ * @param resourceType - The resource type to look up.
+ * @returns The storage bucket name.
+ *
+ * @example
+ * ```ts
+ * getBucketForResource('question_image');
+ * // => 'question-images'
+ * ```
+ */
+export function getBucketForResource(resourceType: StorageResourceType): string {
+  return RESOURCE_CONFIG_MAP[resourceType].bucket;
+}
+
+/**
+ * Returns the MIME type allowlist for the given resource type.
+ *
+ * @param resourceType - The resource type to look up.
+ * @returns Readonly array of accepted MIME type strings.
+ *
+ * @example
+ * ```ts
+ * getAllowedMimeTypesForResource('question_image');
+ * // => ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml']
+ * ```
+ */
+export function getAllowedMimeTypesForResource(resourceType: StorageResourceType): readonly string[] {
+  return RESOURCE_CONFIG_MAP[resourceType].allowedMimeTypes;
+}
+
+/**
+ * Returns the maximum allowed file size in bytes for the given resource type.
+ *
+ * @param resourceType - The resource type to look up.
+ * @returns Maximum file size in bytes.
+ */
+export function getMaximumFileSizeForResource(resourceType: StorageResourceType): number {
+  return RESOURCE_CONFIG_MAP[resourceType].maxFileSizeBytes;
+}
+
+/**
+ * Returns the allowed file extensions for the given resource type.
+ *
+ * @param resourceType - The resource type to look up.
+ * @returns Readonly array of accepted extension strings (including the dot).
+ */
+export function getAllowedExtensionsForResource(resourceType: StorageResourceType): readonly string[] {
+  return RESOURCE_CONFIG_MAP[resourceType].allowedExtensions;
+}
+
+/**
+ * Returns the default signed URL expiry in seconds for the given resource type.
+ *
+ * @param resourceType - The resource type to look up.
+ * @returns Expiry in seconds, or `undefined` if the resource type does not
+ *          support signed URLs.
+ */
+export function getResourceSignedUrlExpiry(resourceType: StorageResourceType): number | undefined {
+  return RESOURCE_CONFIG_MAP[resourceType].signedUrlExpirySeconds;
+}
+
+/**
+ * Validates that `mimeType` is in the allowed list for the given resource type.
+ *
+ * Uses the MIME type allowlist from the resource configuration.
+ * Returns a structured `ValidationResult` — never throws.
+ *
+ * @param mimeType     - The IANA media type to validate.
+ * @param resourceType - The resource type to validate against.
+ */
+export function validateResourceMimeType(
+  mimeType: string,
+  resourceType: StorageResourceType,
+): ValidationResult {
+  const allowed = RESOURCE_CONFIG_MAP[resourceType].allowedMimeTypes;
+
+  if (!allowed.includes(mimeType)) {
+    return {
+      valid: false,
+      error: `MIME type "${mimeType}" is not allowed for ${resourceType}. Accepted: ${allowed.join(', ')}`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validates that `fileSizeBytes` does not exceed the configured maximum
+ * for the given resource type.
+ *
+ * @param fileSizeBytes - The file size in bytes to validate.
+ * @param resourceType  - The resource type whose size limit applies.
+ */
+export function validateResourceFileSize(
+  fileSizeBytes: number,
+  resourceType: StorageResourceType,
+): ValidationResult {
+  const maxSize = RESOURCE_CONFIG_MAP[resourceType].maxFileSizeBytes;
+
+  if (fileSizeBytes > maxSize) {
+    return {
+      valid: false,
+      error: `File size ${fileSizeBytes} bytes exceeds maximum of ${maxSize} bytes for ${resourceType}.`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Builds a storage path from a template by substituting `{param}`
+ * placeholders with the provided values.
+ *
+ * Template placeholders use curly brace syntax:
+ *   `institutes/{instituteId}/content/{contentId}/{sanitisedFileName}`
+ *
+ * Unknown placeholders are left as-is (not removed).
+ *
+ * @param template - The path template with `{param}` placeholders.
+ * @param params   - Record of placeholder values to substitute.
+ *
+ * @returns The constructed path string.
+ *
+ * @example
+ * ```ts
+ * const path = buildPathFromTemplate(
+ *   'questions/{instituteId}/{questionId}/{imageId}.{ext}',
+ *   { instituteId: 'a', questionId: 'b', imageId: 'c', ext: 'png' },
+ * );
+ * // => 'questions/a/b/c.png'
+ * ```
+ */
+export function buildPathFromTemplate(
+  template: string,
+  params: Record<string, string>,
+): string {
+  let path = template;
+  for (const [key, value] of Object.entries(params)) {
+    path = path.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+  }
+  return path;
+}
+
+/**
+ * Builds the canonical Supabase Storage path for a resource type using
+ * its configured template and the provided path parameters.
+ *
+ * @param resourceType - The resource type whose path template to use.
+ * @param pathParams   - Record of `{param: value}` pairs for template
+ *                       substitution. Must include all placeholders
+ *                       required by the resource type's path template.
+ *
+ * @returns The storage path string.
+ *
+ * @example
+ * ```ts
+ * buildResourceStoragePath('question_image', {
+ *   instituteId: 'inst-123',
+ *   questionId: 'q-456',
+ *   imageId: 'img-789',
+ *   ext: 'png',
+ * });
+ * // => 'questions/inst-123/q-456/img-789.png'
+ * ```
+ */
+export function buildResourceStoragePath(
+  resourceType: StorageResourceType,
+  pathParams: Record<string, string>,
+): string {
+  const template = RESOURCE_CONFIG_MAP[resourceType].pathTemplate;
+  return buildPathFromTemplate(template, pathParams);
+}
+
+/**
+ * Composite resource upload validator.
+ *
+ * Runs all three validators (MIME type, file extension, file size) against
+ * the resource type's configuration and returns a single structured result.
+ *
+ * All validators must pass for the aggregate result to be `valid`.
+ * This function never throws.
+ *
+ * @param params.fileName      - The original file name (used for extension check).
+ * @param params.mimeType      - The IANA media type of the file.
+ * @param params.fileSizeBytes - The file size in bytes.
+ * @param params.resourceType  - The target resource type.
+ *
+ * @returns A composite validation result with individual and aggregate fields.
+ */
+export function validateResourceUpload(params: {
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  resourceType: StorageResourceType;
+}): UploadValidationResult {
+  const { fileName, mimeType, fileSizeBytes, resourceType } = params;
+
+  const mimeResult = validateResourceMimeType(mimeType, resourceType);
+  const sizeResult = validateResourceFileSize(fileSizeBytes, resourceType);
+
+  // Extract file extension from the file name
+  const dotIndex = fileName.lastIndexOf('.');
+  const fileExtension = dotIndex > 0 ? fileName.slice(dotIndex).toLowerCase() : '';
+
+  const allowedExtensions = RESOURCE_CONFIG_MAP[resourceType].allowedExtensions;
+  const extensionValid = allowedExtensions.includes(fileExtension);
+  const extensionResult: ValidationResult = extensionValid
+    ? { valid: true }
+    : {
+        valid: false,
+        error: `File extension "${fileExtension}" is not allowed for ${resourceType}. Accepted: ${allowedExtensions.join(', ')}`,
+      };
+
+  return {
+    valid: mimeResult.valid && sizeResult.valid && extensionResult.valid,
+    mime: mimeResult,
+    extension: extensionResult,
+    size: sizeResult,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  12. validateUpload (Content-Type-Based — Backward Compatible)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**

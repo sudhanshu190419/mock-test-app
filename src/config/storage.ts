@@ -361,3 +361,280 @@ export const CONTENT_MAX_PAGE_COUNT: Partial<Record<ContentType, number | null>>
   video: null,
   assignment: null,
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  11. Generalized Resource Configuration
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Discriminator for all storage resource types across every module.
+ *
+ * Each value maps to a complete `ResourceConfig` that defines the bucket,
+ * validation rules, path template, and expiry for that resource type.
+ *
+ * Adding a new resource type requires:
+ * 1. Adding the literal here
+ * 2. Adding a config entry in `RESOURCE_CONFIG_MAP`
+ *
+ * @example
+ * ```ts
+ * const config = getResourceConfig('question_image');
+ * // => { bucket: 'question-images', allowedMimeTypes: [...], ... }
+ * ```
+ */
+export type StorageResourceType =
+  | 'content_pdf'
+  | 'content_video'
+  | 'content_thumbnail'
+  | 'question_image'
+  | 'student_submission'
+  | 'profile_image'
+  | 'certificate'
+  | 'product_image'
+  | 'institute_logo';
+
+/**
+ * Complete configuration for a single storage resource type.
+ *
+ * Every upload is validated against these rules before any storage
+ * operation. The path template supports `{param}` placeholders that
+ * are substituted at upload time via `buildResourceStoragePath()`.
+ */
+export interface ResourceConfig {
+  /** Supabase Storage bucket name. */
+  bucket: string;
+  /** Allowed IANA media types (e.g. 'image/jpeg'). */
+  allowedMimeTypes: readonly string[];
+  /** Allowed file extensions including the dot (e.g. '.jpg'). */
+  allowedExtensions: readonly string[];
+  /** Maximum file size in bytes. */
+  maxFileSizeBytes: number;
+  /** Default signed URL expiry in seconds. Undefined = signed URLs not used. */
+  signedUrlExpirySeconds?: number;
+  /**
+   * Storage path template with `{param}` placeholders.
+   *
+   * @example `questions/{instituteId}/{questionId}/{imageId}.{ext}`
+   */
+  pathTemplate: string;
+}
+
+// ─── Resource-Specific Buckets ─────────────────────────────────────────────
+
+/**
+ * Bucket for question images (diagrams, graphs embedded in question stems).
+ */
+export const QUESTION_IMAGES_BUCKET = 'question-images' as const;
+
+/**
+ * Bucket for student profile / avatar images.
+ */
+export const PROFILE_IMAGES_BUCKET = 'profile-images' as const;
+
+/**
+ * Bucket for generated certificates.
+ */
+export const CERTIFICATES_BUCKET = 'certificates' as const;
+
+/**
+ * Bucket for course/product thumbnail images.
+ */
+export const PRODUCT_IMAGES_BUCKET = 'product-images' as const;
+
+/**
+ * Bucket for institute logos.
+ */
+export const INSTITUTE_LOGOS_BUCKET = 'institute-logos' as const;
+
+// ─── Resource-Specific MIME Allowlists ─────────────────────────────────────
+
+/**
+ * Allowed MIME types for question images.
+ */
+export const QUESTION_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/svg+xml',
+] as const;
+
+/**
+ * Allowed MIME types for profile images, product images, and institute logos.
+ */
+export const STANDARD_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+] as const;
+
+/**
+ * Allowed MIME types for certificates (PDF only).
+ */
+export const CERTIFICATE_MIME_TYPES = ['application/pdf'] as const;
+
+// ─── Resource-Specific Extension Allowlists ────────────────────────────────
+
+/**
+ * File extensions accepted for question images.
+ */
+export const QUESTION_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'] as const;
+
+/**
+ * File extensions accepted for standard images.
+ */
+export const STANDARD_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'] as const;
+
+/**
+ * File extensions accepted for certificates.
+ */
+export const CERTIFICATE_EXTENSIONS = ['.pdf'] as const;
+
+// ─── Resource-Specific Size Limits ─────────────────────────────────────────
+
+/** Maximum file size for question images (10 MB). */
+export const QUESTION_IMAGE_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+
+/** Maximum file size for profile images / logos (5 MB). */
+export const STANDARD_IMAGE_MAX_SIZE_BYTES = 5 * 1024 * 1024;
+
+/** Maximum file size for certificates (2 MB). */
+export const CERTIFICATE_MAX_SIZE_BYTES = 2 * 1024 * 1024;
+
+// ─── Resource-Specific Path Templates ──────────────────────────────────────
+
+/**
+ * Template for question image storage paths.
+ *
+ * Path pattern:
+ *   questions/{instituteId}/{questionId}/{imageId}.{ext}
+ *
+ * @example `questions/inst-a1b2/q-x4y5z6/img-m7n8o9.png`
+ */
+export const QUESTION_IMAGE_PATH_TEMPLATE =
+  'questions/{instituteId}/{questionId}/{imageId}.{ext}' as const;
+
+/**
+ * Template for profile image storage paths.
+ *
+ * Path pattern:
+ *   profiles/{instituteId}/{profileId}/{fileName}
+ *
+ * @example `profiles/inst-a1b2/prof-x4y5z6/avatar.jpg`
+ */
+export const PROFILE_IMAGE_PATH_TEMPLATE =
+  'profiles/{instituteId}/{profileId}/{sanitisedFileName}' as const;
+
+/**
+ * Template for certificate storage paths.
+ *
+ * Path pattern:
+ *   certificates/{instituteId}/{userId}/{certId}.pdf
+ *
+ * @example `certificates/inst-a1b2/user-x4y5z6/cert-m7n8o9.pdf`
+ */
+export const CERTIFICATE_PATH_TEMPLATE =
+  'certificates/{instituteId}/{userId}/{certId}.{ext}' as const;
+
+/**
+ * Template for product image storage paths.
+ */
+export const PRODUCT_IMAGE_PATH_TEMPLATE =
+  'products/{instituteId}/{productId}/{sanitisedFileName}' as const;
+
+/**
+ * Template for institute logo storage paths.
+ */
+export const INSTITUTE_LOGO_PATH_TEMPLATE =
+  'institutes/{instituteId}/logo/{sanitisedFileName}' as const;
+
+// ─── Resource Config Map ───────────────────────────────────────────────────
+
+/**
+ * Complete mapping from resource type to its full configuration.
+ *
+ * This is the single source of truth for all storage resource types.
+ * Every upload goes through this map to determine bucket, validation
+ * rules, path template, and signed URL expiry.
+ *
+ * @see StorageResourceType
+ * @see ResourceConfig
+ */
+export const RESOURCE_CONFIG_MAP: Record<StorageResourceType, ResourceConfig> = {
+  content_pdf: {
+    bucket: CONTENT_PDFS,
+    allowedMimeTypes: PDF_MIME_TYPES,
+    allowedExtensions: PDF_EXTENSIONS,
+    maxFileSizeBytes: PDF_MAX_SIZE_BYTES,
+    signedUrlExpirySeconds: DOCUMENT_DOWNLOAD_EXPIRY_SECONDS,
+    pathTemplate: CONTENT_PATH_TEMPLATE,
+  },
+  content_video: {
+    bucket: CONTENT_VIDEOS,
+    allowedMimeTypes: VIDEO_MIME_TYPES,
+    allowedExtensions: VIDEO_EXTENSIONS,
+    maxFileSizeBytes: VIDEO_MAX_SIZE_BYTES,
+    signedUrlExpirySeconds: VIDEO_STREAM_EXPIRY_SECONDS,
+    pathTemplate: CONTENT_PATH_TEMPLATE,
+  },
+  content_thumbnail: {
+    bucket: CONTENT_THUMBNAILS,
+    allowedMimeTypes: THUMBNAIL_MIME_TYPES,
+    allowedExtensions: THUMBNAIL_EXTENSIONS,
+    maxFileSizeBytes: THUMBNAIL_MAX_SIZE_BYTES,
+    pathTemplate: THUMBNAIL_PATH_TEMPLATE,
+  },
+  question_image: {
+    bucket: QUESTION_IMAGES_BUCKET,
+    allowedMimeTypes: QUESTION_IMAGE_MIME_TYPES,
+    allowedExtensions: QUESTION_IMAGE_EXTENSIONS,
+    maxFileSizeBytes: QUESTION_IMAGE_MAX_SIZE_BYTES,
+    signedUrlExpirySeconds: DOCUMENT_DOWNLOAD_EXPIRY_SECONDS,
+    pathTemplate: QUESTION_IMAGE_PATH_TEMPLATE,
+  },
+  student_submission: {
+    bucket: STUDENT_SUBMISSIONS,
+    allowedMimeTypes: PDF_MIME_TYPES,
+    allowedExtensions: PDF_EXTENSIONS,
+    maxFileSizeBytes: PDF_MAX_SIZE_BYTES,
+    pathTemplate: CONTENT_PATH_TEMPLATE,
+  },
+  profile_image: {
+    bucket: PROFILE_IMAGES_BUCKET,
+    allowedMimeTypes: STANDARD_IMAGE_MIME_TYPES,
+    allowedExtensions: STANDARD_IMAGE_EXTENSIONS,
+    maxFileSizeBytes: STANDARD_IMAGE_MAX_SIZE_BYTES,
+    pathTemplate: PROFILE_IMAGE_PATH_TEMPLATE,
+  },
+  certificate: {
+    bucket: CERTIFICATES_BUCKET,
+    allowedMimeTypes: CERTIFICATE_MIME_TYPES,
+    allowedExtensions: CERTIFICATE_EXTENSIONS,
+    maxFileSizeBytes: CERTIFICATE_MAX_SIZE_BYTES,
+    pathTemplate: CERTIFICATE_PATH_TEMPLATE,
+  },
+  product_image: {
+    bucket: PRODUCT_IMAGES_BUCKET,
+    allowedMimeTypes: STANDARD_IMAGE_MIME_TYPES,
+    allowedExtensions: STANDARD_IMAGE_EXTENSIONS,
+    maxFileSizeBytes: STANDARD_IMAGE_MAX_SIZE_BYTES,
+    pathTemplate: PRODUCT_IMAGE_PATH_TEMPLATE,
+  },
+  institute_logo: {
+    bucket: INSTITUTE_LOGOS_BUCKET,
+    allowedMimeTypes: STANDARD_IMAGE_MIME_TYPES,
+    allowedExtensions: STANDARD_IMAGE_EXTENSIONS,
+    maxFileSizeBytes: STANDARD_IMAGE_MAX_SIZE_BYTES,
+    pathTemplate: INSTITUTE_LOGO_PATH_TEMPLATE,
+  },
+};
+
+/**
+ * Returns the full resource configuration for a given resource type.
+ *
+ * @param resourceType - The storage resource type.
+ * @returns The complete resource configuration.
+ */
+export function getResourceConfig(resourceType: StorageResourceType): ResourceConfig {
+  return RESOURCE_CONFIG_MAP[resourceType];
+}

@@ -23,6 +23,10 @@ import {
   ContentTestScreen,
   TagTestScreen,
   ApprovalTestScreen,
+  QuestionTestScreen,
+  QuestionOptionTestScreen,
+  QuestionExplanationTestScreen,
+  QuestionImageTestScreen,
 } from '../screens/dev';
 
 export type DevStackParamList = {
@@ -35,6 +39,10 @@ export type DevStackParamList = {
   ContentTest: undefined;
   TagTest: undefined;
   ApprovalTest: undefined;
+  QuestionTest: undefined;
+  QuestionOptionTest: undefined;
+  QuestionExplanationTest: undefined;
+  QuestionImageTest: undefined;
 };
 
 const Stack = createNativeStackNavigator<DevStackParamList>();
@@ -58,6 +66,10 @@ const TEST_ITEMS: TestItem[] = [
   { title: 'Content Test', subtitle: 'CRUD, lifecycle & upload for content', screen: 'ContentTest', color: '#00BCD4', emoji: '📄' },
   { title: 'Tag Test', subtitle: 'CRUD & relations for content tags', screen: 'TagTest', color: '#FF4081', emoji: '🏷️' },
   { title: 'Approval Test', subtitle: 'Review workflow & approval queue', screen: 'ApprovalTest', color: '#4CAF50', emoji: '✅' },
+  { title: 'Question Test', subtitle: 'CRUD, lifecycle & filters for questions', screen: 'QuestionTest', color: '#6C63FF', emoji: '❓' },
+  { title: 'Options Test', subtitle: 'CRUD, replace & reorder for question options', screen: 'QuestionOptionTest', color: '#FF6B35', emoji: '🔘' },
+  { title: 'Explanation Test', subtitle: 'CRUD & upsert for question explanations', screen: 'QuestionExplanationTest', color: '#00BCD4', emoji: '💡' },
+  { title: 'Image Test', subtitle: 'Upload, replace & reorder for question images', screen: 'QuestionImageTest', color: '#9C27B0', emoji: '🖼️' },
 ];
 
 // ─── Dev Home Screen ────────────────────────────────────────────────────────
@@ -184,6 +196,26 @@ export default function DevNavigator(): React.JSX.Element {
         name="ApprovalTest"
         component={ApprovalTestScreen}
         options={{ headerTitle: '✅ Approval Test', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="QuestionTest"
+        component={QuestionTestScreen}
+        options={{ headerTitle: '❓ Question Test', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="QuestionOptionTest"
+        component={QuestionOptionTestScreen}
+        options={{ headerTitle: '🔘 Options Test', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="QuestionExplanationTest"
+        component={QuestionExplanationTestScreen}
+        options={{ headerTitle: '💡 Explanation Test', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="QuestionImageTest"
+        component={QuestionImageTestScreen}
+        options={{ headerTitle: '🖼️ Image Test', headerBackTitle: 'Dev Hub' }}
       />
     </Stack.Navigator>
   );
