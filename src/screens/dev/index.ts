@@ -6,3 +6,6 @@ export { default as SubjectTestScreen } from './SubjectTestScreen';
 export { default as ChapterTestScreen } from './ChapterTestScreen';
 export { default as TopicTestScreen } from './TopicTestScreen';
 export { default as BatchTestScreen } from './BatchTestScreen';
+export { default as ContentTestScreen } from './ContentTestScreen';
+export { default as TagTestScreen } from './TagTestScreen';
+export { default as ApprovalTestScreen } from './ApprovalTestScreen';

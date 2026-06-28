@@ -20,6 +20,9 @@ import {
   ChapterTestScreen,
   TopicTestScreen,
   BatchTestScreen,
+  ContentTestScreen,
+  TagTestScreen,
+  ApprovalTestScreen,
 } from '../screens/dev';
 
 export type DevStackParamList = {
@@ -29,6 +32,9 @@ export type DevStackParamList = {
   ChapterTest: undefined;
   TopicTest: undefined;
   BatchTest: undefined;
+  ContentTest: undefined;
+  TagTest: undefined;
+  ApprovalTest: undefined;
 };
 
 const Stack = createNativeStackNavigator<DevStackParamList>();
@@ -49,6 +55,9 @@ const TEST_ITEMS: TestItem[] = [
   { title: 'Chapter Test', subtitle: 'CRUD for chapters within a subject', screen: 'ChapterTest', color: '#388E3C', emoji: '📖' },
   { title: 'Topic Test', subtitle: 'CRUD for topics within a chapter', screen: 'TopicTest', color: '#F57C00', emoji: '🏷️' },
   { title: 'Batch Test', subtitle: 'CRUD for student batches', screen: 'BatchTest', color: '#7B1FA2', emoji: '👥' },
+  { title: 'Content Test', subtitle: 'CRUD, lifecycle & upload for content', screen: 'ContentTest', color: '#00BCD4', emoji: '📄' },
+  { title: 'Tag Test', subtitle: 'CRUD & relations for content tags', screen: 'TagTest', color: '#FF4081', emoji: '🏷️' },
+  { title: 'Approval Test', subtitle: 'Review workflow & approval queue', screen: 'ApprovalTest', color: '#4CAF50', emoji: '✅' },
 ];
 
 // ─── Dev Home Screen ────────────────────────────────────────────────────────
@@ -160,6 +169,21 @@ export default function DevNavigator(): React.JSX.Element {
         name="BatchTest"
         component={BatchTestScreen}
         options={{ headerTitle: '👥 Batch Test', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="ContentTest"
+        component={ContentTestScreen}
+        options={{ headerTitle: '📄 Content Test', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="TagTest"
+        component={TagTestScreen}
+        options={{ headerTitle: '🏷️ Tag Test', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="ApprovalTest"
+        component={ApprovalTestScreen}
+        options={{ headerTitle: '✅ Approval Test', headerBackTitle: 'Dev Hub' }}
       />
     </Stack.Navigator>
   );
