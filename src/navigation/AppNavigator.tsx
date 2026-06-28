@@ -18,15 +18,13 @@ import HomeScreen from '../screens/home/HomeScreen';
 import TestDashboardScreen from '../screens/tests/TestDashboardScreen';
 
 // DEV ONLY - Remove after frontend integration
-import StreamServiceTestScreen from '../screens/dev/StreamServiceTestScreen';
-import SubjectServiceTestScreen from '../screens/dev/SubjectServiceTestScreen';
+import DevNavigator from './DevNavigator';
 
 export type AppStackParamList = {
   Home: undefined;
   TestDashboard: undefined;
   // DEV ONLY - Remove after frontend integration
-  StreamServiceTest: undefined;
-  SubjectServiceTest: undefined;
+  DevHub: undefined;
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -50,29 +48,10 @@ export default function AppNavigator(): React.JSX.Element {
 
       {/* DEV ONLY - Remove after frontend integration */}
       <Stack.Screen
-        name="StreamServiceTest"
-        component={StreamServiceTestScreen}
+        name="DevHub"
+        component={DevNavigator}
         options={{
-          headerShown: true,
-          headerTitle: 'Stream Service Test',
-          headerBackTitle: 'Home',
-          headerTintColor: '#6C63FF',
-          headerStyle: { backgroundColor: '#1A1A2E' },
-          headerShadowVisible: false,
-        }}
-      />
-
-      {/* DEV ONLY - Remove after frontend integration */}
-      <Stack.Screen
-        name="SubjectServiceTest"
-        component={SubjectServiceTestScreen}
-        options={{
-          headerShown: true,
-          headerTitle: 'Subject Service Test',
-          headerBackTitle: 'Home',
-          headerTintColor: '#6C63FF',
-          headerStyle: { backgroundColor: '#1A1A2E' },
-          headerShadowVisible: false,
+          headerShown: false,
         }}
       />
     </Stack.Navigator>

@@ -60,17 +60,10 @@ export default function HomeScreen(): React.JSX.Element {
     },
     // DEV ONLY - Remove after frontend integration
     {
-      title: '📡 Stream Service Test',
-      description: 'Test Stream CRUD operations (Create, Read, Update, Delete)',
+      title: '🧪 Academic CRUD Tests',
+      description: 'Test all entity CRUD operations (Streams, Subjects, Chapters, Topics, Batches)',
       color: '#D32F2F',
-      onPress: () => navigation.navigate('StreamServiceTest'),
-    },
-    // DEV ONLY - Remove after frontend integration
-    {
-      title: '📘 Subject Service Test',
-      description: 'Test Subject CRUD operations (Create, Read, Update, Delete)',
-      color: '#2196F3',
-      onPress: () => navigation.navigate('SubjectServiceTest'),
+      onPress: () => navigation.navigate('DevHub'),
     },
   ];
 

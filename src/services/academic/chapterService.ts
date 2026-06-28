@@ -24,7 +24,8 @@
  */
 
 import { supabase } from '../../config/supabase';
-import { PostgrestError } from '@supabase/supabase-js';
+import { validateUUID, extractErrorMessage, buildPagination } from '../../utils/supabase';
+import { buildPaginatedResponse } from '../../utils/response';
 import type {
   ApiResponse,
   PaginatedResponse,
@@ -39,9 +40,6 @@ import type {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const DEFAULT_PAGE = 1;
-const DEFAULT_PAGE_SIZE = 20;
-
 /**
  * Maps camelCase sort keys to their snake_case database column names.
  * Unknown keys fall back to `display_order`.
@@ -52,8 +50,6 @@ const SORT_FIELD_MAP: Record<string, string> = {
   createdAt: 'created_at',
   updatedAt: 'updated_at',
 };
-
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // ─── Database Row Shape ────────────────────────────────────────────────────
 
@@ -73,19 +69,6 @@ interface DbChapter {
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
-}
-
-// ─── Validation Helpers ─────────────────────────────────────────────────────
-
-/**
- * Validates that `value` is a well-formed UUID v4.
- *
- * @throws An `Error` with a descriptive message when validation fails.
- */
-function validateUUID(value: string, fieldName: string): void {
-  if (!UUID_REGEX.test(value)) {
-    throw new Error(`Invalid ${fieldName}: "${value}" is not a valid UUID.`);
-  }
 }
 
 // ─── Mapping Helpers ────────────────────────────────────────────────────────
@@ -116,26 +99,6 @@ function mapChapter(db: DbChapter): Chapter {
  */
 function mapSortField(sortBy: ChapterSortOptions['sortBy']): string {
   return SORT_FIELD_MAP[sortBy ?? 'displayOrder'] ?? 'display_order';
-}
-
-// ─── Error Helpers ──────────────────────────────────────────────────────────
-
-/**
- * Safely extracts a human-readable error message from any error value.
- *
- * Normalises `PostgrestError`, and plain `Error` instances into a
- * single string so that callers never need to inspect error types.
- */
-function extractErrorMessage(error: unknown): string {
-  if (error instanceof PostgrestError) {
-    return error.message;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return 'An unexpected error occurred.';
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -196,10 +159,7 @@ export async function getChapters(
     query = query.order(sortBy, { ascending: sortDirection === 'asc' });
 
     // ── Apply pagination ───────────────────────────────────────────────
-    const page = pagination?.page ?? DEFAULT_PAGE;
-    const pageSize = pagination?.pageSize ?? DEFAULT_PAGE_SIZE;
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    const { page, pageSize, from, to } = buildPagination(pagination);
     query = query.range(from, to);
 
     // ── Execute ────────────────────────────────────────────────────────
@@ -210,18 +170,10 @@ export async function getChapters(
     }
 
     const chapters = (data ?? []).map(mapChapter);
-    const totalCount = count ?? 0;
-    const pageCount = pageSize > 0 ? Math.ceil(totalCount / pageSize) : 0;
 
     return {
       success: true,
-      data: {
-        data: chapters,
-        count: totalCount,
-        page,
-        pageSize,
-        pageCount,
-      },
+      data: buildPaginatedResponse(chapters, count ?? 0, page, pageSize),
     };
   } catch (err) {
     return { success: false, error: extractErrorMessage(err) };
