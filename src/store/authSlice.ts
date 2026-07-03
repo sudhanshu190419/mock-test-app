@@ -81,6 +81,12 @@ export interface AuthState {
    * Reset to `null` by `clearError()` or on the next successful operation.
    */
   error: string | null;
+
+  /**
+   * True when the user has completed the onboarding flow.
+   * Used to gate the onboarding screens on first app launch.
+   */
+  onboardingCompleted: boolean;
 }
 
 const initialState: AuthState = {
@@ -90,6 +96,7 @@ const initialState: AuthState = {
   loading: false,
   initialized: false,
   error: null,
+  onboardingCompleted: false,
 };
 
 // ─── Slice ──────────────────────────────────────────────────────────────────
@@ -165,6 +172,16 @@ const authSlice = createSlice({
       state.error = null;
     },
 
+    /**
+     * Mark that the user has completed the onboarding flow.
+     *
+     * Once set to `true`, the onboarding screens will no longer be
+     * shown on subsequent app launches.
+     */
+    setOnboardingCompleted(state, action: PayloadAction<boolean>) {
+      state.onboardingCompleted = action.payload;
+    },
+
     // ── Logout ────────────────────────────────────────────────────────────
 
     /**
@@ -194,6 +211,7 @@ export const {
   setInitialized,
   setError,
   clearError,
+  setOnboardingCompleted,
   logout,
 } = authSlice.actions;
 
@@ -289,3 +307,12 @@ export const selectIsStaff = (state: AuthRootState): boolean =>
  */
 export const selectEmailVerified = (state: AuthRootState): boolean =>
   state.auth.user?.emailVerified ?? false;
+
+/**
+ * Return `true` when the user has completed the onboarding flow.
+ *
+ * Screens use this to decide whether to show onboarding or skip
+ * directly to the auth flow.
+ */
+export const selectOnboardingCompleted = (state: AuthRootState): boolean =>
+  state.auth.onboardingCompleted;

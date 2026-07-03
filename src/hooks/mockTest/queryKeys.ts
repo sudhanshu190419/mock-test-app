@@ -2,7 +2,8 @@
  * Mock Test Query Key Factory
  *
  * Centralised, stable query key definitions for the Mock Test / Question Bank
- * module — questions, options, explanations, and images.
+ * module — questions, options, explanations, images, mock tests, mock test
+ * questions, and publish operations.
  *
  * Every hook in this module derives its keys from this factory so that
  * cache invalidation is always consistent — mutating one entity never
@@ -12,25 +13,29 @@
  *
  * Each entity follows the same hierarchy:
  * ```
- * questionKeys.<entity>.all        → root for the entity
- * questionKeys.<entity>.lists()     → all list-type queries
- * questionKeys.<entity>.list(f,s,p) → specific list query (keyed by params)
- * questionKeys.<entity>.details()   → all detail-type queries
- * questionKeys.<entity>.detail(id)  → single item query
+ * <keys>.<entity>.all        → root for the entity
+ * <keys>.<entity>.lists()     → all list-type queries
+ * <keys>.<entity>.list(f,s,p) → specific list query (keyed by params)
+ * <keys>.<entity>.details()   → all detail-type queries
+ * <keys>.<entity>.detail(id)  → single item query
  * ```
  *
  * @module hooks/mockTest/queryKeys
  */
 
-import type {
-  PaginationParams,
-} from '../../types/academic';
+import type { PaginationParams } from '../../types/academic';
 import type {
   QuestionFilters,
   QuestionSortOptions,
 } from '../../types/mockTest';
+import type {
+  MockTestServiceFilters,
+  MockTestServiceSortOptions,
+} from '../../services/mockTest/mockTestService';
 
-// ─── Root ───────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//  questionKeys — Question Bank (existing, preserved)
+// ═══════════════════════════════════════════════════════════════════════════
 
 export const questionKeys = {
   all: ['questions'] as const,
@@ -121,5 +126,81 @@ export const questionKeys = {
 
     /** Key for a single image by ID. */
     detail: (id: string) => [...questionKeys.images.details(), id] as const,
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  mockTestKeys — Mock Test Engine (new)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const mockTestKeys = {
+  all: ['mockTests'] as const,
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  Mock Tests
+  // ═════════════════════════════════════════════════════════════════════════
+
+  mockTests: {
+    /** Root key for all mock test queries. */
+    all: () => [...mockTestKeys.all, 'mockTests'] as const,
+
+    /** Key for every mock test list query (used for broad invalidation). */
+    lists: () => [...mockTestKeys.mockTests.all(), 'list'] as const,
+
+    /** Key for a specific mock test list query with its params. */
+    list: (
+      filters?: MockTestServiceFilters,
+      sort?: MockTestServiceSortOptions,
+      pagination?: PaginationParams,
+    ) => [...mockTestKeys.mockTests.lists(), filters, sort, pagination] as const,
+
+    /** Key for every mock test detail query. */
+    details: () => [...mockTestKeys.mockTests.all(), 'detail'] as const,
+
+    /** Key for a single mock test by ID. */
+    detail: (id: string) => [...mockTestKeys.mockTests.details(), id] as const,
+  },
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  Mock Test Questions
+  // ═════════════════════════════════════════════════════════════════════════
+
+  mockTestQuestions: {
+    /** Root key for all mock test question queries. */
+    all: () => [...mockTestKeys.all, 'mockTestQuestions'] as const,
+
+    /** Key for every question list query (used for broad invalidation). */
+    lists: () => [...mockTestKeys.mockTestQuestions.all(), 'list'] as const,
+
+    /** Key for a specific question list query (keyed by mockTestId). */
+    list: (mockTestId?: string) => [...mockTestKeys.mockTestQuestions.lists(), mockTestId] as const,
+
+    /** Key for every question detail query. */
+    details: () => [...mockTestKeys.mockTestQuestions.all(), 'detail'] as const,
+
+    /** Key for a single question assignment by test ID and question ID. */
+    detail: (testId: string, questionId: string) =>
+      [...mockTestKeys.mockTestQuestions.details(), testId, questionId] as const,
+  },
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  Publish
+  // ═════════════════════════════════════════════════════════════════════════
+
+  publish: {
+    /** Root key for all publish-related queries. */
+    all: () => [...mockTestKeys.all, 'publish'] as const,
+
+    /** Key for every publish validation query. */
+    validations: () => [...mockTestKeys.publish.all(), 'validation'] as const,
+
+    /** Key for a specific publish validation query (keyed by testId). */
+    validation: (testId?: string) => [...mockTestKeys.publish.validations(), testId] as const,
+
+    /** Key for every publish summary query. */
+    summaries: () => [...mockTestKeys.publish.all(), 'summary'] as const,
+
+    /** Key for a specific publish summary query (keyed by testId). */
+    summary: (testId?: string) => [...mockTestKeys.publish.summaries(), testId] as const,
   },
 };

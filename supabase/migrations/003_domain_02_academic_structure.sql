@@ -609,33 +609,7 @@ comment on column public.batch_teachers.assigned_on is
 comment on column public.batch_teachers.created_by is
   'Admin who made the teacher assignment.';
 
--- 4c. Constraint comments
-comment on constraint uq_streams_institute_code on public.streams is
-  'Stream code must be unique within an institute. Two institutes may share the same code.';
 
-comment on constraint ck_streams_code_format on public.streams is
-  'Code must be uppercase alphanumeric with hyphens and underscores. Enforced at application layer before insert.';
-
-comment on constraint uq_subjects_stream_code on public.subjects is
-  'Subject code must be unique within a stream. Two streams may share the same code.';
-
-comment on constraint uq_chapters_subject_name on public.chapters is
-  'Chapter name must be unique within a subject. Two subjects may share the same chapter name.';
-
-comment on constraint uq_topics_chapter_name on public.topics is
-  'Topic name must be unique within a chapter.';
-
-comment on constraint uq_batches_institute_code on public.batches is
-  'Batch code must be unique within an institute.';
-
-comment on constraint ck_batches_academic_year_format on public.batches is
-  'Academic year must follow YYYY-YY format (e.g. 2025-26).';
-
-comment on constraint fk_batches_created_by on public.batches is
-  'SET NULL on profile delete ensures the batch record is not orphaned.';
-
-comment on constraint fk_batches_updated_by on public.batches is
-  'SET NULL on profile delete ensures the batch record is not orphaned.';
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- END OF MIGRATION — Domain 02 Academic Structure & Batch Management

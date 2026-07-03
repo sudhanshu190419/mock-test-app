@@ -38,19 +38,24 @@
  * @module AuthNavigator
  */
 
-import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import React, { useCallback } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useAppSelector } from '../store/hooks';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 import {
   selectIsInitialized,
   selectIsAuthenticated,
+  selectOnboardingCompleted,
+  setOnboardingCompleted,
 } from '../store/authSlice';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import OnboardingScreenOne from '../screens/onboarding/OnboardingScreenOne';
+import OnboardingScreenTwo from '../screens/onboarding/OnboardingScreenTwo';
+import OnboardingScreenThree from '../screens/onboarding/OnboardingScreenThree';
+import SplashScreen from '../screens/splash/SplashScreen';
 import AppNavigator from './AppNavigator';
 
 // ─── Auth Stack (unauthenticated) ───────────────────────────────────────────
@@ -72,13 +77,63 @@ function AuthStackScreens(): React.JSX.Element {
   );
 }
 
-// ─── Splash Screen ──────────────────────────────────────────────────────────
+// ─── Onboarding Stack (multi-step flow) ───────────────────────────────────
 
-function SplashScreen(): React.JSX.Element {
+/** Param list for the onboarding stack navigator. */
+type OnboardingStackParamList = {
+  OnboardingOne: undefined;
+  OnboardingTwo: undefined;
+  OnboardingThree: undefined;
+};
+
+const OnboardingStack = createNativeStackNavigator<OnboardingStackParamList>();
+
+/**
+ * Onboarding flow with native slide transitions.
+ *
+ * - "Next" navigates forward (slide from right)
+ * - "Skip" / "Skip for now" dispatches `setOnboardingCompleted(true)`
+ *   which unmounts the entire onboarding stack and shows auth/app.
+ */
+function OnboardingGate(): React.JSX.Element {
+  const dispatch = useAppDispatch();
+
+  const handleComplete = useCallback(() => {
+    dispatch(setOnboardingCompleted(true));
+  }, [dispatch]);
+
   return (
-    <View style={styles.splash}>
-      <ActivityIndicator size="large" color="#6C63FF" />
-    </View>
+    <OnboardingStack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: 'slide_from_right',
+      }}
+    >
+      <OnboardingStack.Screen name="OnboardingOne">
+        {({ navigation }) => (
+          <OnboardingScreenOne
+            onComplete={handleComplete}
+            onNext={() => navigation.navigate('OnboardingTwo')}
+          />
+        )}
+      </OnboardingStack.Screen>
+      <OnboardingStack.Screen name="OnboardingTwo">
+        {({ navigation }) => (
+          <OnboardingScreenTwo
+            onComplete={handleComplete}
+            onNext={() => navigation.navigate('OnboardingThree')}
+          />
+        )}
+      </OnboardingStack.Screen>
+      <OnboardingStack.Screen name="OnboardingThree">
+        {() => (
+          <OnboardingScreenThree
+            onComplete={handleComplete}
+            onNext={handleComplete}
+          />
+        )}
+      </OnboardingStack.Screen>
+    </OnboardingStack.Navigator>
   );
 }
 
@@ -87,21 +142,19 @@ function SplashScreen(): React.JSX.Element {
 export default function AuthNavigator(): React.JSX.Element {
   const initialized = useAppSelector(selectIsInitialized);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const onboardingCompleted = useAppSelector(selectOnboardingCompleted);
 
   return (
     <NavigationContainer>
-      {!initialized ? <SplashScreen /> : !isAuthenticated ? <AuthStackScreens /> : <AppNavigator />}
+      {!initialized ? (
+        <SplashScreen />
+      ) : !onboardingCompleted ? (
+        <OnboardingGate />
+      ) : !isAuthenticated ? (
+        <AuthStackScreens />
+      ) : (
+        <AppNavigator />
+      )}
     </NavigationContainer>
   );
 }
-
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  splash: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-});

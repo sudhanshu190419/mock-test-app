@@ -27,6 +27,9 @@ import {
   QuestionOptionTestScreen,
   QuestionExplanationTestScreen,
   QuestionImageTestScreen,
+  MockTestTestScreen,
+  MockTestQuestionTestScreen,
+  MockTestPublishTestScreen,
 } from '../screens/dev';
 
 export type DevStackParamList = {
@@ -43,6 +46,9 @@ export type DevStackParamList = {
   QuestionOptionTest: undefined;
   QuestionExplanationTest: undefined;
   QuestionImageTest: undefined;
+  MockTestTest: undefined;
+  MockTestQuestionTest: undefined;
+  MockTestPublishTest: undefined;
 };
 
 const Stack = createNativeStackNavigator<DevStackParamList>();
@@ -70,6 +76,9 @@ const TEST_ITEMS: TestItem[] = [
   { title: 'Options Test', subtitle: 'CRUD, replace & reorder for question options', screen: 'QuestionOptionTest', color: '#FF6B35', emoji: '🔘' },
   { title: 'Explanation Test', subtitle: 'CRUD & upsert for question explanations', screen: 'QuestionExplanationTest', color: '#00BCD4', emoji: '💡' },
   { title: 'Image Test', subtitle: 'Upload, replace & reorder for question images', screen: 'QuestionImageTest', color: '#9C27B0', emoji: '🖼️' },
+  { title: 'Mock Test', subtitle: 'CRUD, lifecycle, filters & sort for mock tests', screen: 'MockTestTest', color: '#4A148C', emoji: '📝' },
+  { title: 'Mock Test Questions', subtitle: 'Assign, update, remove, reorder questions in tests', screen: 'MockTestQuestionTest', color: '#00695C', emoji: '🔗' },
+  { title: 'Mock Test Publish', subtitle: 'Validate, publish workflow & unpublish', screen: 'MockTestPublishTest', color: '#E65100', emoji: '🚀' },
 ];
 
 // ─── Dev Home Screen ────────────────────────────────────────────────────────
@@ -216,6 +225,21 @@ export default function DevNavigator(): React.JSX.Element {
         name="QuestionImageTest"
         component={QuestionImageTestScreen}
         options={{ headerTitle: '🖼️ Image Test', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="MockTestTest"
+        component={MockTestTestScreen}
+        options={{ headerTitle: '📝 Mock Test', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="MockTestQuestionTest"
+        component={MockTestQuestionTestScreen}
+        options={{ headerTitle: '🔗 Mock Test Questions', headerBackTitle: 'Dev Hub' }}
+      />
+      <Stack.Screen
+        name="MockTestPublishTest"
+        component={MockTestPublishTestScreen}
+        options={{ headerTitle: '🚀 Mock Test Publish', headerBackTitle: 'Dev Hub' }}
       />
     </Stack.Navigator>
   );

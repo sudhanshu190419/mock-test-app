@@ -502,11 +502,11 @@ create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = ''
+set search_path = public, auth
 as $$
 declare
   v_institute_id uuid;
-  v_role         user_role;
+  v_role         public.user_role;
 begin
   -- institute_id is mandatory — must be provided in sign-up metadata
   v_institute_id := (new.raw_user_meta_data ->> 'institute_id')::uuid;
@@ -516,8 +516,8 @@ begin
 
   -- Default role to student if not explicitly provided
   v_role := coalesce(
-    (new.raw_user_meta_data ->> 'role')::user_role,
-    'student'::user_role
+    (new.raw_user_meta_data ->> 'role')::public.user_role,
+'student'::public.user_role
   );
 
   insert into public.profiles (

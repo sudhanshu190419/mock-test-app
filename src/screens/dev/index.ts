@@ -13,3 +13,6 @@ export { default as QuestionTestScreen } from './QuestionTestScreen';
 export { default as QuestionOptionTestScreen } from './QuestionOptionTestScreen';
 export { default as QuestionExplanationTestScreen } from './QuestionExplanationTestScreen';
 export { default as QuestionImageTestScreen } from './QuestionImageTestScreen';
+export { default as MockTestTestScreen } from './MockTestTestScreen';
+export { default as MockTestQuestionTestScreen } from './MockTestQuestionTestScreen';
+export { default as MockTestPublishTestScreen } from './MockTestPublishTestScreen';

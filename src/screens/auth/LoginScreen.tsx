@@ -1,14 +1,17 @@
 /**
- * LoginScreen
+ * LoginScreen — Freebuff
  *
- * Authentication screen with real Supabase sign-in via the `useAuth` hook.
- * Also provides a **Demo Mode** entry point that bypasses real authentication
- * for testing backend services.
+ * Production-ready login screen with:
+ * - Branded header photo with a clean, perfectly symmetrical overlapping white form card
+ * - Two-tone scrim (brand tint + bottom-anchored shadow) for legible text
+ * - Floating circular logo badge (open book + graduation cap mark)
+ * - "Skip" affordance, safe-area aware
+ * - Real Supabase authentication via `useAuth` hook
  *
- * @module LoginScreen
+ * @module screens/auth/LoginScreen
  */
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,19 +23,23 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  ImageBackground,
 } from 'react-native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { getClasses } from '../../services/classService';
 import { useAuth } from '../../hooks/useAuth';
-import { useAppDispatch } from '../../store/hooks';
-import {
-  setSession,
-  setInitialized,
-  setLoading as setReduxLoading,
-} from '../../store/authSlice';
-import type { SessionData, UserProfile } from '../../types/auth';
+import { colors } from '../../theme/colors';
+import { typography } from '../../theme/typography';
+import { spacing } from '../../theme/spacing';
+import { shadows } from '../../theme/shadows';
+import LinearGradient from 'react-native-linear-gradient';
+
+// ═════════════════════════════════════════════════════════════════
+//  Types
+// ═════════════════════════════════════════════════════════════════
 
 type AuthStackParamList = {
   Login: undefined;
@@ -42,33 +49,65 @@ type AuthStackParamList = {
 
 type LoginNavProp = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
 
-const DEMO_USER: UserProfile = {
-  id: 'demo-user-000001',
-  email: 'demo@mocktestapp.com',
-  emailVerified: true,
-  name: 'Demo Tester',
-  role: 'admin',
-  instituteId: null,
-  phone: null,
-  avatarUrl: null,
-  createdAt: new Date().toISOString(),
-};
+// ═════════════════════════════════════════════════════════════════
+//  Constants
+// ═════════════════════════════════════════════════════════════════
 
-const DEMO_SESSION: SessionData = {
-  isAuthenticated: true,
-  accessToken: 'demo_access_token',
-  refreshToken: 'demo_refresh_token',
-  user: DEMO_USER,
-};
+const HEADER_HEIGHT = 340;
+const BADGE_SIZE = 112;
+const HEADER_IMAGE = require('../../../assets/images/onboarding/welcome.png');
+
+const LOGO_GREEN = '#1F9D55';
+const LOGO_GREEN_DARK = '#15803D';
+const LOGO_NAVY = '#1E3A5F';
+const LOGO_GOLD = '#F5B942';
+
+// ═════════════════════════════════════════════════════════════════
+//  Small presentational pieces
+// ═════════════════════════════════════════════════════════════════
+
+function LogoMark({ size = 44 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+      <Path
+        d="M6 14C6 12.8954 6.89543 12 8 12H23V38H8C6.89543 38 6 37.1046 6 36V14Z"
+        fill={LOGO_GREEN}
+      />
+      <Path
+        d="M42 14C42 12.8954 41.1046 12 40 12H25V38H40C41.1046 38 42 37.1046 42 36V14Z"
+        fill={LOGO_GREEN_DARK}
+      />
+      <Path d="M24 12L24 38" stroke="#FFFFFF" strokeWidth={1.5} />
+      <Path d="M24 3L45 11L24 19L3 11L24 3Z" fill={LOGO_NAVY} />
+      <Path
+        d="M13 13.5V20C13 20 18 23.5 24 23.5C30 23.5 35 20 35 20V13.5"
+        stroke={LOGO_NAVY}
+        strokeWidth={2}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M39 2L40.2 5.8L44 7L40.2 8.2L39 12L37.8 8.2L34 7L37.8 5.8L39 2Z"
+        fill={LOGO_GOLD}
+      />
+    </Svg>
+  );
+}
+
+
+
+// ═════════════════════════════════════════════════════════════════
+//  Screen
+// ═════════════════════════════════════════════════════════════════
 
 export default function LoginScreen(): React.JSX.Element {
   const navigation = useNavigation<LoginNavProp>();
-  const dispatch = useAppDispatch();
+  const insets = useSafeAreaInsets();
+  const { login, loading, error } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
-  const { login, loading, error } = useAuth();
 
   const handleSignIn = async () => {
     if (!email.trim()) {
@@ -87,300 +126,371 @@ export default function LoginScreen(): React.JSX.Element {
     }
   };
 
-  const handleTestSupabase = async () => {
-    try {
-      const classes = await getClasses();
-      Alert.alert('Supabase Response', JSON.stringify(classes, null, 2));
-      console.log('Supabase classes:', classes);
-    } catch (err: any) {
-      Alert.alert('Supabase Error', err?.message ?? 'Unknown error');
-    }
-  };
-
-  const handleDemoMode = () => {
-    dispatch(setReduxLoading(true));
-    setTimeout(() => {
-      dispatch(setSession(DEMO_SESSION));
-      dispatch(setInitialized(true));
-      dispatch(setReduxLoading(false));
-    }, 400);
-  };
+  const handleSkip = useCallback(() => {
+    console.warn('[LoginScreen] Skip pressed — no destination wired up yet.');
+  }, []);
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled">
+        keyboardShouldPersistTaps="handled"
+        bounces={false}
+      >
+        {/* HEADER SECTION */}
+        <View style={styles.headerSection}>
+          <ImageBackground
+            source={HEADER_IMAGE}
+            style={styles.headerBg}
+            resizeMode="cover"
+          >
+           <LinearGradient
+  colors={[
+  'rgba(45,130,70,0.85)',
+  'rgba(30,90,45,0.48)',
+  'rgba(8,20,12,0.82)',
+]}
+  locations={[0, 0.45, 1]}
+  start={{ x: 0.5, y: 0 }}
+  end={{ x: 0.5, y: 1 }}
+  style={StyleSheet.absoluteFill}
+/>
 
-        <View style={styles.titleSection}>
-          <Text style={styles.appName}>MockTestApp</Text>
-          <Text style={styles.subtitle}>Test Login & Sign Up</Text>
+            
+
+            <TouchableOpacity
+              style={[styles.skipButton, { top: insets.top + spacing[8] }]}
+              onPress={handleSkip}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.skipText}>Skip</Text>
+            </TouchableOpacity>
+
+            <View style={styles.headerContent}>
+              <View style={styles.logoBadge}>
+                <LogoMark size={44} />
+                <Text style={styles.logoText}>
+                  <Text style={styles.logoTextDark}>Free</Text>
+                  <Text style={styles.logoTextAccent}>buff</Text>
+                </Text>
+              </View>
+
+              <Text style={styles.welcomeText}>Welcome Back!</Text>
+              <Text style={styles.subtitle}>
+                Login to continue your learning journey
+              </Text>
+            </View>
+          </ImageBackground>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Sign In</Text>
-
+        {/* WHITE FORM SECTION */}
+        <View style={styles.formSection}>
           {error ? (
             <View style={styles.errorBanner}>
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
 
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!loading}
-          />
+          <Text style={styles.inputLabel}>Email</Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email"
+              placeholderTextColor={colors.text.secondary}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!loading}
+            />
+          </View>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-            editable={!loading}
-          />
+          <Text style={[styles.inputLabel, { marginTop: spacing[16] }]}>
+            Password
+          </Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your password"
+              placeholderTextColor={colors.text.secondary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              editable={!loading}
+            />
+          </View>
 
           <TouchableOpacity
-            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+            style={[
+              styles.signInButton,
+              shadows.small,
+              loading && styles.buttonDisabled,
+            ]}
             onPress={handleSignIn}
             disabled={loading}
-            activeOpacity={0.7}>
+            activeOpacity={0.8}
+          >
             {loading ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.text.inverse} />
             ) : (
-              <Text style={styles.primaryButtonText}>Sign In</Text>
+              <Text style={styles.signInButtonText}>Sign In</Text>
             )}
           </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
           <TouchableOpacity
             style={styles.linkButton}
             onPress={() => navigation.navigate('Register')}
-            disabled={loading}>
+            disabled={loading}
+            activeOpacity={0.7}
+          >
             <Text style={styles.linkText}>
               {"Don't have an account? "}
-              <Text style={styles.linkHighlight}>Sign Up</Text>
+              <Text style={styles.linkHighlight}>Create Account</Text>
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.linkButton}
             onPress={() => navigation.navigate('ForgotPassword')}
-            disabled={loading}>
-            <Text style={[styles.linkText, styles.forgotLink]}>
-              Forgot Password?
-            </Text>
+            disabled={loading}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.forgotLink}>Forgot Password?</Text>
           </TouchableOpacity>
-        </View>
 
-        <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={styles.quickButton}
-            onPress={handleTestSupabase}
-            activeOpacity={0.7}>
-            <Text style={styles.quickButtonText}>
-              {'🔌'} Test Supabase Connection
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>OR</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        <TouchableOpacity
-          style={styles.demoButton}
-          onPress={handleDemoMode}
-          activeOpacity={0.7}>
-          <Text style={styles.demoButtonIcon}>{'🚀'}</Text>
-          <View style={styles.demoButtonContent}>
-            <Text style={styles.demoButtonTitle}>Demo Mode (Skip Login)</Text>
-            <Text style={styles.demoButtonDesc}>
-              Instantly access the test dashboard with a mock admin account
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              {'\uD83D\uDD12'} Your data is encrypted and secure.
             </Text>
           </View>
-          <Text style={styles.demoButtonArrow}>{'→'}</Text>
-        </TouchableOpacity>
-
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
+// ═════════════════════════════════════════════════════════════════
+//  Styles
+// ═════════════════════════════════════════════════════════════════
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
+  },
+  headerSection: {
+    height: HEADER_HEIGHT,
+    overflow: 'hidden',
+    zIndex: 1,
+  },
+  headerBg: {
+    flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-  },
-  titleSection: {
     alignItems: 'center',
-    marginBottom: 32,
   },
-  appName: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1A1A2E',
-    marginBottom: 4,
+  headerTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.primary,
+    opacity: 0.22,
+  },
+  headerScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '55%',
+    backgroundColor: '#02140C',
+    opacity: 0.38,
+  },
+  headerContent: {
+    alignItems: 'center',
+    paddingHorizontal: spacing[24],
+    zIndex: 2,
+  },
+  dotCluster: {
+    position: 'absolute',
+    left: spacing[16],
+    top: '52%',
+    zIndex: 2,
+  },
+  dotRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: colors.surface,
+    marginRight: 10,
+  },
+  skipButton: {
+    position: 'absolute',
+    right: spacing[20],
+    zIndex: 3,
+    paddingHorizontal: spacing[8],
+    paddingVertical: spacing[4],
+  },
+  skipText: {
+    ...typography.body,
+    color: colors.text.inverse,
+    fontWeight: '600',
+  },
+  logoBadge: {
+    width: BADGE_SIZE,
+    height: BADGE_SIZE,
+    borderRadius: BADGE_SIZE / 2,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[16],
+    ...shadows.small,
+  },
+  logoText: {
+    ...typography.title,
+    fontSize: 17,
+    marginTop: spacing[8],
+    letterSpacing: -0.3,
+  },
+  logoTextDark: {
+    color: LOGO_NAVY,
+  },
+  logoTextAccent: {
+    color: LOGO_GREEN,
+  },
+  welcomeText: {
+    ...typography.heading2,
+    color: colors.text.inverse,
+    textAlign: 'center',
+    marginBottom: spacing[4],
   },
   subtitle: {
-    fontSize: 16,
-    color: '#888',
-    fontWeight: '500',
+    ...typography.body,
+    color: colors.surface,
+    opacity: 0.9,
+    textAlign: 'center',
+    maxWidth: 250,
   },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+  
+  // ── Form Section (Perfectly Symmetrical Curve) ─────────────────
+  formSection: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing[24],
+    paddingTop: spacing[32],
+    paddingBottom: spacing[32],
+    
+    // Perfectly matched radii and margin
+    borderTopLeftRadius: 48,
+    borderTopRightRadius: 48,
+    marginTop: -48,
+    
+    zIndex: 2,
   },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1A1A2E',
-    marginBottom: 16,
+  // ───────────────────────────────────────────────────────────────
+
+  errorBanner: {
+    backgroundColor: colors.tint.red,
+    borderRadius: 8,
+    padding: spacing[12],
+    marginBottom: spacing[16],
+    borderLeftWidth: 4,
+    borderLeftColor: colors.error,
+  },
+  errorText: {
+    ...typography.bodySmall,
+    color: colors.error,
+  },
+  inputLabel: {
+    ...typography.label,
+    color: colors.text.primary,
+    marginBottom: spacing[8],
+  },
+  inputContainer: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    height: 52,
+    justifyContent: 'center',
+    paddingHorizontal: spacing[16],
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#000',
-    backgroundColor: '#FAFAFA',
-    marginBottom: 12,
+    ...typography.body,
+    color: colors.text.primary,
+    paddingVertical: 0,
+    flex: 1,
   },
-  primaryButton: {
-    backgroundColor: '#6C63FF',
-    paddingVertical: 16,
-    borderRadius: 10,
+  signInButton: {
+    backgroundColor: colors.secondary,
+    height: 52,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 52,
-    marginTop: 4,
+    marginTop: spacing[24],
   },
   buttonDisabled: {
     opacity: 0.6,
   },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  errorBanner: {
-    backgroundColor: '#FFEBEE',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#F44336',
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#D32F2F',
-  },
-  linkButton: {
-    alignItems: 'center',
-    paddingVertical: 10,
-    marginTop: 4,
-  },
-  linkText: {
-    fontSize: 14,
-    color: '#888',
-  },
-  linkHighlight: {
-    color: '#6C63FF',
-    fontWeight: '700',
-  },
-  forgotLink: {
-    color: '#888',
-  },
-  quickActions: {
-    marginTop: 16,
-  },
-  quickButton: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#DDD',
-  },
-  quickButtonText: {
-    color: '#6C63FF',
-    fontSize: 14,
-    fontWeight: '600',
+  signInButtonText: {
+    ...typography.button,
+    color: colors.text.inverse,
   },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    marginVertical: spacing[20],
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#DDD',
+    backgroundColor: colors.divider,
   },
   dividerText: {
-    marginHorizontal: 16,
-    fontSize: 14,
-    color: '#AAA',
+    ...typography.bodySmall,
+    color: colors.text.secondary,
+    marginHorizontal: spacing[16],
     fontWeight: '600',
   },
-  demoButton: {
-    flexDirection: 'row',
+  linkButton: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 18,
-    borderWidth: 2,
-    borderColor: '#6C63FF',
-    borderStyle: 'dashed',
+    paddingVertical: spacing[12],
   },
-  demoButtonIcon: {
-    fontSize: 28,
-    marginRight: 14,
+  linkText: {
+    ...typography.body,
+    color: colors.text.secondary,
   },
-  demoButtonContent: {
-    flex: 1,
-  },
-  demoButtonTitle: {
-    fontSize: 16,
+  linkHighlight: {
+    color: colors.secondary,
     fontWeight: '700',
-    color: '#1A1A2E',
-    marginBottom: 2,
   },
-  demoButtonDesc: {
-    fontSize: 12,
-    color: '#888',
-    lineHeight: 16,
+  forgotLink: {
+    ...typography.body,
+    color: colors.text.secondary,
   },
-  demoButtonArrow: {
-    fontSize: 20,
-    color: '#6C63FF',
-    fontWeight: '700',
-    marginLeft: 8,
+  footer: {
+    alignItems: 'center',
+    marginTop: spacing[32],
+    paddingBottom: spacing[8],
+  },
+  footerText: {
+    ...typography.bodySmall,
+    color: colors.text.secondary,
+    opacity: 0.8,
   },
 });
