@@ -80,8 +80,8 @@ export interface DbProfile {
  * Public-facing user profile consumed by screens, hooks, and stores.
  *
  * Derived from two sources:
- * 1. `auth.users` – for `id`, `email`, `createdAt`, `emailVerified`
- * 2. `public.profiles` – for `name`, `role`, `instituteId`, `phone`, `avatarUrl`
+ * 1. `auth.users` – for `id`, `phone`, `email`, `createdAt`, `emailVerified`
+ * 2. `public.profiles` – for `name`, `role`, `instituteId`, `avatarUrl`
  *
  * The DB profile is the authoritative source. Auth metadata is used only
  * as a fallback before the database trigger creates the profile row.
@@ -90,11 +90,14 @@ export interface UserProfile {
   /** Unique identifier (matches `auth.users.id` and `profiles.profile_id`). */
   id: string;
 
-  /** Verified email address from `auth.users.email`. */
+  /** Email address from `auth.users.email` (may be empty for phone-only users). */
   email: string;
 
   /** Whether the email has been confirmed (`auth.users.email_confirmed_at`). */
   emailVerified: boolean;
+
+  /** Whether the phone has been confirmed. */
+  phoneVerified: boolean;
 
   /** Display / full name from `profiles.name`. */
   name: string;
@@ -109,7 +112,7 @@ export interface UserProfile {
   /** Institute the user belongs to (`profiles.institute_id`). */
   instituteId: string | null;
 
-  /** Phone number from `profiles.phone`. */
+  /** Phone number from `auth.users.phone` or `profiles.phone`. */
   phone: string | null;
 
   /** Avatar URL from `profiles.avatar_url`. */
@@ -145,20 +148,40 @@ export interface SessionData {
 // ─── Input DTOs ─────────────────────────────────────────────────────────────
 
 /**
- * Input required to register a new account.
+ * Input required to register a new account with phone + password.
+ *
+ * Role is NOT sent from the frontend — the database trigger
+ * (handle_new_user()) defaults to 'student' when not provided
+ * in raw_user_meta_data.
  */
 export interface SignUpInput {
-  email: string;
+  phone: string;
   password: string;
   name: string;
 }
 
 /**
- * Input required to authenticate an existing account.
+ * Input required to authenticate an existing account with phone + password.
  */
 export interface SignInInput {
-  email: string;
+  phone: string;
   password: string;
+}
+
+/**
+ * Input required to verify an OTP sent via SMS.
+ */
+export interface VerifyOtpInput {
+  phone: string;
+  token: string;
+}
+
+/**
+ * Input required to reset a password after OTP verification.
+ */
+export interface ResetPasswordInput {
+  newPassword: string;
+  confirmPassword: string;
 }
 
 // ─── Validation ─────────────────────────────────────────────────────────────

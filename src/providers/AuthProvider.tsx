@@ -80,7 +80,7 @@ import {
   setInitialized,
   logout,
 } from '../store/authSlice';
-import { getSession } from '../services/authService';
+import { getSession, consumeSuppressSessionSync } from '../services/authService';
 import type { AuthChangeEvent } from '@supabase/supabase-js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -129,6 +129,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         case 'SIGNED_IN':
         case 'TOKEN_REFRESHED':
         case 'USER_UPDATED': {
+          // Check if the forgot-password flow is in progress — skip the
+          // automatic session sync so the user stays on the OTP screen
+          // to set a new password.
+          if (consumeSuppressSessionSync()) {
+            break;
+          }
+
           // Kick off an async re-fetch of the session + profile.
           getSession()
             .then((result) => {

@@ -166,7 +166,7 @@ export const typography = {
   label: {
     fontFamily,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     lineHeight: 20,
     letterSpacing: 0.5,
   } satisfies TextStyle,

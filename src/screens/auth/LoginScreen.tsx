@@ -1,17 +1,14 @@
 /**
  * LoginScreen — Freebuff
  *
- * Production-ready login screen with:
- * - Branded header photo with a clean, perfectly symmetrical overlapping white form card
- * - Two-tone scrim (brand tint + bottom-anchored shadow) for legible text
- * - Floating circular logo badge (open book + graduation cap mark)
- * - "Skip" affordance, safe-area aware
- * - Real Supabase authentication via `useAuth` hook
+ * Production-ready login screen with phone + password authentication.
+ * Retains the branded header, animated form entrance, and keyboard-aware
+ * header collapse from the email-based version.
  *
  * @module screens/auth/LoginScreen
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,7 +20,9 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  ImageBackground,
+  Animated,
+  Keyboard,
+  Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -31,6 +30,10 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useAuth } from '../../hooks/useAuth';
+import PhoneNumberInput, {
+  toE164,
+  validatePhoneNumber,
+} from '../../components/PhoneNumberInput';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
@@ -45,6 +48,7 @@ type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
   ForgotPassword: undefined;
+  OtpVerification: { phone: string; mode: 'registration' | 'forgot_password' };
 };
 
 type LoginNavProp = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
@@ -54,6 +58,7 @@ type LoginNavProp = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
 // ═════════════════════════════════════════════════════════════════
 
 const HEADER_HEIGHT = 340;
+const COMPACT_HEADER_HEIGHT = 120;
 const BADGE_SIZE = 112;
 const HEADER_IMAGE = require('../../../assets/images/onboarding/welcome.png');
 
@@ -106,29 +111,172 @@ export default function LoginScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { login, loading, error } = useAuth();
 
-  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
 
+  // ── Animated values for keyboard-aware header collapse ──────
+  const headerHeight = useRef(new Animated.Value(HEADER_HEIGHT * 1.35)).current;
+  const bgOpacity = useRef(new Animated.Value(1)).current;
+  const logoOpacity = useRef(new Animated.Value(1)).current;
+
+  // ── Entrance morph animation (triggered on mount) ━━━━━━━━━━━
+  const formSlideUp = useRef(new Animated.Value(1)).current;
+  const fieldPhoneOpacity = useRef(new Animated.Value(0)).current;
+  const fieldPasswordOpacity = useRef(new Animated.Value(0)).current;
+  const buttonOpacity = useRef(new Animated.Value(0)).current;
+  const footerOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Step 0: Header shrinks smoothly to its final height
+    Animated.timing(headerHeight, {
+      toValue: HEADER_HEIGHT,
+      duration: 400,
+      easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+      useNativeDriver: false,
+    }).start();
+
+    // Steps 1–2: Form slides up, then fields stagger in
+    Animated.sequence([
+      // Step 1: Form card slides up from below
+      Animated.timing(formSlideUp, {
+        toValue: 0,
+        duration: 500,
+        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+        useNativeDriver: true,
+      }),
+      // Step 2: Fields fade in one by one with stagger
+      Animated.parallel([
+        Animated.timing(fieldPhoneOpacity, {
+          toValue: 1,
+          duration: 350,
+          easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.delay(120),
+          Animated.timing(fieldPasswordOpacity, {
+            toValue: 1,
+            duration: 350,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.delay(240),
+          Animated.timing(buttonOpacity, {
+            toValue: 1,
+            duration: 350,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.delay(360),
+          Animated.timing(footerOpacity, {
+            toValue: 1,
+            duration: 350,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            useNativeDriver: true,
+          }),
+        ]),
+      ]),
+    ]).start();
+  }, [headerHeight, formSlideUp, fieldPhoneOpacity, fieldPasswordOpacity, buttonOpacity, footerOpacity]);
+
   const handleSignIn = async () => {
-    if (!email.trim()) {
-      Alert.alert('Validation', 'Please enter your email address.');
+    // ── Validate phone ────────────────────────────────────────────────
+    if (!phone) {
+      Alert.alert('Validation', 'Please enter your mobile number.');
       return;
     }
+
+    const phoneError = validatePhoneNumber(phone);
+    if (phoneError) {
+      Alert.alert('Validation', phoneError);
+      return;
+    }
+
     if (!password.trim()) {
       Alert.alert('Validation', 'Please enter your password.');
       return;
     }
 
-    const result = await login(email.trim(), password);
+    // ── Convert to E.164 and call Supabase signIn ─────────────────────
+    const e164Phone = toE164(phone);
+    const result = await login(e164Phone, password);
 
     if (!result.success) {
       Alert.alert('Sign In Failed', result.error);
     }
   };
 
-  const handleSkip = useCallback(() => {
-    console.warn('[LoginScreen] Skip pressed — no destination wired up yet.');
-  }, []);
+  
+
+  // ── Keyboard-aware header collapse ─────────────────────────
+  useEffect(() => {
+    const subscribeToShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        Animated.parallel([
+          Animated.timing(headerHeight, {
+            toValue: COMPACT_HEADER_HEIGHT,
+            duration: 280,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            useNativeDriver: false,
+          }),
+          Animated.timing(bgOpacity, {
+            toValue: 0,
+            duration: 260,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            useNativeDriver: true,
+          }),
+          Animated.timing(logoOpacity, {
+            toValue: 0,
+            duration: 200,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            useNativeDriver: true,
+          }),
+        ]).start();
+      },
+    );
+
+    const subscribeToHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        Animated.parallel([
+          Animated.timing(headerHeight, {
+            toValue: HEADER_HEIGHT,
+            duration: 280,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            useNativeDriver: false,
+          }),
+          Animated.timing(bgOpacity, {
+            toValue: 1,
+            duration: 260,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            useNativeDriver: true,
+          }),
+          Animated.timing(logoOpacity, {
+            toValue: 1,
+            duration: 260,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            useNativeDriver: true,
+          }),
+        ]).start();
+      },
+    );
+
+    return () => {
+      subscribeToShow.remove();
+      subscribeToHide.remove();
+    };
+  }, [headerHeight, bgOpacity, logoOpacity]);
+
+  // ── Entrance animation interpolations ────────────────────────
+  const formTranslateY = formSlideUp.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 500],
+  });
 
   return (
     <KeyboardAvoidingView
@@ -141,141 +289,124 @@ export default function LoginScreen(): React.JSX.Element {
         bounces={false}
       >
         {/* HEADER SECTION */}
-        <View style={styles.headerSection}>
-          <ImageBackground
+        <Animated.View style={[styles.headerSection, { height: headerHeight }]}>
+          <Animated.Image
             source={HEADER_IMAGE}
-            style={styles.headerBg}
+            style={[styles.headerBg, { opacity: bgOpacity }]}
             resizeMode="cover"
-          >
-           <LinearGradient
-  colors={[
-  'rgba(45,130,70,0.85)',
-  'rgba(30,90,45,0.48)',
-  'rgba(8,20,12,0.82)',
-]}
-  locations={[0, 0.45, 1]}
-  start={{ x: 0.5, y: 0 }}
-  end={{ x: 0.5, y: 1 }}
-  style={StyleSheet.absoluteFill}
-/>
+          />
 
-            
-
-            <TouchableOpacity
-              style={[styles.skipButton, { top: insets.top + spacing[8] }]}
-              onPress={handleSkip}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.skipText}>Skip</Text>
-            </TouchableOpacity>
-
-            <View style={styles.headerContent}>
-              <View style={styles.logoBadge}>
-                <LogoMark size={44} />
-                <Text style={styles.logoText}>
-                  <Text style={styles.logoTextDark}>Free</Text>
-                  <Text style={styles.logoTextAccent}>buff</Text>
-                </Text>
-              </View>
-
-              <Text style={styles.welcomeText}>Welcome Back!</Text>
-              <Text style={styles.subtitle}>
-                Login to continue your learning journey
+          <View style={styles.headerContent}>
+            <Animated.View style={[styles.logoBadge, { opacity: logoOpacity }]}>
+              <LogoMark size={44} />
+              <Text style={styles.logoText}>
+                <Text style={styles.logoTextDark}>Free</Text>
+                <Text style={styles.logoTextAccent}>buff</Text>
               </Text>
-            </View>
-          </ImageBackground>
-        </View>
+            </Animated.View>
 
-        {/* WHITE FORM SECTION */}
-        <View style={styles.formSection}>
+            <Text style={styles.welcomeText}>Welcome Back!</Text>
+            <Text style={styles.subtitle}>
+              Login to continue your learning journey
+            </Text>
+          </View>
+        </Animated.View>
+
+        {/* WHITE FORM SECTION (slides up on mount) */}
+        <Animated.View
+          style={[
+            styles.formSection,
+            {
+              transform: [{ translateY: formTranslateY }],
+            },
+          ]}
+        >
           {error ? (
             <View style={styles.errorBanner}>
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
 
-          <Text style={styles.inputLabel}>Email</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email"
-              placeholderTextColor={colors.text.secondary}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!loading}
+          <Animated.View style={{ opacity: fieldPhoneOpacity }}>
+            <PhoneNumberInput
+              value={phone}
+              onChange={setPhone}
+              disabled={loading}
             />
-          </View>
+          </Animated.View>
 
-          <Text style={[styles.inputLabel, { marginTop: spacing[16] }]}>
-            Password
-          </Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your password"
-              placeholderTextColor={colors.text.secondary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              editable={!loading}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[
-              styles.signInButton,
-              shadows.small,
-              loading && styles.buttonDisabled,
-            ]}
-            onPress={handleSignIn}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.text.inverse} />
-            ) : (
-              <Text style={styles.signInButtonText}>Sign In</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity
-            style={styles.linkButton}
-            onPress={() => navigation.navigate('Register')}
-            disabled={loading}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.linkText}>
-              {"Don't have an account? "}
-              <Text style={styles.linkHighlight}>Create Account</Text>
+          <Animated.View style={{ opacity: fieldPasswordOpacity }}>
+            <Text style={[styles.inputLabel, { marginTop: spacing[16] }]}>
+              Password
             </Text>
-          </TouchableOpacity>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your password"
+                placeholderTextColor={colors.text.secondary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                editable={!loading}
+              />
+            </View>
+          </Animated.View>
 
-          <TouchableOpacity
-            style={styles.linkButton}
-            onPress={() => navigation.navigate('ForgotPassword')}
-            disabled={loading}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.forgotLink}>Forgot Password?</Text>
-          </TouchableOpacity>
+          <Animated.View style={{ opacity: buttonOpacity }}>
+            <TouchableOpacity
+              style={[
+                styles.signInButton,
+                shadows.small,
+                loading && styles.buttonDisabled,
+              ]}
+              onPress={handleSignIn}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <ActivityIndicator color={colors.text.inverse} />
+              ) : (
+                <Text style={styles.signInButtonText}>Sign In</Text>
+              )}
+            </TouchableOpacity>
 
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              {'\uD83D\uDD12'} Your data is encrypted and secure.
-            </Text>
-          </View>
-        </View>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.linkButton}
+              onPress={() => navigation.navigate('Register')}
+              disabled={loading}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.linkText}>
+                {"Don't have an account? "}
+                <Text style={styles.linkHighlight}>Create Account</Text>
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.linkButton}
+              onPress={() => navigation.navigate('ForgotPassword')}
+              disabled={loading}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.forgotLink}>Forgot Password?</Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <Animated.View style={{ opacity: footerOpacity }}>
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>
+                {'\uD83D\uDD12'} Your data is encrypted and secure.
+              </Text>
+            </View>
+          </Animated.View>
+        </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -297,25 +428,18 @@ const styles = StyleSheet.create({
     height: HEADER_HEIGHT,
     overflow: 'hidden',
     zIndex: 1,
-  },
-  headerBg: {
-    flex: 1,
+    position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.primary,
-    opacity: 0.22,
-  },
-  headerScrim: {
+  headerBg: {
     position: 'absolute',
+    top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    height: '55%',
-    backgroundColor: '#02140C',
-    opacity: 0.38,
+    width: '100%',
+    height: '100%',
   },
   headerContent: {
     alignItems: 'center',
@@ -339,18 +463,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     marginRight: 10,
   },
-  skipButton: {
-    position: 'absolute',
-    right: spacing[20],
-    zIndex: 3,
-    paddingHorizontal: spacing[8],
-    paddingVertical: spacing[4],
-  },
-  skipText: {
-    ...typography.body,
-    color: colors.text.inverse,
-    fontWeight: '600',
-  },
+  
   logoBadge: {
     width: BADGE_SIZE,
     height: BADGE_SIZE,

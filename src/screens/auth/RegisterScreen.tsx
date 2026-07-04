@@ -1,11 +1,12 @@
 /**
  * RegisterScreen
  *
- * Sign-up screen with real Supabase registration via the `useAuth` hook.
+ * Phone-based registration screen. Collects Full Name, Mobile Number,
+ * Password, and Confirm Password. On success, navigates to the
+ * OTP Verification screen to verify the phone number.
  *
- * On success, displays a confirmation message if email verification is
- * enabled, or automatically navigates to the app if the session is
- * established immediately.
+ * Role is NOT collected during signup — the database trigger
+ * (handle_new_user()) defaults to 'student' when not provided.
  *
  * @module RegisterScreen
  */
@@ -25,84 +26,113 @@ import {
 } from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../hooks/useAuth';
+import PhoneNumberInput, {
+  toE164,
+  validatePhoneNumber,
+} from '../../components/PhoneNumberInput';
+import { colors } from '../../theme/colors';
+import { typography } from '../../theme/typography';
+import { spacing } from '../../theme/spacing';
+import { shadows } from '../../theme/shadows';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
   ForgotPassword: undefined;
+  OtpVerification: { phone: string; mode: 'registration' | 'forgot_password' };
 };
 
 type RegisterNavProp = NativeStackNavigationProp<AuthStackParamList, 'Register'>;
 
+// ─── Screen ─────────────────────────────────────────────────────────────────
+
 export default function RegisterScreen(): React.JSX.Element {
   const navigation = useNavigation<RegisterNavProp>();
+  const insets = useSafeAreaInsets();
 
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const { register, loading, error } = useAuth();
 
   const handleSignUp = async () => {
+    // ── Client-side validation ───────────────────────────────────────
     if (!name.trim()) {
       Alert.alert('Validation', 'Please enter your full name.');
       return;
     }
-    if (!email.trim()) {
-      Alert.alert('Validation', 'Please enter your email address.');
+
+    // ── Validate phone ────────────────────────────────────────────────
+    if (!phone) {
+      Alert.alert('Validation', 'Please enter your mobile number.');
       return;
     }
+
+    const phoneError = validatePhoneNumber(phone);
+    if (phoneError) {
+      Alert.alert('Validation', phoneError);
+      return;
+    }
+
     if (!password.trim()) {
       Alert.alert('Validation', 'Please enter a password.');
       return;
     }
+
     if (password.length < 6) {
       Alert.alert('Validation', 'Password must be at least 6 characters.');
       return;
     }
+
     if (password !== confirmPassword) {
       Alert.alert('Validation', 'Passwords do not match.');
       return;
     }
 
-    const result = await register(email.trim(), password, name.trim());
+    // ── Convert to E.164 and call Supabase signUp ─────────────────────
+    // Role is NOT sent from the frontend — the database trigger defaults to 'student'.
+    const e164Phone = toE164(phone);
+    const result = await register(e164Phone, password, name.trim());
 
-    if (result.success) {
-      Alert.alert(
-        'Account Created',
-        'Your account has been created successfully.\n\n' +
-          'If email confirmation is enabled, please check your inbox ' +
-          'before signing in.',
-        [
-          {
-            text: 'Go to Login',
-            onPress: () => navigation.navigate('Login'),
-          },
-        ],
-      );
+    if (result.success && result.phone) {
+      // Navigate to OTP verification
+      navigation.navigate('OtpVerification', {
+        phone: result.phone,
+        mode: 'registration',
+      });
     } else {
-      Alert.alert('Registration Failed', result.error);
+      Alert.alert('Registration Failed', ('error' in result ? result.error : undefined) ?? 'An error occurred.');
     }
   };
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled">
-
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + spacing[24] },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Title */}
         <View style={styles.titleSection}>
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>
-            Sign up to start testing the backend
+            Sign up to start your learning journey
           </Text>
         </View>
 
+        {/* Form Card */}
         <View style={styles.card}>
           {error ? (
             <View style={styles.errorBanner}>
@@ -110,167 +140,187 @@ export default function RegisterScreen(): React.JSX.Element {
             </View>
           ) : null}
 
-          <TextInput
-            style={styles.input}
-            placeholder="Full Name"
-            placeholderTextColor="#999"
-            value={name}
-            onChangeText={setName}
-            autoCapitalize="words"
-            autoCorrect={false}
-            editable={!loading}
+          {/* Full Name */}
+          <Text style={styles.inputLabel}>Full Name</Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your full name"
+              placeholderTextColor={colors.text.secondary}
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+              autoCorrect={false}
+              editable={!loading}
+            />
+          </View>
+
+          {/* Mobile Number */}
+          <PhoneNumberInput
+            value={phone}
+            onChange={setPhone}
+            disabled={loading}
           />
 
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!loading}
-          />
+          {/* Password */}
+          <Text style={[styles.inputLabel, { marginTop: spacing[16] }]}>
+            Password
+          </Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Min 6 characters"
+              placeholderTextColor={colors.text.secondary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              editable={!loading}
+            />
+          </View>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Password (min 6 characters)"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-            editable={!loading}
-          />
+          {/* Confirm Password */}
+          <Text style={[styles.inputLabel, { marginTop: spacing[16] }]}>
+            Confirm Password
+          </Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Re-enter your password"
+              placeholderTextColor={colors.text.secondary}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              editable={!loading}
+            />
+          </View>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm Password"
-            placeholderTextColor="#999"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            autoCapitalize="none"
-            editable={!loading}
-          />
-
+          {/* Submit Button */}
           <TouchableOpacity
-            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+            style={[
+              styles.signUpButton,
+              shadows.small,
+              loading && styles.buttonDisabled,
+            ]}
             onPress={handleSignUp}
             disabled={loading}
-            activeOpacity={0.7}>
+            activeOpacity={0.8}
+          >
             {loading ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.text.inverse} />
             ) : (
-              <Text style={styles.primaryButtonText}>Create Account</Text>
+              <Text style={styles.signUpButtonText}>Create Account</Text>
             )}
           </TouchableOpacity>
 
+          {/* Link to Login */}
           <TouchableOpacity
             style={styles.linkButton}
             onPress={() => navigation.navigate('Login')}
-            disabled={loading}>
+            disabled={loading}
+            activeOpacity={0.7}
+          >
             <Text style={styles.linkText}>
               Already have an account?{' '}
               <Text style={styles.linkHighlight}>Sign In</Text>
             </Text>
           </TouchableOpacity>
         </View>
-
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
+// ─── Styles ─────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 40,
+    paddingHorizontal: spacing[24],
+    paddingBottom: spacing[40],
   },
   titleSection: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: spacing[32],
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1A1A2E',
-    marginBottom: 4,
+    ...typography.heading2,
+    color: colors.text.primary,
+    marginBottom: spacing[8],
   },
   subtitle: {
-    fontSize: 15,
-    color: '#888',
-    fontWeight: '500',
+    ...typography.body,
+    color: colors.text.secondary,
     textAlign: 'center',
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing[24],
+    ...shadows.small,
+  },
+  errorBanner: {
+    backgroundColor: colors.tint.red,
+    borderRadius: 8,
+    padding: spacing[12],
+    marginBottom: spacing[16],
+    borderLeftWidth: 4,
+    borderLeftColor: colors.error,
+  },
+  errorText: {
+    ...typography.bodySmall,
+    color: colors.error,
+  },
+  inputLabel: {
+    ...typography.label,
+    color: colors.text.primary,
+    marginBottom: spacing[8],
+  },
+  inputContainer: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    height: 52,
+    justifyContent: 'center',
+    paddingHorizontal: spacing[16],
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#000',
-    backgroundColor: '#FAFAFA',
-    marginBottom: 12,
+    ...typography.body,
+    color: colors.text.primary,
+    paddingVertical: 0,
+    flex: 1,
   },
-  primaryButton: {
-    backgroundColor: '#6C63FF',
-    paddingVertical: 16,
-    borderRadius: 10,
+  signUpButton: {
+    backgroundColor: colors.secondary,
+    height: 52,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 52,
-    marginTop: 4,
+    marginTop: spacing[24],
   },
   buttonDisabled: {
     opacity: 0.6,
   },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  errorBanner: {
-    backgroundColor: '#FFEBEE',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#F44336',
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#D32F2F',
+  signUpButtonText: {
+    ...typography.button,
+    color: colors.text.inverse,
   },
   linkButton: {
     alignItems: 'center',
-    paddingVertical: 10,
-    marginTop: 4,
+    paddingVertical: spacing[16],
   },
   linkText: {
-    fontSize: 14,
-    color: '#888',
+    ...typography.body,
+    color: colors.text.secondary,
   },
   linkHighlight: {
-    color: '#6C63FF',
+    color: colors.secondary,
     fontWeight: '700',
   },
 });

@@ -40,28 +40,28 @@ import type {
   UserProfile,
   UserRole,
   ValidationResult,
+  VerifyOtpInput,
 } from '../types/auth';
 
 // ─── Input Validation Hooks ─────────────────────────────────────────────────
-// These are designed to be seamlessly replaced by Zod schemas.
-// Migration path:
-//   import { z } from 'zod';
-//   const signUpSchema = z.object({ ... });
-//   export function validateSignUpInput(input: SignUpInput): ValidationResult {
-//     const result = signUpSchema.safeParse(input);
-//     return result.success
-//       ? { valid: true }
-//       : { valid: false, error: result.error.issues[0]?.message ?? 'Invalid input' };
-//   }
 
 /**
- * Validates sign-up input fields.
+ * Validates sign-up input fields (phone-based registration).
  *
  * @todo Replace body with Zod schema parsing.
  */
 export function validateSignUpInput(input: SignUpInput): ValidationResult {
-  if (!input.email?.trim()) {
-    return { valid: false, error: 'Email is required.' };
+  if (!input.phone?.trim()) {
+    return { valid: false, error: 'Mobile number is required.' };
+  }
+
+  // Basic phone validation: must start with + and contain digits
+  const phoneRegex = /^\+[1-9]\d{6,14}$/;
+  if (!phoneRegex.test(input.phone.trim())) {
+    return {
+      valid: false,
+      error: 'Please enter a valid mobile number with country code (e.g. +919876543210).',
+    };
   }
 
   if (!input.password?.trim()) {
@@ -80,17 +80,36 @@ export function validateSignUpInput(input: SignUpInput): ValidationResult {
 }
 
 /**
- * Validates sign-in input fields.
+ * Validates sign-in input fields (phone-based login).
  *
  * @todo Replace body with Zod schema parsing.
  */
 export function validateSignInInput(input: SignInInput): ValidationResult {
-  if (!input.email?.trim()) {
-    return { valid: false, error: 'Email is required.' };
+  if (!input.phone?.trim()) {
+    return { valid: false, error: 'Mobile number is required.' };
   }
 
   if (!input.password?.trim()) {
     return { valid: false, error: 'Password is required.' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validates OTP verification input.
+ */
+export function validateOtpInput(input: VerifyOtpInput): ValidationResult {
+  if (!input.phone?.trim()) {
+    return { valid: false, error: 'Phone number is required.' };
+  }
+
+  if (!input.token?.trim()) {
+    return { valid: false, error: 'OTP is required.' };
+  }
+
+  if (input.token.length < 4 || input.token.length > 8) {
+    return { valid: false, error: 'Please enter a valid OTP.' };
   }
 
   return { valid: true };
@@ -138,13 +157,15 @@ async function fetchProfile(userId: string): Promise<DbProfile | null> {
  * database trigger (e.g. immediately after sign-up).
  *
  * The `role` defaults to `'student'`, `instituteId` to `null`, when no
- * profile row exists yet.
+ * profile row exists yet. For phone-based auth, `email` may be empty.
  */
 function buildUserProfile(
   authUser: {
     id: string;
     email?: string | null;
+    phone?: string | null;
     email_confirmed_at?: string | null;
+    phone_confirmed_at?: string | null;
     created_at?: string;
     user_metadata?: {
       full_name?: string;
@@ -156,13 +177,53 @@ function buildUserProfile(
     id: authUser.id,
     email: authUser.email ?? '',
     emailVerified: !!authUser.email_confirmed_at,
+    phoneVerified: !!authUser.phone_confirmed_at,
     name: profile?.name ?? authUser.user_metadata?.full_name ?? '',
     role: profile?.role ?? 'student',
     instituteId: profile?.institute_id ?? null,
-    phone: profile?.phone ?? null,
+    phone: profile?.phone ?? authUser.phone ?? null,
     avatarUrl: profile?.avatar_url ?? null,
     createdAt: authUser.created_at ?? new Date().toISOString(),
   };
+}
+
+// ─── Session Sync Suppression ───────────────────────────────────────────────
+//
+// Used by the forgot-password flow: when verifying an OTP, the Supabase
+// client fires onAuthStateChange('SIGNED_IN'), which AuthProvider catches
+// and automatically dispatches setSession to Redux.  This causes the
+// AuthNavigator to switch to the App stack before the user can set a new
+// password.
+//
+// The flag below is a one-shot latch: set it before calling verifyOtp() in
+// forgot-password mode, and AuthProvider will skip the session sync for the
+// very next authenticated event.
+
+let _suppressNextSync = false;
+
+/**
+ * Tell AuthProvider to skip the next automatic session sync.
+ *
+ * Call this immediately before `verifyOtp()` in the forgot-password flow.
+ * The suppression is consumed on the very next `SIGNED_IN` / `TOKEN_REFRESHED`
+ * / `USER_UPDATED` event, after which normal behaviour resumes.
+ */
+export function suppressNextSessionSync(): void {
+  _suppressNextSync = true;
+}
+
+/**
+ * Check and consume the suppression flag (one-shot).
+ *
+ * Called by AuthProvider — not exported for screen/hook use.
+ * Returns `true` if the caller should skip the sync.
+ */
+export function consumeSuppressSessionSync(): boolean {
+  if (_suppressNextSync) {
+    _suppressNextSync = false;
+    return true;
+  }
+  return false;
 }
 
 // ─── Error Helpers ──────────────────────────────────────────────────────────
@@ -179,8 +240,6 @@ function extractErrorMessage(error: unknown): string {
   }
 
   if (error instanceof PostgrestError) {
-    // Include the Postgres error code for debugging without leaking details
-    // to the UI.  The message alone is sufficient for most consumers.
     return error.message;
   }
 
@@ -194,26 +253,23 @@ function extractErrorMessage(error: unknown): string {
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 /**
- * Register a new user account.
+ * Register a new user account with phone number and password.
+ *
+ * Supabase sends an SMS OTP to the provided phone number. The user
+ * must verify the OTP via `verifyOtp()` to complete registration.
  *
  * Profile creation is handled entirely by the `on_auth_user_created` database
  * trigger. The frontend never inserts into `public.profiles`.
  *
- * On success, Supabase may send a confirmation email depending on the
- * project's `auth.confirmations.disable_signup_email` setting.
- *
  * @param input - The sign-up credentials and profile data.
  *
- * @returns `AuthResponse<UserProfile>` — the `data.emailVerified` field
- *          indicates whether the email still requires confirmation.
- *
- * @example
- * const result = await signUp({ email: 'a@b.com', password: '...', name: 'Alice' });
- * if (!result.success) {
- *   // display result.error to the user
- * }
+ * @returns `AuthResponse<{ phone: string; password: string }>` — the phone
+ *          and password are returned so the UI can pass them to the
+ *          OTP verification screen without needing to re-enter them.
  */
-export async function signUp(input: SignUpInput): Promise<AuthResponse<UserProfile>> {
+export async function signUp(
+  input: SignUpInput,
+): Promise<AuthResponse<{ phone: string; password: string }>> {
   try {
     // 1. Validate input ----------------------------------------------------
     const validation = validateSignUpInput(input);
@@ -221,13 +277,16 @@ export async function signUp(input: SignUpInput): Promise<AuthResponse<UserProfi
       return { success: false, error: validation.error };
     }
 
-    const { email, password, name } = input;
+    const { phone, password, name } = input;
 
     // 2. Create auth user --------------------------------------------------
     // The database trigger (on_auth_user_created → handle_new_user())
     // automatically creates the profile row after this succeeds.
+    // Role is NOT sent from the frontend — the trigger defaults to 'student'.
+
+    console.log('PHONE BEING SENT:', phone);
     const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
+      phone,
       password,
       options: {
         data: {
@@ -248,10 +307,53 @@ export async function signUp(input: SignUpInput): Promise<AuthResponse<UserProfi
       };
     }
 
-    // 3. Return result -----------------------------------------------------
-    // The profile will be created by the database trigger. No frontend
-    // insert into public.profiles is performed here.
-    const userProfile = buildUserProfile(authData.user, null);
+    // 3. Return the phone + password so the OTP screen can proceed ---------
+    return { success: true, data: { phone, password } };
+  } catch (err) {
+    return { success: false, error: extractErrorMessage(err) };
+  }
+}
+
+/**
+ * Verify an OTP sent via SMS during phone verification or forgot password flow.
+ *
+ * @param input - The phone number and OTP token.
+ */
+export async function verifyOtp(input: VerifyOtpInput): Promise<AuthResponse<UserProfile>> {
+  try {
+    const validation = validateOtpInput(input);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    const { phone, token } = input;
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone,
+      token,
+      type: 'sms',
+    });
+
+    if (error) {
+      return { success: false, error: extractErrorMessage(error) };
+    }
+
+    if (!data.user) {
+      return {
+        success: false,
+        error: 'Verification succeeded but no user data was returned.',
+      };
+    }
+
+    // Fetch profile to get the authoritative role
+    let profile: DbProfile | null = null;
+    try {
+      profile = await fetchProfile(data.user.id);
+    } catch {
+      // DB query failed — fall through with metadata-derived profile.
+    }
+
+    const userProfile = buildUserProfile(data.user, profile);
 
     return { success: true, data: userProfile };
   } catch (err) {
@@ -260,18 +362,43 @@ export async function signUp(input: SignUpInput): Promise<AuthResponse<UserProfi
 }
 
 /**
- * Authenticate an existing user with email and password.
+ * Resend the SMS OTP to the user's phone number.
+ *
+ * This calls `signInWithOtp` which triggers a new OTP to be sent.
+ * For the registration flow, we call `signUp` again to resend the OTP
+ * since the user already exists but is not yet confirmed.
+ *
+ * @param phone - The phone number to resend the OTP to.
+ */
+export async function resendOtp(phone: string): Promise<AuthResponse<null>> {
+  try {
+    // For resending during registration or forgot password, we use
+    // signInWithOtp which sends a fresh OTP to the phone.
+    const { error } = await supabase.auth.signInWithOtp({
+      phone,
+      options: {
+        // Don't create a new user if one doesn't exist (forgot password flow)
+        shouldCreateUser: false,
+      },
+    });
+
+    if (error) {
+      return { success: false, error: extractErrorMessage(error) };
+    }
+
+    return { success: true, data: null };
+  } catch (err) {
+    return { success: false, error: extractErrorMessage(err) };
+  }
+}
+
+/**
+ * Authenticate an existing user with phone number and password.
  *
  * After authentication, the service fetches the user's profile from the
  * `profiles` table to obtain the authoritative role.
  *
  * @param input - The sign-in credentials.
- *
- * @example
- * const result = await signIn({ email: 'a@b.com', password: '...' });
- * if (result.success) {
- *   // navigate to home screen
- * }
  */
 export async function signIn(input: SignInInput): Promise<AuthResponse<UserProfile>> {
   try {
@@ -281,12 +408,12 @@ export async function signIn(input: SignInInput): Promise<AuthResponse<UserProfi
       return { success: false, error: validation.error };
     }
 
-    const { email, password } = input;
+    const { phone, password } = input;
 
     // 2. Authenticate ------------------------------------------------------
     const { data: authData, error: authError } =
       await supabase.auth.signInWithPassword({
-        email,
+        phone,
         password,
       });
 
@@ -324,6 +451,34 @@ export async function signIn(input: SignInInput): Promise<AuthResponse<UserProfi
 export async function signOut(): Promise<AuthResponse<null>> {
   try {
     const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      return { success: false, error: extractErrorMessage(error) };
+    }
+
+    return { success: true, data: null };
+  } catch (err) {
+    return { success: false, error: extractErrorMessage(err) };
+  }
+}
+
+/**
+ * Update the current user's password.
+ *
+ * This requires an active session (obtained after OTP verification
+ * in the forgot password flow, or after normal login).
+ *
+ * @param newPassword - The new password to set.
+ */
+export async function updatePassword(newPassword: string): Promise<AuthResponse<null>> {
+  try {
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters.' };
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
 
     if (error) {
       return { success: false, error: extractErrorMessage(error) };

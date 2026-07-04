@@ -52,9 +52,8 @@ import {
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
-import OnboardingScreenOne from '../screens/onboarding/OnboardingScreenOne';
-import OnboardingScreenTwo from '../screens/onboarding/OnboardingScreenTwo';
-import OnboardingScreenThree from '../screens/onboarding/OnboardingScreenThree';
+import OtpVerificationScreen from '../screens/auth/OtpVerificationScreen';
+import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
 import SplashScreen from '../screens/splash/SplashScreen';
 import AppNavigator from './AppNavigator';
 
@@ -73,27 +72,22 @@ function AuthStackScreens(): React.JSX.Element {
         name="ForgotPassword"
         component={ForgotPasswordScreen}
       />
+      <AuthStack.Screen
+        name="OtpVerification"
+        component={OtpVerificationScreen}
+      />
     </AuthStack.Navigator>
   );
 }
 
-// ─── Onboarding Stack (multi-step flow) ───────────────────────────────────
-
-/** Param list for the onboarding stack navigator. */
-type OnboardingStackParamList = {
-  OnboardingOne: undefined;
-  OnboardingTwo: undefined;
-  OnboardingThree: undefined;
-};
-
-const OnboardingStack = createNativeStackNavigator<OnboardingStackParamList>();
+// ─── Onboarding (single animated screen) ───────────────────────────────────
 
 /**
- * Onboarding flow with native slide transitions.
+ * Single-screen onboarding flow with animated content transitions.
  *
- * - "Next" navigates forward (slide from right)
+ * - "Next" advances to the next step within the single component
  * - "Skip" / "Skip for now" dispatches `setOnboardingCompleted(true)`
- *   which unmounts the entire onboarding stack and shows auth/app.
+ *   which unmounts onboarding and shows auth/app.
  */
 function OnboardingGate(): React.JSX.Element {
   const dispatch = useAppDispatch();
@@ -102,39 +96,7 @@ function OnboardingGate(): React.JSX.Element {
     dispatch(setOnboardingCompleted(true));
   }, [dispatch]);
 
-  return (
-    <OnboardingStack.Navigator
-      screenOptions={{
-        headerShown: false,
-        animation: 'slide_from_right',
-      }}
-    >
-      <OnboardingStack.Screen name="OnboardingOne">
-        {({ navigation }) => (
-          <OnboardingScreenOne
-            onComplete={handleComplete}
-            onNext={() => navigation.navigate('OnboardingTwo')}
-          />
-        )}
-      </OnboardingStack.Screen>
-      <OnboardingStack.Screen name="OnboardingTwo">
-        {({ navigation }) => (
-          <OnboardingScreenTwo
-            onComplete={handleComplete}
-            onNext={() => navigation.navigate('OnboardingThree')}
-          />
-        )}
-      </OnboardingStack.Screen>
-      <OnboardingStack.Screen name="OnboardingThree">
-        {() => (
-          <OnboardingScreenThree
-            onComplete={handleComplete}
-            onNext={handleComplete}
-          />
-        )}
-      </OnboardingStack.Screen>
-    </OnboardingStack.Navigator>
-  );
+  return <OnboardingScreen onComplete={handleComplete} />;
 }
 
 // ─── Root Navigator ─────────────────────────────────────────────────────────
