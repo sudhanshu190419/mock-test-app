@@ -236,19 +236,19 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
 
               {/* Content row: text */}
               <View style={styles.contentRow}>
-                <View style={styles.textContent}>
+                <View style={styles.textColumn}>
                   {/* Category chip */}
                   <View style={styles.categoryChip}>
                     <Text style={styles.categoryText}>{category}</Text>
                   </View>
 
                   {/* Title */}
-                  <Text style={styles.title} numberOfLines={2}>
+                  <Text style={styles.title} numberOfLines={3}>
                     {title}
                   </Text>
 
                   {/* Description */}
-                  <Text style={styles.description} numberOfLines={2}>
+                  <Text style={styles.description} numberOfLines={3}>
                     {description}
                   </Text>
 
@@ -261,11 +261,11 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
               </View>
             </View>
 
-            {/* Bottom section: price + CTA buttons */}
-            <View>
-              {/* Subtle divider separating course details from pricing */}
-              <View style={styles.divider} />
+            {/* Divider */}
+            <View style={styles.divider} />
 
+            {/* Bottom section: price + CTA buttons (full width) */}
+            <View>
               {/* Price row */}
               <View style={styles.priceRow}>
                 <View style={styles.priceLeft}>
@@ -283,7 +283,7 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
                 </View>
               </View>
 
-              {/* CTA buttons */}
+              {/* CTA buttons (full card width) */}
               <View style={styles.ctaRow}>
                 <TouchableOpacity
                   style={styles.exploreButton}
@@ -399,11 +399,12 @@ const styles = StyleSheet.create({
   contentRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: spacing[16],
+    marginBottom: spacing[12],
   },
-  textContent: {
-    flex: 1,
+  textColumn: {
+    width: '65%',
   },
+
   categoryChip: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(255,255,255,0.12)',
@@ -425,13 +426,13 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     lineHeight: 24,
-    marginBottom: spacing[4],
+    marginBottom: spacing[8],
   },
   description: {
     ...typography.bodySmall,
     color: 'rgba(255,255,255,0.7)',
     lineHeight: 17,
-    marginBottom: spacing[4],
+    marginBottom: spacing[8],
   },
   instructor: {
     ...typography.caption,
