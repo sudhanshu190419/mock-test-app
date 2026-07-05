@@ -22,6 +22,8 @@ import Icon from './Icons';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
+import LinearGradient from 'react-native-linear-gradient';
+
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -76,7 +78,17 @@ const HeroBanner = React.memo(function HeroBanner({
       accessibilityRole="summary"
       accessibilityLabel="Hero banner: Ready to achieve your goals?"
     >
-      <View style={styles.card}>
+      <LinearGradient
+  colors={[
+  '#FFFFFF',
+  '#FFFFFF',
+  '#FBFAFF',
+  '#F3EEFF',
+]}
+start={{ x: 1, y: 0.5 }}
+end={{ x: 1, y: 0.5 }}
+  style={styles.card}
+>
         {/* Left content */}
         <View style={styles.content}>
           <Text style={styles.headline}>
@@ -92,10 +104,10 @@ const HeroBanner = React.memo(function HeroBanner({
             style={styles.ctaButton}
             onPress={onExplorePress}
             activeOpacity={0.85}
-            accessibilityLabel="Explore Mock Tests"
+            accessibilityLabel="Explore PYQ's"
             accessibilityRole="button"
           >
-            <Text style={styles.ctaText}>Explore Mock Tests</Text>
+            <Text style={styles.ctaText}>Explore PYQ's</Text>
             <Icon
               name="arrow-right"
               color={colors.text.inverse}
@@ -107,13 +119,14 @@ const HeroBanner = React.memo(function HeroBanner({
 
         {/* Right: illustration */}
         <View style={styles.imageWrapper}>
+          
           <Image
             source={HERO_IMAGE}
             style={styles.image}
             resizeMode="contain"
           />
         </View>
-      </View>
+      </LinearGradient>
     </Animated.View>
   );
 });
@@ -126,7 +139,7 @@ const styles = StyleSheet.create({
   shadowWrapper: {
     marginHorizontal: spacing[16],
     borderRadius: 20,
-    backgroundColor: HERO_BG,
+    
     shadowColor: '#4A3AFF',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -152,10 +165,10 @@ const styles = StyleSheet.create({
   },
   headline: {
     ...typography.title,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800' as const,
     color: colors.text.primary,
-    lineHeight: 26,
+    lineHeight: 24,
     marginBottom: spacing[8],
   },
   highlight: {
@@ -163,9 +176,9 @@ const styles = StyleSheet.create({
   },
   description: {
     ...typography.body,
-    fontSize: 13,
+    fontSize: 12,
     color: colors.text.secondary,
-    lineHeight: 18,
+    lineHeight: 16,
     marginBottom: spacing[16],
   },
   ctaButton: {
@@ -180,7 +193,7 @@ const styles = StyleSheet.create({
   },
   ctaText: {
     ...typography.buttonSmall,
-    fontSize: 13,
+    fontSize: 12,
     color: colors.text.inverse,
     fontWeight: '700' as const,
   },

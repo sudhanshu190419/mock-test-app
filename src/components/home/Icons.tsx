@@ -14,26 +14,45 @@ import Svg, { Path, Circle, Rect, G, type SvgProps } from 'react-native-svg';
 
 /** Icon names used across home screen components. */
 export type IconName =
+  | 'arrow-left'
   | 'arrow-right'
+  | 'architecture'
   | 'atom'
   | 'badge-check'
+  | 'balance'
   | 'bar-chart-2'
   | 'bell'
   | 'book'
   | 'bookmark'
   | 'book-open'
+  | 'calendar'
+  | 'chevron-right'
   | 'clipboard-list'
+  | 'description'
+  | 'download'
   | 'eye'
+  | 'filter'
   | 'graduation-cap'
   | 'headphones'
   | 'home'
+  | 'layers'
+  | 'log-out'
+  | 'menu'
+  | 'menu-book'
+  | 'monitor'
+  | 'more-vertical'
   | 'play-circle'
+  | 'school'
+  | 'science'
+  | 'search'
   | 'shield-check'
   | 'star'
   | 'stethoscope'
+  | 'timer'
   | 'trophy'
   | 'user'
-  | 'users';
+  | 'users'
+  | 'video';
 
 export interface IconProps extends Pick<SvgProps, 'color' | 'width' | 'height'> {
   /** The icon to render. */
@@ -50,6 +69,42 @@ export interface IconProps extends Pick<SvgProps, 'color' | 'width' | 'height'> 
 
 /** Centralised SVG path data for every supported icon. */
 const PATHS: Record<IconName, React.JSX.Element> = {
+  'arrow-left': (
+    <Path
+      d="M19 12H5m7-7-7 7 7 7"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2.5}
+    />
+  ),
+
+  menu: (
+    <Path
+      d="M4 6h16M4 12h16M4 18h16"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2.2}
+    />
+  ),
+
+  'more-vertical': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Circle cx={12} cy={5} r={1.5} />
+      <Circle cx={12} cy={12} r={1.5} />
+      <Circle cx={12} cy={19} r={1.5} />
+    </G>
+  ),
+
   'arrow-right': (
     <Path
       d="M5 12h14m-7-7l7 7-7 7"
@@ -59,6 +114,135 @@ const PATHS: Record<IconName, React.JSX.Element> = {
       strokeLinejoin="round"
       strokeWidth={2.5}
     />
+  ),
+
+  'chevron-right': (
+    <Path
+      d="M9 18l6-6-6-6"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2.5}
+    />
+  ),
+
+  calendar: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Rect x={3} y={4} width={18} height={18} rx={2} ry={2} />
+      <Path d="M16 2v4M8 2v4M3 10h18" />
+    </G>
+  ),
+
+  science: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Path d="M10 2v6.5a4.5 4.5 0 0 1-4.5 4.5H4.5A4.5 4.5 0 0 1 9 8.5V2" />
+      <Path d="M15 2v6.5a4.5 4.5 0 0 0 4.5 4.5h1A4.5 4.5 0 0 0 16 8.5V2" />
+      <Path d="M12 13v9" />
+      <Path d="M8 22h8" />
+      <Path d="M6 7.5A4.5 4.5 0 0 0 10.5 12" />
+      <Path d="M18 7.5A4.5 4.5 0 0 1 13.5 12" />
+    </G>
+  ),
+
+  architecture: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Path d="M12 2L2 7l10 5 10-5-10-5z" />
+      <Path d="M2 17l10 5 10-5" />
+      <Path d="M2 12l10 5 10-5" />
+    </G>
+  ),
+
+  school: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Path d="M14 22v-4a2 2 0 1 0-4 0v4" />
+      <Path d="M18 10l2.5 1.5v6.75" />
+      <Path d="M22 22V6l-10-4L2 6v16" />
+      <Path d="M7 10h2v2H7v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2z" />
+      <Path d="M2 22h20" />
+    </G>
+  ),
+
+  balance: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Path d="M12 2v4" />
+      <Path d="M4 6l2-2h12l2 2" />
+      <Path d="M6 6v2a6 6 0 0 0 12 0V6" />
+      <Path d="M2 22h20" />
+      <Path d="M8 22V14a4 4 0 0 1 8 0v8" />
+      <Path d="M8 18h8" />
+    </G>
+  ),
+
+  'menu-book': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+      <Path d="M12 6v7l2-2 2 2V6" />
+    </G>
+  ),
+
+  download: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <Path d="M7 10l5 5 5-5" />
+      <Path d="M12 15V3" />
+    </G>
+  ),
+
+  'log-out': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <Path d="M16 17l5-5-5-5" />
+      <Path d="M21 12H9" />
+    </G>
   ),
 
   bookmark: (
@@ -94,6 +278,21 @@ const PATHS: Record<IconName, React.JSX.Element> = {
       strokeLinejoin="round"
       strokeWidth={1.5}
     />
+  ),
+
+  timer: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Circle cx={12} cy={13} r={8} />
+      <Path d="M12 9v4l2 2" />
+      <Path d="M10 2h4" />
+      <Path d="M12 2v3" />
+    </G>
   ),
 
   users: (
@@ -147,6 +346,20 @@ const PATHS: Record<IconName, React.JSX.Element> = {
       strokeLinejoin="round"
       strokeWidth={2}
     />
+  ),
+
+  description: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+      <Path d="M16 18H8v-2h8v2zm0-4H8v-2h8v2z" />
+      <Path d="M13 3v5h5" />
+    </G>
   ),
 
   bell: (
@@ -246,6 +459,72 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     >
       <Path d="M9 9.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997A1 1 0 0 1 9 14.996z" />
       <Circle cx={12} cy={12} r={10} />
+    </G>
+  ),
+
+  filter: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+    </G>
+  ),
+
+  layers: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Path d="M2 12l10-5 10 5-10 5z" />
+      <Path d="M2 17l10 5 10-5" />
+      <Path d="M2 7l10 5 10-5" />
+    </G>
+  ),
+
+  monitor: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Rect x={2} y={3} width={20} height={14} rx={2} ry={2} />
+      <Path d="M8 21h8" />
+      <Path d="M12 17v4" />
+    </G>
+  ),
+
+  search: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Circle cx={11} cy={11} r={8} />
+      <Path d="M21 21l-4.3-4.3" />
+    </G>
+  ),
+
+  video: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Path d="M15 10l4.5-2.5v9L15 14" />
+      <Rect x={2} y={6} width={13} height={12} rx={2} ry={2} />
     </G>
   ),
 

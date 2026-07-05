@@ -3,10 +3,11 @@
  *
  * The authenticated application stack.
  *
- * Rendered by `AuthNavigator` when the user is signed in.  This component
- * is intentionally kept as a thin, single-responsibility navigator so that
- * future authenticated screens (e.g. Profile, Settings, Classes) can be
- * added here without touching the root auth gate.
+ * Uses a root stack navigator where the MainTabNavigator (with bottom
+ * tabs) is the initial screen. Full-screen pages like TestDashboard
+ * are pushed on top, hiding the tab bar.
+ *
+ * Rendered by `AuthNavigator` when the user is signed in.
  *
  * @module AppNavigator
  */
@@ -14,14 +15,14 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import HomeScreen from '../screens/home/HomeScreen';
+import MainTabNavigator from './MainTabNavigator';
 import TestDashboardScreen from '../screens/tests/TestDashboardScreen';
 
 // DEV ONLY - Remove after frontend integration
 import DevNavigator from './DevNavigator';
 
 export type AppStackParamList = {
-  Home: undefined;
+  MainTabs: undefined;
   TestDashboard: undefined;
   // DEV ONLY - Remove after frontend integration
   DevHub: undefined;
@@ -32,7 +33,7 @@ const Stack = createNativeStackNavigator<AppStackParamList>();
 export default function AppNavigator(): React.JSX.Element {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="MainTabs" component={MainTabNavigator} />
       <Stack.Screen
         name="TestDashboard"
         component={TestDashboardScreen}

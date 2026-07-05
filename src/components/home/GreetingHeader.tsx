@@ -13,7 +13,6 @@
 
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Icon from './Icons';
 import { colors } from '../../theme/colors';
@@ -43,10 +42,8 @@ const GreetingHeader = React.memo(function GreetingHeader({
   onProfilePress,
   hasUnreadNotifications = false,
 }: GreetingHeaderProps): React.JSX.Element {
-  const insets = useSafeAreaInsets();
-
   return (
-    <View style={[styles.container, { paddingTop: insets.top + spacing[12] }]}>
+    <View style={[styles.container, { paddingTop: spacing[12] }]}>
       {/* Left: Greeting text */}
       <View style={styles.textSection}>
         <View style={styles.greetingRow}>

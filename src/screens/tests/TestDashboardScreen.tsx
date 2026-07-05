@@ -20,6 +20,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { getClasses } from '../../services/classService';
 import { getSession } from '../../services/authService';
 import { useAppSelector } from '../../store/hooks';
@@ -112,7 +113,7 @@ export default function TestDashboardScreen(): React.JSX.Element {
   const clearResults = () => setResults([]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🧪 Backend Test Dashboard</Text>
@@ -219,7 +220,7 @@ export default function TestDashboardScreen(): React.JSX.Element {
           ))
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -231,7 +232,7 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#6C63FF',
     paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingTop: 20,
     paddingBottom: 20,
   },
   headerTitle: {

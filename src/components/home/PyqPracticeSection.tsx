@@ -1,7 +1,7 @@
 /**
- * TrendingCoursesSection
+ * PyqPracticeSection
  *
- * Premium auto-scrolling carousel of course cards (Netflix/Unacademy-style).
+ * Premium auto-scrolling carousel of PYQ practice cards.
  *
  * Features:
  * - Paging FlatList with full-width cards
@@ -10,7 +10,7 @@
  * - Smooth animated dot indicators
  * - Snap-to-card with no partial cuts
  *
- * @module components/home/TrendingCoursesSection
+ * @module components/home/PyqPracticeSection
  */
 
 import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
@@ -26,9 +26,9 @@ import {
   type NativeScrollEvent,
 } from 'react-native';
 
-import TrendingCourseCard from './TrendingCourseCard';
+import PyqPracticeCard from './PyqPracticeCard';
 import Icon from './Icons';
-import type { TrendingCourseItem } from './types';
+import type { PyqItem } from './types';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
@@ -37,53 +37,51 @@ import { radius } from '../../theme/radius';
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const AUTO_SCROLL_INTERVAL = 1500; // ms between auto-scrolls
+const AUTO_SCROLL_INTERVAL = 3500; // ms between auto-scrolls
 const RESUME_DELAY = 3000; // ms of inactivity before resuming auto-scroll
 const INACTIVE_DOT_SIZE = 6;
 const ACTIVE_DOT_SIZE = 20;
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
-export interface TrendingCoursesSectionProps {
-  /** All courses to display in the carousel. */
-  courses: TrendingCourseItem[];
+export interface PyqPracticeSectionProps {
+  /** All PYQ items to display in the carousel. */
+  items: PyqItem[];
   /** Callback when "View All" is pressed. */
   onViewAllPress?: () => void;
-  /** Callback when a course card is pressed. */
-  onCoursePress?: (key: string) => void;
-  /** Callback when Explore on a card is pressed. */
-  onHeroExplorePress?: (key: string) => void;
-  /** Callback when Enroll Now on a card is pressed. */
-  onHeroEnrollPress?: (key: string) => void;
+  /** Callback when a PYQ card is pressed. */
+  onItemPress?: (key: string) => void;
+  /** Callback when Preview on a card is pressed. */
+  onPreviewPress?: (key: string) => void;
+  /** Callback when Start Practice on a card is pressed. */
+  onStartPracticePress?: (key: string) => void;
 }
 
 // ─── Carousel Card Wrapper ──────────────────────────────────────────────────
 
 interface CarouselCardProps {
-  item: TrendingCourseItem;
-  onCoursePress?: (key: string) => void;
-  onExplorePress?: (key: string) => void;
-  onEnrollPress?: (key: string) => void;
+  item: PyqItem;
+  onItemPress?: (key: string) => void;
+  onPreviewPress?: (key: string) => void;
+  onStartPracticePress?: (key: string) => void;
 }
 
 const CarouselCard = React.memo(function CarouselCard({
   item,
-  onCoursePress,
-  onExplorePress,
-  onEnrollPress,
+  onItemPress,
+  onPreviewPress,
+  onStartPracticePress,
 }: CarouselCardProps): React.JSX.Element {
-  // Destructure key out so it isn't spread into JSX (React forbids spreading key)
   const { key: _key, ...cardProps } = item;
   return (
     <View style={styles.carouselItem}>
-      <TrendingCourseCard
+      <PyqPracticeCard
         key={_key}
         {...cardProps}
         animationDelay={0}
-        onPress={() => onCoursePress?.(item.key)}
-        onExplorePress={() => onExplorePress?.(item.key)}
-        onEnrollPress={() => onEnrollPress?.(item.key)}
-        onBookmarkPress={() => {}}
+        onPress={() => onItemPress?.(item.key)}
+        onPreviewPress={() => onPreviewPress?.(item.key)}
+        onStartPracticePress={() => onStartPracticePress?.(item.key)}
       />
     </View>
   );
@@ -138,13 +136,13 @@ const AnimatedDot = React.memo(function AnimatedDot({
 
 // ─── Section Component ──────────────────────────────────────────────────────
 
-const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
-  courses,
+const PyqPracticeSection = React.memo(function PyqPracticeSection({
+  items,
   onViewAllPress,
-  onCoursePress,
-  onHeroExplorePress,
-  onHeroEnrollPress,
-}: TrendingCoursesSectionProps): React.JSX.Element {
+  onItemPress,
+  onPreviewPress,
+  onStartPracticePress,
+}: PyqPracticeSectionProps): React.JSX.Element {
   const flatListRef = useRef<FlatList>(null);
   const isInteracting = useRef(false);
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -152,23 +150,21 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
   const [activeDotIndex, setActiveDotIndex] = useState(0);
 
   // ── Duplicate data for infinite loop illusion ──────────────────
-  // Show: [A, B, C, D, A'] — when user reaches A', snap back to A
-  const loopedCourses = useMemo(
-    () => (courses.length > 1 ? [...courses, courses[0]] : courses),
-    [courses],
+  const loopedItems = useMemo(
+    () => (items.length > 1 ? [...items, items[0]] : items),
+    [items],
   );
 
   // ── Auto-scroll logic ──────────────────────────────────────────
   useEffect(() => {
-    if (courses.length <= 1) return;
+    if (items.length <= 1) return;
 
     const interval = setInterval(() => {
       if (isInteracting.current || !flatListRef.current) return;
 
       const nextIndex = scrollIndexRef.current + 1;
 
-      if (nextIndex >= loopedCourses.length) {
-        // Reached the duplicate — snap back to real first card instantly
+      if (nextIndex >= loopedItems.length) {
         flatListRef.current.scrollToIndex({
           index: 0,
           animated: false,
@@ -185,7 +181,7 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
     }, AUTO_SCROLL_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [courses.length, loopedCourses.length]);
+  }, [items.length, loopedItems.length]);
 
   // ── Track scroll position for dot updates ──────────────────────
   const handleScrollEnd = useCallback(
@@ -193,8 +189,7 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
       const offsetX = e.nativeEvent.contentOffset.x;
       const index = Math.round(offsetX / SCREEN_WIDTH);
 
-      // If we scrolled to the duplicate first card, snap back to real first
-      if (index >= courses.length) {
+      if (index >= items.length) {
         flatListRef.current?.scrollToIndex({ index: 0, animated: false });
         scrollIndexRef.current = 0;
         setActiveDotIndex(0);
@@ -203,7 +198,6 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
         setActiveDotIndex(index);
       }
 
-      // Resume auto-scroll after 3s of inactivity
       if (isInteracting.current) {
         if (resumeTimer.current) clearTimeout(resumeTimer.current);
         resumeTimer.current = setTimeout(() => {
@@ -211,7 +205,7 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
         }, RESUME_DELAY);
       }
     },
-    [courses.length],
+    [items.length],
   );
 
   // ── User interaction handlers ──────────────────────────────────
@@ -222,19 +216,19 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
 
   // ── FlatList renderers ─────────────────────────────────────────
   const renderCarouselItem = useCallback(
-    ({ item }: { item: TrendingCourseItem }) => (
+    ({ item }: { item: PyqItem }) => (
       <CarouselCard
         item={item}
-        onCoursePress={onCoursePress}
-        onExplorePress={onHeroExplorePress}
-        onEnrollPress={onHeroEnrollPress}
+        onItemPress={onItemPress}
+        onPreviewPress={onPreviewPress}
+        onStartPracticePress={onStartPracticePress}
       />
     ),
-    [onCoursePress, onHeroExplorePress, onHeroEnrollPress],
+    [onItemPress, onPreviewPress, onStartPracticePress],
   );
 
   const keyExtractor = useCallback(
-    (item: TrendingCourseItem, index: number) => `${item.key}-${index}`,
+    (item: PyqItem, index: number) => `${item.key}-${index}`,
     [],
   );
 
@@ -252,17 +246,17 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
       {/* ── Header ───────────────────────────────────────────── */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Trending Courses</Text>
+          <Text style={styles.headerTitle}>Practice with PYQs</Text>
           <Text style={styles.headerSubtitle}>
-            Most loved courses by students this week{' '}
-            <Text style={styles.headerSparkle}>✦</Text>
+            Previous Year Papers with Timed Tests & Smart Analytics{' '}
+            <Text style={styles.headerEmoji}>📊</Text>
           </Text>
         </View>
         <TouchableOpacity
           style={styles.viewAllButton}
           onPress={onViewAllPress}
           activeOpacity={0.7}
-          accessibilityLabel="View all trending courses"
+          accessibilityLabel="View all PYQs"
           accessibilityRole="button"
         >
           <Text style={styles.viewAllText}>View All</Text>
@@ -279,7 +273,7 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
       <View style={styles.carouselContainer}>
         <FlatList
           ref={flatListRef}
-          data={loopedCourses}
+          data={loopedItems}
           renderItem={renderCarouselItem}
           keyExtractor={keyExtractor}
           horizontal
@@ -300,9 +294,9 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
       </View>
 
       {/* ── Animated Page Indicators ──────────────────────────── */}
-      {courses.length > 1 && (
+      {items.length > 1 && (
         <View style={styles.dotsContainer}>
-          {courses.map((_, i) => (
+          {items.map((_, i) => (
             <AnimatedDot key={i} index={i} activeIndex={activeDotIndex} />
           ))}
         </View>
@@ -342,8 +336,8 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     lineHeight: 17,
   },
-  headerSparkle: {
-    color: '#FBBF24',
+  headerEmoji: {
+    fontSize: 12,
   },
   viewAllButton: {
     flexDirection: 'row',
@@ -382,4 +376,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default TrendingCoursesSection;
+export default PyqPracticeSection;

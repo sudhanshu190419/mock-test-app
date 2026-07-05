@@ -48,13 +48,12 @@ import {
   ImageSourcePropType,
   PanResponder,
   Platform,
-  SafeAreaView,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, palette } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
@@ -379,8 +378,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop:
-      Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0,
   },
   root: {
     flex: 1,
