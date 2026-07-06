@@ -1,36 +1,21 @@
 /**
  * CourseCard
  *
- * Premium vertical course card for the Courses screen.
- *
- * Layout:
- * ┌──────────────────────────────┐
- * │        Banner Image          │  ← 35-40% of card height
- * │  ┌──────┐        ┌────────┐ │
- * │  │ Badge │        │ Bookmark│ │  ← floating badges
- * │  └──────┘        └────────┘ │
- * ├──────────────────────────────┤
- * │         Course Details       │  ← white background
- * │  Title                       │
- * │  Subtitle                    │
- * │  Description (2 lines)       │ *  │  ───────────────────────     │  ← divider
- *  │  ⏱ Duration  │  🎥 Live + Rec  │  ← stats row
- *  │  ───────────────────────     │  ← divider
- * │  ₹Price  ₹Original  -75%    │
- * │  [      Explore →          ] │  ← CTA button
- * └──────────────────────────────┘
+ * Production-optimised vertical course card with zero animation
+ * overhead. Layout preserves the original visual design.
  *
  * @module components/courses/CourseCard
  */
 
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
-  Animated,
+  Pressable,
   StyleSheet,
   Platform,
+  type GestureResponderEvent,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
@@ -152,8 +137,10 @@ const BADGE_STYLES: Record<
 // ─── Props ──────────────────────────────────────────────────────────────────
 
 export interface CourseCardProps extends CourseItem {
-  /** Stagger delay for entrance animation (ms). */
-  animationDelay?: number;
+  /** Single press handler for the entire card (navigates to detail). */
+  onPress?: () => void;
+  /** Bookmark toggle. */
+  onBookmarkPress?: () => void;
 }
 
 // ─── Format helpers ─────────────────────────────────────────────────────────
@@ -176,51 +163,9 @@ const CourseCard = React.memo(function CourseCard({
   originalPrice,
   discountLabel,
   isBookmarked = false,
-  animationDelay = 0,
   onPress,
-  onExplorePress,
   onBookmarkPress,
 }: CourseCardProps): React.JSX.Element {
-  // ── Entrance animation ────────────────────────────────────────
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-
-  React.useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim, animationDelay]);
-
-  // ── Press scale feedback ──────────────────────────────────────
-  const pressScale = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = useCallback(() => {
-    Animated.spring(pressScale, {
-      toValue: 0.97,
-      useNativeDriver: true,
-    }).start();
-  }, [pressScale]);
-
-  const handlePressOut = useCallback(() => {
-    Animated.spring(pressScale, {
-      toValue: 1,
-      friction: 4,
-      useNativeDriver: true,
-    }).start();
-  }, [pressScale]);
-
-  // ── Derived values ────────────────────────────────────────────
   const badgeStyle = BADGE_STYLES[badgeType] ?? BADGE_STYLES['Best Seller'];
   const bannerConfig = getBannerConfig(category);
   const discount =
@@ -229,28 +174,26 @@ const CourseCard = React.memo(function CourseCard({
       ? `${Math.round((1 - price / originalPrice) * 100)}% Off`
       : undefined);
 
+  const handleBookmarkPress = useCallback(
+    (e: GestureResponderEvent) => {
+      // Prevent card press from firing when bookmark is tapped
+      e.stopPropagation?.();
+      onBookmarkPress?.();
+    },
+    [onBookmarkPress],
+  );
+
   return (
-    <Animated.View
-      style={[
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
         styles.shadowWrapper,
-        {
-          opacity: fadeAnim,
-          transform: [
-            { translateY: slideAnim },
-            { scale: pressScale },
-          ],
-        },
+        pressed && styles.cardPressed,
       ]}
-      accessibilityRole="summary"
+      accessibilityRole="button"
       accessibilityLabel={`Course: ${title}`}
     >
-      <TouchableOpacity
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={0.96}
-        style={styles.touchable}
-      >
+      <View style={styles.touchable}>
         {/* ═══ Top Section: Banner Gradient ═══ */}
         <LinearGradient
           colors={bannerConfig.gradient}
@@ -258,7 +201,7 @@ const CourseCard = React.memo(function CourseCard({
           end={{ x: 1, y: 1 }}
           style={styles.bannerContainer}
         >
-          {/* Decorative circles for visual depth */}
+          {/* Decorative circles */}
           <View style={styles.decoCircle1} />
           <View style={styles.decoCircle2} />
 
@@ -273,9 +216,9 @@ const CourseCard = React.memo(function CourseCard({
             </Text>
           </View>
 
-          {/* Bookmark Icon — top-right (glassmorphism) */}
+          {/* Bookmark Icon — top-right (stops propagation) */}
           <TouchableOpacity
-            onPress={onBookmarkPress}
+            onPress={handleBookmarkPress}
             style={styles.bookmarkButton}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -290,25 +233,22 @@ const CourseCard = React.memo(function CourseCard({
               />
             </View>
           </TouchableOpacity>
-        {/* ═══ Bottom Section: Course Details ═══ */}
         </LinearGradient>
+
+        {/* ═══ Bottom Section: Course Details ═══ */}
         <View style={styles.detailsContainer}>
-          {/* Title */}
           <Text style={styles.title} numberOfLines={1}>
             {title}
           </Text>
 
-          {/* Subtitle */}
           <Text style={styles.subtitle} numberOfLines={1}>
             {subtitle}
           </Text>
 
-          {/* Description */}
           <Text style={styles.description} numberOfLines={2}>
             {description}
           </Text>
 
-          {/* Divider */}
           <View style={styles.divider} />
 
           {/* Statistics Row */}
@@ -340,7 +280,6 @@ const CourseCard = React.memo(function CourseCard({
             </View>
           </View>
 
-          {/* Divider */}
           <View style={styles.divider} />
 
           {/* Bottom Row: Price + CTA */}
@@ -359,13 +298,8 @@ const CourseCard = React.memo(function CourseCard({
               )}
             </View>
 
-            <TouchableOpacity
-              style={styles.exploreButton}
-              onPress={onExplorePress}
-              activeOpacity={0.85}
-              accessibilityLabel={`Explore ${title}`}
-              accessibilityRole="button"
-            >
+            {/* Explore button — non-interactive View (card Pressable handles navigation) */}
+            <View style={styles.exploreButton}>
               <Text style={styles.exploreText}>Explore</Text>
               <Icon
                 name="arrow-right"
@@ -373,11 +307,11 @@ const CourseCard = React.memo(function CourseCard({
                 width={14}
                 height={14}
               />
-            </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </TouchableOpacity>
-    </Animated.View>
+      </View>
+    </Pressable>
   );
 });
 
@@ -388,9 +322,9 @@ const BANNER_HEIGHT = 180; // ~38% of ~470 total card height on a mobile screen
 
 const styles = StyleSheet.create({
   shadowWrapper: {
+    borderRadius: radius.lg,
     marginHorizontal: CARD_MARGIN_HORIZONTAL,
     marginBottom: spacing[20],
-    borderRadius: radius.lg,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -399,9 +333,12 @@ const styles = StyleSheet.create({
         shadowRadius: 12,
       },
       android: {
-        elevation: 6,
+        elevation: 3,
       },
     }),
+  },
+  cardPressed: {
+    opacity: 0.94,
   },
   touchable: {
     borderRadius: radius.lg,

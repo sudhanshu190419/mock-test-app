@@ -21,8 +21,6 @@ import { spacing } from '../../theme/spacing';
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 export interface FeatureCardProps extends Omit<FeatureItem, 'key'> {
-  /** Stagger delay for slide-up animation (ms). */
-  animationDelay?: number;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────

@@ -24,10 +24,13 @@ import {
   Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
 
 import Icon from '../../components/home/Icons';
 import type { IconName } from '../../components/home/Icons';
+import type { AppStackParamList } from '../../navigation/AppNavigator';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
@@ -236,10 +239,12 @@ const ExamStatItem = React.memo(function ExamStatItem({
 
 interface ExamCardProps {
   item: ExamCardData;
+  onPress: () => void;
 }
 
 const ExamCard = React.memo(function ExamCard({
   item,
+  onPress,
 }: ExamCardProps): React.JSX.Element {
   const pressAnim = useRef(new Animated.Value(0)).current;
 
@@ -277,6 +282,7 @@ const ExamCard = React.memo(function ExamCard({
     >
       <TouchableOpacity
         style={styles.cardTouchable}
+        onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         activeOpacity={1}
@@ -379,8 +385,20 @@ const ExamCard = React.memo(function ExamCard({
 //  Main Screen
 // ═══════════════════════════════════════════════════════════════════
 
+type NavigationProp = NativeStackNavigationProp<AppStackParamList>;
+
 export default function MockTestsTabScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NavigationProp>();
+
+  const handleExamPress = useCallback(
+    (exam: ExamCardData) =>
+      navigation.navigate('ExamPackDetail', {
+        examTitle: exam.title,
+        examIcon: exam.icon,
+      }),
+    [navigation],
+  );
 
   // The header's total visible height (from the screen's content area top):
   //   safeAreaTop + spacing[12] (dynamic paddingTop)
@@ -412,7 +430,11 @@ export default function MockTestsTabScreen(): React.JSX.Element {
         overScrollMode="never"
       >
         {EXAMS.map((exam) => (
-          <ExamCard key={exam.key} item={exam} />
+          <ExamCard
+            key={exam.key}
+            item={exam}
+            onPress={() => handleExamPress(exam)}
+          />
         ))}
 
         {/* Bottom padding for tab bar */}

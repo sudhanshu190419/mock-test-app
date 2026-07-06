@@ -1,39 +1,99 @@
 /**
  * AppNavigator
  *
- * The authenticated application stack.
+ * The authenticated application stack with premium screen transitions.
  *
- * Uses a root stack navigator where the MainTabNavigator (with bottom
- * tabs) is the initial screen. Full-screen pages like TestDashboard
- * are pushed on top, hiding the tab bar.
+ * All pushes slide in from the right (horizontal slide), and back
+ * navigation reverses seamlessly — matching the Apple/Duolingo feel.
  *
- * Rendered by `AuthNavigator` when the user is signed in.
+ * Uses @react-navigation/native-stack with custom animation configs
+ * for a 250ms ease-in-out transition.
  *
  * @module AppNavigator
  */
 
 import React from 'react';
+import { Easing, Platform } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import MainTabNavigator from './MainTabNavigator';
 import TestDashboardScreen from '../screens/tests/TestDashboardScreen';
+import CourseDetailScreen from '../screens/courses/CourseDetailScreen';
+import PyqPapersScreen from '../screens/tests/PyqPapersScreen';
+import ExamPackDetailScreen from '../screens/tests/ExamPackDetailScreen';
+import TestInstructionsScreen from '../screens/tests/TestInstructionsScreen';
+import TestEngineScreen from '../screens/tests/TestEngineScreen';
+import TestResultScreen from '../screens/tests/TestResultScreen';
+import NotificationScreen from '../screens/NotificationScreen';
 
 // DEV ONLY - Remove after frontend integration
 import DevNavigator from './DevNavigator';
+import { colors } from '../theme/colors';
+
+// ─── Screen Transition Config ───────────────────────────────────────────────
+
+const SCREEN_TRANSITION_DURATION = 250;
+
+const slideFromRight = {
+  animation: 'slide_from_right' as const,
+  config: {
+    duration: SCREEN_TRANSITION_DURATION,
+    easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+  },
+};
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+import type { PyqPapersScreenParams } from '../screens/tests/PyqPapersScreen';
+import type { ExamPackDetailParams } from '../screens/tests/ExamPackDetailScreen';
+import type { TestInstructionsParams } from '../screens/tests/TestInstructionsScreen';
+import type { TestEngineParams } from '../screens/tests/TestEngineScreen';
+import type { TestResultParams } from '../screens/tests/TestResultScreen';
 
 export type AppStackParamList = {
   MainTabs: undefined;
+  Notification: undefined;
   TestDashboard: undefined;
+  CourseDetail: { courseId: string };
+  PyqPapers: PyqPapersScreenParams;
+  ExamPackDetail: ExamPackDetailParams;
+  TestInstructions: TestInstructionsParams;
+  TestEngine: TestEngineParams;
+  TestResult: TestResultParams;
   // DEV ONLY - Remove after frontend integration
   DevHub: undefined;
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 
+// ─── Navigator ──────────────────────────────────────────────────────────────
+
 export default function AppNavigator(): React.JSX.Element {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: 'slide_from_right',
+        animationDuration: SCREEN_TRANSITION_DURATION,
+        ...Platform.select({
+          ios: {
+            animation: 'slide_from_right',
+          },
+        }),
+      }}
+    >
       <Stack.Screen name="MainTabs" component={MainTabNavigator} />
+
+      <Stack.Screen
+        name="Notification"
+        component={NotificationScreen}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 250,
+        }}
+      />
+
       <Stack.Screen
         name="TestDashboard"
         component={TestDashboardScreen}
@@ -41,9 +101,66 @@ export default function AppNavigator(): React.JSX.Element {
           headerShown: true,
           headerTitle: 'Test Dashboard',
           headerBackTitle: 'Home',
-          headerTintColor: '#6C63FF',
-          headerStyle: { backgroundColor: '#F5F7FA' },
+          headerTintColor: colors.text.primary,
+          headerStyle: { backgroundColor: colors.background },
           headerShadowVisible: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="CourseDetail"
+        component={CourseDetailScreen}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: SCREEN_TRANSITION_DURATION,
+        }}
+      />
+
+      <Stack.Screen
+        name="PyqPapers"
+        component={PyqPapersScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="ExamPackDetail"
+        component={ExamPackDetailScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="TestInstructions"
+        component={TestInstructionsScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="TestEngine"
+        component={TestEngineScreen}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_bottom',
+          animationDuration: 300,
+        }}
+      />
+
+      <Stack.Screen
+        name="TestResult"
+        component={TestResultScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
         }}
       />
 
@@ -53,6 +170,7 @@ export default function AppNavigator(): React.JSX.Element {
         component={DevNavigator}
         options={{
           headerShown: false,
+          ...slideFromRight,
         }}
       />
     </Stack.Navigator>

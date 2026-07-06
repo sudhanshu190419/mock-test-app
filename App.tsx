@@ -14,18 +14,21 @@
 
 import React from 'react';
 import { StatusBar, Platform } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Provider } from 'react-redux';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { store } from './src/store/store';
 import { AuthProvider } from './src/providers/AuthProvider';
 import AuthNavigator from './src/navigation/AuthNavigator';
+import { ToastProvider } from './src/components/Toast';
 import { colors } from './src/theme/colors';
 
 const queryClient = new QueryClient();
 
 export default function App(): React.JSX.Element {
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <Provider store={store}>
       <SafeAreaProvider>
         {/*
@@ -47,13 +50,15 @@ export default function App(): React.JSX.Element {
           backgroundColor={colors.background}
           translucent={Platform.OS === 'android' ? false : undefined}
         />
-
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <AuthNavigator />
+            <ToastProvider>
+              <AuthNavigator />
+            </ToastProvider>
           </AuthProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
     </Provider>
+    </GestureHandlerRootView>
   );
 }

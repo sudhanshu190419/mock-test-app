@@ -12,12 +12,11 @@
  * @module components/home/QuickActionCard
  */
 
-import React, { useRef, useCallback } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
-  Animated,
   StyleSheet,
 } from 'react-native';
 
@@ -33,8 +32,8 @@ import { shadows } from '../../theme/shadows';
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 export interface QuickActionCardProps extends Omit<QuickActionItem, 'key'> {
-  /** Stagger delay for slide-up animation (ms). */
-  animationDelay?: number;
+  /** Callback when the card is pressed. */
+  onPress?: () => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -47,63 +46,12 @@ const QuickActionCard = React.memo(function QuickActionCard({
   subtitle,
   accessibilityLabel,
   onPress,
-  animationDelay = 0,
 }: QuickActionCardProps): React.JSX.Element {
-  // Slide-up animation
-  const slideAnim = useRef(new Animated.Value(40)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 500,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 500,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim, animationDelay]);
-
-  // Press scale animation
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.97,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
-
-  const handlePressOut = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 3,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
-
   return (
-    <Animated.View
-      style={[
-        styles.card,
-        shadows.small,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
-        },
-      ]}
-    >
+    <View style={[styles.card, shadows.small]}>
       <TouchableOpacity
         onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={0.95}
+        activeOpacity={0.85}
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
         style={styles.touchable}
@@ -138,7 +86,7 @@ const QuickActionCard = React.memo(function QuickActionCard({
           />
         </View>
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 });
 

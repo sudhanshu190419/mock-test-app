@@ -15,12 +15,11 @@
  * @module components/home/PyqPracticeCard
  */
 
-import React, { useRef, useCallback, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
-  Animated,
   ImageBackground,
   StyleSheet,
   Platform,
@@ -37,13 +36,9 @@ import { radius } from '../../theme/radius';
 /** Background image for the PYQ card (full-bleed). */
 const CARD_BACKGROUND = require('../../../assets/pyq.png');
 
-
-
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 export interface PyqPracticeCardProps extends PyqItem {
-  /** Stagger delay for entrance animation (ms). */
-  animationDelay?: number;
   /** Callback when Preview is pressed. */
   onPreviewPress?: () => void;
   /** Callback when Start Practice is pressed. */
@@ -81,40 +76,13 @@ const BackgroundDecorations = React.memo(function BackgroundDecorations(): React
 
 interface PremiumFeatureRowProps {
   feature: PyqFeature;
-  index: number;
 }
 
 const PremiumFeatureRow = React.memo(function PremiumFeatureRow({
   feature,
-  index,
 }: PremiumFeatureRowProps): React.JSX.Element {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(12)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        delay: 200 + index * 80,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 400,
-        delay: 200 + index * 80,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim, index]);
-
   return (
-    <Animated.View
-      style={[
-        styles.featureRow,
-        { opacity: fadeAnim, transform: [{ translateX: slideAnim }] },
-      ]}
-    >
+    <View style={styles.featureRow}>
       {/* Rounded-square icon container with dark green glass background */}
       <View style={styles.featureIconContainer}>
         <View style={styles.featureIconGlow} />
@@ -127,15 +95,9 @@ const PremiumFeatureRow = React.memo(function PremiumFeatureRow({
       </View>
       {/* Feature text */}
       <Text style={styles.featureText}>{feature.text}</Text>
-    </Animated.View>
+    </View>
   );
 });
-
-// ─── Feature Pills ──────────────────────────────────────────────────────────
-
-
-
-
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -146,84 +108,24 @@ const PyqPracticeCard = React.memo(function PyqPracticeCard({
   price,
   originalPrice,
   badgeLabel,
-  animationDelay = 0,
   onPreviewPress,
   onStartPracticePress,
   onPress,
 }: PyqPracticeCardProps): React.JSX.Element {
-  // ── Entrance animation ────────────────────────────────────────
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(40)).current;
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 700,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 700,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 6,
-        tension: 40,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim, scaleAnim, animationDelay]);
-
-  // ── Press scale feedback ──────────────────────────────────────
-  const pressScale = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = useCallback(() => {
-    Animated.spring(pressScale, {
-      toValue: 0.97,
-      useNativeDriver: true,
-    }).start();
-  }, [pressScale]);
-
-  const handlePressOut = useCallback(() => {
-    Animated.spring(pressScale, {
-      toValue: 1,
-      friction: 4,
-      useNativeDriver: true,
-    }).start();
-  }, [pressScale]);
-
-  // ── Derived values ────────────────────────────────────────────
   const discountPercent =
     originalPrice && originalPrice > price
       ? Math.round((1 - price / originalPrice) * 100)
       : 0;
 
   return (
-    <Animated.View
-      style={[
-        styles.shadowWrapper,
-        {
-          opacity: fadeAnim,
-          transform: [
-            { translateY: slideAnim },
-            { scale: Animated.multiply(scaleAnim, pressScale) },
-          ],
-        },
-      ]}
+    <View
+      style={styles.shadowWrapper}
       accessibilityRole="summary"
       accessibilityLabel={`PYQ practice: ${title}`}
     >
       <TouchableOpacity
         onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={0.98}
+        activeOpacity={0.95}
         style={styles.touchable}
       >
         <ImageBackground
@@ -231,53 +133,46 @@ const PyqPracticeCard = React.memo(function PyqPracticeCard({
           resizeMode="cover"
           style={styles.card}
         >
-          {/* ── Background decorations ────────────────────────── */}
+          {/* Background decorations */}
           <BackgroundDecorations />
 
-          {/* ── Content (on top of gradient) ────────────────────── */}
+          {/* Content (on top of gradient) */}
           <View style={styles.content}>
-            {/* Top section: badge + text + illustration placeholder */}
+            {/* Top section */}
             <View style={styles.topSection}>
-              {/* Top row: badge only (no bookmark) */}
+              {/* Top row: badge only */}
               <View style={styles.topRow}>
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{badgeLabel}</Text>
                 </View>
-                {/* Empty space where bookmark would be — keeps layout balanced */}
                 <View style={styles.topSpacer} />
               </View>
 
-              {/* Content row: text + illustration placeholder */}
+              {/* Content row */}
               <View style={styles.contentRow}>
                 <View style={styles.textColumn}>
-                  {/* Category chip */}
-                  
-
                   {/* Title */}
                   <Text style={styles.title} numberOfLines={2}>
-  <Text style={styles.titleHighlight}>
-    {title.split(' ')[0]}{' '}
-  </Text>
-  <Text style={styles.titleWhite}>
-    {title.split(' ').slice(1).join(' ')}
-  </Text>
-</Text>
+                    <Text style={styles.titleHighlight}>
+                      {title.split(' ')[0]}{' '}
+                    </Text>
+                    <Text style={styles.titleWhite}>
+                      {title.split(' ').slice(1).join(' ')}
+                    </Text>
+                  </Text>
 
                   {/* Premium feature icon rows */}
                   <View style={styles.featuresList}>
-                    {features.map((feature, index) => (
+                    {features.map((feature) => (
                       <PremiumFeatureRow
                         key={feature.icon}
                         feature={feature}
-                        index={index}
                       />
                     ))}
                   </View>
-
-                 
                 </View>
 
-                {/* Illustration placeholder (right side — image asset TBD) */}
+                {/* Illustration placeholder */}
                 <View style={styles.illustrationPlaceholder}>
                   <Text style={styles.illustrationPlaceholderIcon}>📄</Text>
                 </View>
@@ -344,7 +239,7 @@ const PyqPracticeCard = React.memo(function PyqPracticeCard({
           </View>
         </ImageBackground>
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 });
 
@@ -404,7 +299,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing[1],
+    marginBottom: spacing[4],
   },
   badge: {
     flexDirection: 'row',
@@ -446,28 +341,12 @@ const styles = StyleSheet.create({
     opacity: 0.25,
   },
   titleHighlight: {
-  color: '#75D453',
-  fontWeight: '800',
-},
-
-titleWhite: {
-  color: '#FFFFFF',
-  fontWeight: '800',
-},
-  categoryChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: spacing[8],
-    paddingVertical: spacing[4],
-    borderRadius: radius.xxl,
-    marginBottom: spacing[12],
+    color: '#75D453',
+    fontWeight: '800',
   },
-  categoryText: {
-    ...typography.caption,
-    color: 'rgba(255,255,255,0.85)',
-    fontWeight: '600',
-    fontSize: 10,
-    letterSpacing: 0.3,
+  titleWhite: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   title: {
     ...typography.title,
@@ -510,32 +389,11 @@ titleWhite: {
     fontWeight: '500',
     lineHeight: 16,
   },
-  featurePillsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[4],
-  },
-  featurePill: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: spacing[4],
-    paddingVertical: 3,
-    borderRadius: radius.xxl,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  featurePillText: {
-    ...typography.caption,
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.75)',
-    fontWeight: '600',
-  },
   divider: {
     alignSelf: 'center',
     width: '87%',
     height: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    
-    
   },
   priceRow: {
     flexDirection: 'row',

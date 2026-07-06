@@ -6,8 +6,8 @@
  * Features:
  * - Paging FlatList with full-width cards
  * - Auto-scroll every 3.5s with infinite looping
- * - Pauses on user interaction, resumes after 3s of inactivity
- * - Smooth animated dot indicators
+ * - Pauses when screen is not focused
+ * - Simple static dot indicators
  * - Snap-to-card with no partial cuts
  *
  * @module components/home/PyqPracticeSection
@@ -19,12 +19,12 @@ import {
   Text,
   TouchableOpacity,
   FlatList,
-  Animated,
   StyleSheet,
   Dimensions,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 
 import PyqPracticeCard from './PyqPracticeCard';
 import Icon from './Icons';
@@ -38,9 +38,6 @@ import { radius } from '../../theme/radius';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const AUTO_SCROLL_INTERVAL = 3500; // ms between auto-scrolls
-const RESUME_DELAY = 3000; // ms of inactivity before resuming auto-scroll
-const INACTIVE_DOT_SIZE = 6;
-const ACTIVE_DOT_SIZE = 20;
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -78,7 +75,6 @@ const CarouselCard = React.memo(function CarouselCard({
       <PyqPracticeCard
         key={_key}
         {...cardProps}
-        animationDelay={0}
         onPress={() => onItemPress?.(item.key)}
         onPreviewPress={() => onPreviewPress?.(item.key)}
         onStartPracticePress={() => onStartPracticePress?.(item.key)}
@@ -87,47 +83,23 @@ const CarouselCard = React.memo(function CarouselCard({
   );
 });
 
-// ─── Animated Dot ───────────────────────────────────────────────────────────
+// ─── Static Dot ─────────────────────────────────────────────────────────────
 
 interface DotProps {
   index: number;
   activeIndex: number;
 }
 
-const AnimatedDot = React.memo(function AnimatedDot({
+const Dot = React.memo(function Dot({
   index,
   activeIndex,
 }: DotProps): React.JSX.Element {
-  const animValue = useRef(new Animated.Value(index === activeIndex ? 1 : 0)).current;
-
-  useEffect(() => {
-    Animated.spring(animValue, {
-      toValue: index === activeIndex ? 1 : 0,
-      friction: 8,
-      tension: 80,
-      useNativeDriver: false,
-    }).start();
-  }, [animValue, index, activeIndex]);
-
-  const width = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [INACTIVE_DOT_SIZE, ACTIVE_DOT_SIZE],
-  });
-
-  const opacity = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.3, 1],
-  });
-
   return (
-    <Animated.View
+    <View
       style={[
         styles.dot,
         {
-          width,
-          opacity,
-          backgroundColor:
-            index === activeIndex ? colors.secondary : colors.disabled,
+          backgroundColor: index === activeIndex ? colors.secondary : colors.disabled,
         },
       ]}
     />
@@ -148,6 +120,7 @@ const PyqPracticeSection = React.memo(function PyqPracticeSection({
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollIndexRef = useRef(0);
   const [activeDotIndex, setActiveDotIndex] = useState(0);
+  const isFocused = useIsFocused();
 
   // ── Duplicate data for infinite loop illusion ──────────────────
   const loopedItems = useMemo(
@@ -155,9 +128,9 @@ const PyqPracticeSection = React.memo(function PyqPracticeSection({
     [items],
   );
 
-  // ── Auto-scroll logic ──────────────────────────────────────────
+  // ── Auto-scroll logic — pauses when screen not focused ─────────
   useEffect(() => {
-    if (items.length <= 1) return;
+    if (items.length <= 1 || !isFocused) return;
 
     const interval = setInterval(() => {
       if (isInteracting.current || !flatListRef.current) return;
@@ -181,7 +154,7 @@ const PyqPracticeSection = React.memo(function PyqPracticeSection({
     }, AUTO_SCROLL_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [items.length, loopedItems.length]);
+  }, [items.length, loopedItems.length, isFocused]);
 
   // ── Track scroll position for dot updates ──────────────────────
   const handleScrollEnd = useCallback(
@@ -202,7 +175,7 @@ const PyqPracticeSection = React.memo(function PyqPracticeSection({
         if (resumeTimer.current) clearTimeout(resumeTimer.current);
         resumeTimer.current = setTimeout(() => {
           isInteracting.current = false;
-        }, RESUME_DELAY);
+        }, 3000);
       }
     },
     [items.length],
@@ -243,7 +216,7 @@ const PyqPracticeSection = React.memo(function PyqPracticeSection({
 
   return (
     <View style={styles.container}>
-      {/* ── Header ───────────────────────────────────────────── */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>Practice with PYQs</Text>
@@ -269,7 +242,7 @@ const PyqPracticeSection = React.memo(function PyqPracticeSection({
         </TouchableOpacity>
       </View>
 
-      {/* ── Carousel ─────────────────────────────────────────── */}
+      {/* Carousel */}
       <View style={styles.carouselContainer}>
         <FlatList
           ref={flatListRef}
@@ -293,11 +266,11 @@ const PyqPracticeSection = React.memo(function PyqPracticeSection({
         />
       </View>
 
-      {/* ── Animated Page Indicators ──────────────────────────── */}
+      {/* Static Page Indicators */}
       {items.length > 1 && (
         <View style={styles.dotsContainer}>
           {items.map((_, i) => (
-            <AnimatedDot key={i} index={i} activeIndex={activeDotIndex} />
+            <Dot key={i} index={i} activeIndex={activeDotIndex} />
           ))}
         </View>
       )}
@@ -371,8 +344,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[8],
   },
   dot: {
-    height: INACTIVE_DOT_SIZE,
-    borderRadius: INACTIVE_DOT_SIZE / 2,
+    width: 20,
+    height: 6,
+    borderRadius: 3,
   },
 });
 

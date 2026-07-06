@@ -1,8 +1,8 @@
 /**
  * CoursesScreen
  *
- * Premium dedicated Courses page using ScrollView with stickyHeaderIndices
- * for native, lag-free scrolling that matches MockTestsTabScreen.
+ * Production-optimised Courses page — instant navigation, zero
+ * animation overhead, minimal re-renders.
  *
  * @module screens/courses/CoursesScreen
  */
@@ -23,6 +23,8 @@ import { useNavigation } from '@react-navigation/native';
 import CourseCard from '../../components/courses/CourseCard';
 import Icon from '../../components/home/Icons';
 import type { CourseItem, CourseCategory } from '../../components/home/types';
+import type { AppStackParamList } from '../../navigation/AppNavigator';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
@@ -97,11 +99,15 @@ const ALL_COURSES: CourseItem[] = [
   },
 ];
 
+// ─── Reusable hitSlop objects (defined once, never re-allocated) ────────────
+
+const CLEAR_BUTTON_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 } as const;
+
 // ─── Screen ─────────────────────────────────────────────────────────────────
 
 export default function CoursesScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const [activeCategory, setActiveCategory] = useState<CourseCategory | null>(null);
   const [searchText, setSearchText] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -129,18 +135,13 @@ export default function CoursesScreen(): React.JSX.Element {
     return list;
   }, [activeCategory, searchText]);
 
-  // ── Callbacks ────────────────────────────────────────────────
-  const handleBackPress = useCallback(() => navigation.goBack(), [navigation]);
+  // ── Navigation helper (stable reference) ─────────────────────
+  const navigateToDetail = useCallback(
+    (courseKey: string) => navigation.navigate('CourseDetail', { courseId: courseKey }),
+    [navigation],
+  );
 
-  const handleMyLearningPress = useCallback(() => { /* Navigate to My Learning */ }, []);
-
-  const handleCategoryPress = useCallback((category: CourseCategory | null) => {
-    setActiveCategory((prev) => (prev === category ? null : category));
-  }, []);
-
-  const handleExplorePress = useCallback((courseKey: string) => { /* Navigate */ }, []);
-  const handleBookmarkPress = useCallback((courseKey: string) => { /* Toggle */ }, []);
-
+  // ── Stable handlers ──────────────────────────────────────────
   const handleSearchFocus = useCallback(() => setIsSearchFocused(true), []);
   const handleSearchBlur = useCallback(() => setIsSearchFocused(false), []);
 
@@ -149,25 +150,37 @@ export default function CoursesScreen(): React.JSX.Element {
     searchInputRef.current?.blur();
   }, []);
 
-  // ── Render ───────────────────────────────────────────────────
+  const handleCategoryPress = useCallback(
+    (category: CourseCategory | null) =>
+      setActiveCategory((prev) => (prev === category ? null : category)),
+    [],
+  );
+
+  // ── Stable content container style (avoids object re-allocation) ─
+  const contentContainerStyle = useMemo(
+    () => ({
+      paddingBottom: insets.bottom + spacing[24],
+    }),
+    [insets.bottom],
+  );
+
   return (
     <SafeAreaView edges={['top']} style={styles.screen}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        // Index 1 (search + chips) sticks to the top when scrolling
         stickyHeaderIndices={[1]}
-        contentContainerStyle={{
-          paddingBottom: insets.bottom + spacing[24],
-        }}
+        contentContainerStyle={contentContainerStyle}
         bounces
         overScrollMode="never"
       >
-        {/* ═══ Index 0: App Bar — scrolls away ═══ */}
+        {/* ═══ Index 0: App Bar ═══ */}
         <View style={styles.appBar}>
           <TouchableOpacity
-            onPress={handleBackPress}
+            onPress={navigation.goBack}
             style={styles.appBarLeft}
             activeOpacity={0.7}
+            accessibilityLabel="Go back"
+            accessibilityRole="button"
           >
             <Icon name="arrow-left" color={colors.text.primary} width={22} height={22} />
           </TouchableOpacity>
@@ -179,21 +192,22 @@ export default function CoursesScreen(): React.JSX.Element {
             </Text>
           </View>
 
-          <TouchableOpacity
-            onPress={handleMyLearningPress}
-            style={styles.myLearningButton}
-            activeOpacity={0.7}
-          >
+          <View style={styles.myLearningButton}>
             <Icon name="bookmark" color={colors.secondary} width={18} height={18} />
             <Text style={styles.myLearningText}>My Learning</Text>
-          </TouchableOpacity>
+          </View>
         </View>
 
         {/* ═══ Index 1: Search + Chips — sticky ═══ */}
         <View style={styles.stickyHeaderWrapper}>
           {/* Search Row */}
           <View style={styles.searchRow}>
-            <View style={[styles.searchContainer, isSearchFocused && styles.searchContainerFocused]}>
+            <View
+              style={[
+                styles.searchContainer,
+                isSearchFocused && styles.searchContainerFocused,
+              ]}
+            >
               <Icon
                 name="search"
                 color={isSearchFocused ? colors.secondary : colors.text.secondary}
@@ -211,13 +225,16 @@ export default function CoursesScreen(): React.JSX.Element {
                 onBlur={handleSearchBlur}
                 returnKeyType="search"
                 autoCorrect={false}
+                accessibilityLabel="Search courses and subjects"
               />
               {searchText.length > 0 && (
                 <TouchableOpacity
                   onPress={handleClearSearch}
                   style={styles.clearButton}
                   activeOpacity={0.7}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  hitSlop={CLEAR_BUTTON_HIT_SLOP}
+                  accessibilityLabel="Clear search"
+                  accessibilityRole="button"
                 >
                   <View style={styles.clearIcon}>
                     <Text style={styles.clearIconText}>✕</Text>
@@ -226,7 +243,12 @@ export default function CoursesScreen(): React.JSX.Element {
               )}
             </View>
 
-            <TouchableOpacity style={styles.filterButton} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.filterButton}
+              activeOpacity={0.7}
+              accessibilityLabel="Filter courses"
+              accessibilityRole="button"
+            >
               <Icon name="filter" color={colors.text.inverse} width={18} height={18} />
             </TouchableOpacity>
           </View>
@@ -241,6 +263,9 @@ export default function CoursesScreen(): React.JSX.Element {
                   onPress={() => handleCategoryPress(item.filterCategory)}
                   style={[styles.chip, isActive && styles.chipActive]}
                   activeOpacity={0.75}
+                  accessibilityLabel={`${item.label} courses`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
                 >
                   <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
                     {item.label}
@@ -253,16 +278,13 @@ export default function CoursesScreen(): React.JSX.Element {
 
         {/* ═══ Index 2+: Course Cards or Empty State ═══ */}
         {filteredCourses.length > 0 ? (
-          filteredCourses.map((item, index) => {
-            // Destructure `key` out so it isn't spread into JSX
+          filteredCourses.map((item) => {
             const { key, ...courseProps } = item;
             return (
               <CourseCard
                 key={key}
                 {...courseProps}
-                animationDelay={index * 80}
-                onExplorePress={() => handleExplorePress(key)}
-                onBookmarkPress={() => handleBookmarkPress(key)}
+                onPress={() => navigateToDetail(key)}
               />
             );
           })

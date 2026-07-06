@@ -32,6 +32,15 @@ import {
   MockTestPublishTestScreen,
 } from '../screens/dev';
 
+// ─── Transition Config ───────────────────────────────────────────────────────
+
+const screenAnimation = {
+  animation: 'slide_from_right' as const,
+  animationDuration: 250,
+};
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 export type DevStackParamList = {
   DevHome: undefined;
   StreamTest: undefined;
@@ -160,6 +169,7 @@ export default function DevNavigator(): React.JSX.Element {
         headerTintColor: '#6C63FF',
         headerStyle: { backgroundColor: '#1A1A2E' },
         headerShadowVisible: false,
+        ...screenAnimation,
       }}>
       <Stack.Screen
         name="DevHome"

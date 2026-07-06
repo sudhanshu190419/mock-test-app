@@ -6,8 +6,8 @@
  * Features:
  * - Paging FlatList with full-width cards
  * - Auto-scroll every 3.5s with infinite looping
- * - Pauses on user interaction, resumes after 3s of inactivity
- * - Smooth animated dot indicators
+ * - Pauses when screen is not focused
+ * - Simple static dot indicators
  * - Snap-to-card with no partial cuts
  *
  * @module components/home/TrendingCoursesSection
@@ -19,12 +19,12 @@ import {
   Text,
   TouchableOpacity,
   FlatList,
-  Animated,
   StyleSheet,
   Dimensions,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 
 import TrendingCourseCard from './TrendingCourseCard';
 import Icon from './Icons';
@@ -37,10 +37,7 @@ import { radius } from '../../theme/radius';
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const AUTO_SCROLL_INTERVAL = 1500; // ms between auto-scrolls
-const RESUME_DELAY = 3000; // ms of inactivity before resuming auto-scroll
-const INACTIVE_DOT_SIZE = 6;
-const ACTIVE_DOT_SIZE = 20;
+const AUTO_SCROLL_INTERVAL = 3500; // ms between auto-scrolls
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -72,14 +69,12 @@ const CarouselCard = React.memo(function CarouselCard({
   onExplorePress,
   onEnrollPress,
 }: CarouselCardProps): React.JSX.Element {
-  // Destructure key out so it isn't spread into JSX (React forbids spreading key)
   const { key: _key, ...cardProps } = item;
   return (
     <View style={styles.carouselItem}>
       <TrendingCourseCard
         key={_key}
         {...cardProps}
-        animationDelay={0}
         onPress={() => onCoursePress?.(item.key)}
         onExplorePress={() => onExplorePress?.(item.key)}
         onEnrollPress={() => onEnrollPress?.(item.key)}
@@ -89,47 +84,23 @@ const CarouselCard = React.memo(function CarouselCard({
   );
 });
 
-// ─── Animated Dot ───────────────────────────────────────────────────────────
+// ─── Static Dot ─────────────────────────────────────────────────────────────
 
 interface DotProps {
   index: number;
   activeIndex: number;
 }
 
-const AnimatedDot = React.memo(function AnimatedDot({
+const Dot = React.memo(function Dot({
   index,
   activeIndex,
 }: DotProps): React.JSX.Element {
-  const animValue = useRef(new Animated.Value(index === activeIndex ? 1 : 0)).current;
-
-  useEffect(() => {
-    Animated.spring(animValue, {
-      toValue: index === activeIndex ? 1 : 0,
-      friction: 8,
-      tension: 80,
-      useNativeDriver: false,
-    }).start();
-  }, [animValue, index, activeIndex]);
-
-  const width = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [INACTIVE_DOT_SIZE, ACTIVE_DOT_SIZE],
-  });
-
-  const opacity = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.3, 1],
-  });
-
   return (
-    <Animated.View
+    <View
       style={[
         styles.dot,
         {
-          width,
-          opacity,
-          backgroundColor:
-            index === activeIndex ? colors.secondary : colors.disabled,
+          backgroundColor: index === activeIndex ? colors.secondary : colors.disabled,
         },
       ]}
     />
@@ -150,17 +121,17 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollIndexRef = useRef(0);
   const [activeDotIndex, setActiveDotIndex] = useState(0);
+  const isFocused = useIsFocused();
 
   // ── Duplicate data for infinite loop illusion ──────────────────
-  // Show: [A, B, C, D, A'] — when user reaches A', snap back to A
   const loopedCourses = useMemo(
     () => (courses.length > 1 ? [...courses, courses[0]] : courses),
     [courses],
   );
 
-  // ── Auto-scroll logic ──────────────────────────────────────────
+  // ── Auto-scroll logic — pauses when screen not focused ─────────
   useEffect(() => {
-    if (courses.length <= 1) return;
+    if (courses.length <= 1 || !isFocused) return;
 
     const interval = setInterval(() => {
       if (isInteracting.current || !flatListRef.current) return;
@@ -168,7 +139,6 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
       const nextIndex = scrollIndexRef.current + 1;
 
       if (nextIndex >= loopedCourses.length) {
-        // Reached the duplicate — snap back to real first card instantly
         flatListRef.current.scrollToIndex({
           index: 0,
           animated: false,
@@ -185,7 +155,7 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
     }, AUTO_SCROLL_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [courses.length, loopedCourses.length]);
+  }, [courses.length, loopedCourses.length, isFocused]);
 
   // ── Track scroll position for dot updates ──────────────────────
   const handleScrollEnd = useCallback(
@@ -208,7 +178,7 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
         if (resumeTimer.current) clearTimeout(resumeTimer.current);
         resumeTimer.current = setTimeout(() => {
           isInteracting.current = false;
-        }, RESUME_DELAY);
+        }, 3000);
       }
     },
     [courses.length],
@@ -249,7 +219,7 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
 
   return (
     <View style={styles.container}>
-      {/* ── Header ───────────────────────────────────────────── */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>Trending Courses</Text>
@@ -275,7 +245,7 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
         </TouchableOpacity>
       </View>
 
-      {/* ── Carousel ─────────────────────────────────────────── */}
+      {/* Carousel */}
       <View style={styles.carouselContainer}>
         <FlatList
           ref={flatListRef}
@@ -299,11 +269,11 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
         />
       </View>
 
-      {/* ── Animated Page Indicators ──────────────────────────── */}
+      {/* Static Page Indicators */}
       {courses.length > 1 && (
         <View style={styles.dotsContainer}>
           {courses.map((_, i) => (
-            <AnimatedDot key={i} index={i} activeIndex={activeDotIndex} />
+            <Dot key={i} index={i} activeIndex={activeDotIndex} />
           ))}
         </View>
       )}
@@ -377,8 +347,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[8],
   },
   dot: {
-    height: INACTIVE_DOT_SIZE,
-    borderRadius: INACTIVE_DOT_SIZE / 2,
+    width: 20,
+    height: 6,
+    borderRadius: 3,
   },
 });
 

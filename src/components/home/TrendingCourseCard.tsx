@@ -14,12 +14,11 @@
  * @module components/home/TrendingCourseCard
  */
 
-import React, { useRef, useCallback, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
-  Animated,
   ImageBackground,
   StyleSheet,
   Platform,
@@ -38,17 +37,9 @@ import { radius } from '../../theme/radius';
 /** Background image for the hero card (full-bleed). */
 const CARD_BACKGROUND = require('../../../assets/neet.png');
 
-/** Avatar stack overlap offset. */
-const AVATAR_OVERLAP = 8;
-
-/** Random student avatar background tints. */
-const AVATAR_TINTS = ['#4F46E5', '#7C3AED', '#EC4899', '#F59E0B', '#10B981'] as const;
-
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 export interface TrendingCourseCardProps extends TrendingCourseItem {
-  /** Stagger delay for entrance animation (ms). */
-  animationDelay?: number;
   /** Callback when Explore is pressed. */
   onExplorePress?: () => void;
   /** Callback when Enroll Now is pressed. */
@@ -111,85 +102,25 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
   price,
   originalPrice,
   isBestSeller,
-  animationDelay = 0,
   onExplorePress,
   onEnrollPress,
   onBookmarkPress,
   onPress,
 }: TrendingCourseCardProps): React.JSX.Element {
-  // ── Entrance animation ────────────────────────────────────────
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(40)).current;
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 700,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 700,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 6,
-        tension: 40,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim, scaleAnim, animationDelay]);
-
-  // ── Press scale feedback ──────────────────────────────────────
-  const pressScale = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = useCallback(() => {
-    Animated.spring(pressScale, {
-      toValue: 0.97,
-      useNativeDriver: true,
-    }).start();
-  }, [pressScale]);
-
-  const handlePressOut = useCallback(() => {
-    Animated.spring(pressScale, {
-      toValue: 1,
-      friction: 4,
-      useNativeDriver: true,
-    }).start();
-  }, [pressScale]);
-
-  // ── Derived values ────────────────────────────────────────────
   const discountPercent =
     originalPrice && originalPrice > price
       ? Math.round((1 - price / originalPrice) * 100)
       : 0;
 
   return (
-    <Animated.View
-      style={[
-        styles.shadowWrapper,
-        {
-          opacity: fadeAnim,
-          transform: [
-            { translateY: slideAnim },
-            { scale: Animated.multiply(scaleAnim, pressScale) },
-          ],
-        },
-      ]}
+    <View
+      style={styles.shadowWrapper}
       accessibilityRole="summary"
       accessibilityLabel={`Featured course: ${title}`}
     >
       <TouchableOpacity
         onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={0.98}
+        activeOpacity={0.95}
         style={styles.touchable}
       >
         <ImageBackground
@@ -206,9 +137,9 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
             pointerEvents="none"
           />
 
-          {/* ── Content (on top of gradient) ───────────────────── */}
+          {/* Content (on top of gradient) */}
           <View style={styles.content}>
-            {/* Top section: badge + text + illustration */}
+            {/* Top section */}
             <View style={styles.topSection}>
               {/* Header row: Best Seller badge + Bookmark */}
               <View style={styles.topRow}>
@@ -264,7 +195,7 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
             {/* Divider */}
             <View style={styles.divider} />
 
-            {/* Bottom section: price + CTA buttons (full width) */}
+            {/* Bottom section: price + CTA buttons */}
             <View>
               {/* Price row */}
               <View style={styles.priceRow}>
@@ -283,7 +214,7 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
                 </View>
               </View>
 
-              {/* CTA buttons (full card width) */}
+              {/* CTA buttons */}
               <View style={styles.ctaRow}>
                 <TouchableOpacity
                   style={styles.exploreButton}
@@ -321,7 +252,7 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
           </View>
         </ImageBackground>
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 });
 
@@ -404,7 +335,6 @@ const styles = StyleSheet.create({
   textColumn: {
     width: '65%',
   },
-
   categoryChip: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(255,255,255,0.12)',
@@ -442,50 +372,6 @@ const styles = StyleSheet.create({
   instructorName: {
     color: 'rgba(255,255,255,0.8)',
     fontWeight: '600',
-  },
-
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing[8],
-  },
-  avatarStack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  avatarText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  avatarMore: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  avatarTextMore: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.7)',
-  },
-  enrolledRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[4],
-  },
-  enrolledText: {
-    ...typography.caption,
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 11,
-    fontWeight: '500',
   },
   ratingRow: {
     flexDirection: 'row',

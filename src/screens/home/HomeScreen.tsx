@@ -24,16 +24,20 @@
  * @module screens/home/HomeScreen
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { memo, useCallback } from 'react';
 import {
   View,
   FlatList,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { AppStackParamList } from '../../navigation/AppNavigator';
+
 import { useAppSelector } from '../../store/hooks';
 import { selectUser } from '../../store/authSlice';
-
+import { useNotifications } from '../../hooks/useNotifications';
 import GreetingHeader from '../../components/home/GreetingHeader';
 import HeroBanner from '../../components/home/HeroBanner';
 import QuickActionCard from '../../components/home/QuickActionCard';
@@ -49,7 +53,7 @@ import type { QuickActionItem, FeatureItem, PopularExamItem, TrendingCourseItem,
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 
-// --- Data ---
+// --- Static Data (defined outside component to avoid recreation) ---
 
 const QUICK_ACTIONS: QuickActionItem[] = [
   {
@@ -164,8 +168,6 @@ const POPULAR_EXAMS: PopularExamItem[] = [
   },
 ];
 
-// --- PYQ (Previous Year Questions) Data (7 items for the auto-carousel) ---
-
 const PYQ_FEATURES = {
   neet: [
     { icon: 'description', text: 'Previous Year Papers' },
@@ -269,8 +271,6 @@ const PYQ_ITEMS: PyqItem[] = [
   },
 ];
 
-// --- Batches Data ---
-
 const BATCH_ITEMS: BatchItem[] = [
   {
     key: 'jee-main',
@@ -372,8 +372,6 @@ const BATCH_ITEMS: BatchItem[] = [
     iconName: 'badge-check',
   },
 ];
-
-// --- Trending Courses Data (8 courses for the auto-carousel) ---
 
 const TRENDING_COURSES: TrendingCourseItem[] = [
   {
@@ -519,13 +517,103 @@ const SECTIONS: Section[] = [
   { id: 'cta' },
 ];
 
+// --- Memoised Section Components ---
+
+interface QuickStartGridProps {
+  onActionPress: (key: string) => void;
+}
+
+const QuickStartGrid = memo(function QuickStartGrid({
+  onActionPress,
+}: QuickStartGridProps): React.JSX.Element {
+  return (
+    <View style={styles.sectionWrapper}>
+      <SectionHeader title="Quick Start" />
+      <View style={styles.grid}>
+        {QUICK_ACTIONS.map((action) => (
+          <View key={action.key} style={styles.gridHalf}>
+            <QuickActionCard
+              {...action}
+              onPress={() => onActionPress(action.key)}
+            />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+});
+
+const FeaturesGrid = memo(function FeaturesGrid(): React.JSX.Element {
+  return (
+    <View style={styles.sectionWrapper}>
+      <SectionHeader title="Why Choose MockPrep?" />
+      <View style={styles.grid}>
+        {FEATURES.map((feature) => (
+          <View key={feature.key} style={styles.gridHalf}>
+            <FeatureCard {...feature} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+});
+
+interface PopularExamsGridProps {
+  onExamPress: (key: string) => void;
+  onViewAllExams: () => void;
+}
+
+const PopularExamsGrid = memo(function PopularExamsGrid({
+  onExamPress,
+  onViewAllExams,
+}: PopularExamsGridProps): React.JSX.Element {
+  return (
+    <View style={styles.sectionWrapper}>
+      <SectionHeader
+        title="Popular Exams"
+        actionLabel="View All"
+        onActionPress={onViewAllExams}
+      />
+      <View style={styles.grid}>
+        {POPULAR_EXAMS.map((exam) => (
+          <View key={exam.key} style={styles.gridHalf}>
+            <PopularExamCard
+              {...exam}
+              onPress={() => onExamPress(exam.key)}
+            />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+});
+
+interface CTASectionWrapperProps {
+  onStartFreeTest: () => void;
+}
+
+const CTASectionWrapper = memo(function CTASectionWrapper({
+  onStartFreeTest,
+}: CTASectionWrapperProps): React.JSX.Element {
+  return (
+    <View style={styles.ctaWrapper}>
+      <CTASection onStartFreeTest={onStartFreeTest} />
+    </View>
+  );
+});
+
 // --- Screen ---
 
 export default function HomeScreen(): React.JSX.Element {
-  const user = useAppSelector(selectUser);
+  const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+  const { unreadCount } = useNotifications();
+  const userName = useAppSelector(selectUser)?.name ?? 'Learner';
+
+  const handleNotificationPress = useCallback(() => {
+    navigation.navigate('Notification');
+  }, [navigation]);
 
   const handleExplorePress = useCallback(() => {}, []);
-  const handleNotificationPress = useCallback(() => {}, []);
   const handleProfilePress = useCallback(() => {}, []);
   const handleActionPress = useCallback((_key: string) => {}, []);
   const handleExamPress = useCallback((_key: string) => {}, []);
@@ -542,23 +630,17 @@ export default function HomeScreen(): React.JSX.Element {
   const handleViewAllBatches = useCallback(() => {}, []);
   const handleBatchPress = useCallback((_key: string) => {}, []);
 
-  const quickActions = useMemo(() => QUICK_ACTIONS, []);
-  const features = useMemo(() => FEATURES, []);
-  const popularExams = useMemo(() => POPULAR_EXAMS, []);
-  const trendingCourses = useMemo(() => TRENDING_COURSES, []);
-  const pyqItems = useMemo(() => PYQ_ITEMS, []);
-  const batchItems = useMemo(() => BATCH_ITEMS, []);
-
   const renderSection = useCallback(
     ({ item }: { item: Section }) => {
       switch (item.id) {
         case 'greeting':
           return (
             <GreetingHeader
-              userName={user?.name ?? 'Learner'}
+              userName={userName}
               onNotificationPress={handleNotificationPress}
               onProfilePress={handleProfilePress}
-              hasUnreadNotifications={false}
+              hasUnreadNotifications={unreadCount > 0}
+              unreadCount={unreadCount}
             />
           );
 
@@ -572,7 +654,7 @@ export default function HomeScreen(): React.JSX.Element {
         case 'trending-courses':
           return (
             <TrendingCoursesSection
-              courses={trendingCourses}
+              courses={TRENDING_COURSES}
               onViewAllPress={handleViewAllTrending}
               onCoursePress={handleCoursePress}
               onHeroExplorePress={handleHeroExplorePress}
@@ -583,7 +665,7 @@ export default function HomeScreen(): React.JSX.Element {
         case 'pyq-practice':
           return (
             <PyqPracticeSection
-              items={pyqItems}
+              items={PYQ_ITEMS}
               onViewAllPress={handleViewAllPyq}
               onItemPress={handlePyqItemPress}
               onPreviewPress={handlePyqPreviewPress}
@@ -594,88 +676,35 @@ export default function HomeScreen(): React.JSX.Element {
         case 'our-batches':
           return (
             <BatchesSection
-              batches={batchItems}
+              batches={BATCH_ITEMS}
               onViewAllPress={handleViewAllBatches}
               onBatchPress={handleBatchPress}
             />
           );
 
         case 'quick-start':
-          return (
-            <View style={styles.sectionWrapper}>
-              <SectionHeader title="Quick Start" />
-              <View style={styles.grid}>
-                {quickActions.map((action, index) => {
-                  const { key, ...actionProps } = action;
-                  return (
-                    <View key={key} style={styles.gridHalf}>
-                      <QuickActionCard
-                        {...actionProps}
-                        animationDelay={index * 80}
-                        onPress={() => handleActionPress(key)}
-                      />
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          );
+          return <QuickStartGrid onActionPress={handleActionPress} />;
 
         case 'why-choose':
-          return (
-            <View style={styles.sectionWrapper}>
-              <SectionHeader title="Why Choose MockPrep?" />
-              <View style={styles.grid}>
-                {features.map((feature) => {
-                  const { key, ...featureProps } = feature;
-                  return (
-                    <View key={key} style={styles.gridHalf}>
-                      <FeatureCard {...featureProps} />
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          );
+          return <FeaturesGrid />;
 
         case 'popular-exams':
           return (
-            <View style={styles.sectionWrapper}>
-              <SectionHeader
-                title="Popular Exams"
-                actionLabel="View All"
-                onActionPress={handleViewAllExams}
-              />
-              <View style={styles.grid}>
-                {popularExams.map((exam, index) => {
-                  const { key, ...examProps } = exam;
-                  return (
-                    <View key={key} style={styles.gridHalf}>
-                      <PopularExamCard
-                        {...examProps}
-                        animationDelay={index * 80}
-                        onPress={() => handleExamPress(key)}
-                      />
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
+            <PopularExamsGrid
+              onExamPress={handleExamPress}
+              onViewAllExams={handleViewAllExams}
+            />
           );
 
         case 'cta':
-          return (
-            <View style={styles.ctaWrapper}>
-              <CTASection onStartFreeTest={handleStartFreeTest} />
-            </View>
-          );
+          return <CTASectionWrapper onStartFreeTest={handleStartFreeTest} />;
 
         default:
           return null;
       }
     },
     [
-      user, quickActions, features, popularExams, trendingCourses, pyqItems, batchItems,
+      unreadCount, userName,
       handleExplorePress, handleNotificationPress, handleProfilePress,
       handleActionPress, handleExamPress, handleStartFreeTest, handleViewAllExams,
       handleViewAllTrending, handleCoursePress, handleHeroExplorePress, handleHeroEnrollPress,
@@ -696,10 +725,9 @@ export default function HomeScreen(): React.JSX.Element {
         contentContainerStyle={{
           paddingBottom: spacing[8],
         }}
-        removeClippedSubviews
-        initialNumToRender={4}
-        maxToRenderPerBatch={6}
-        windowSize={3}
+        initialNumToRender={9}
+        maxToRenderPerBatch={9}
+        windowSize={5}
       />
     </SafeAreaView>
   );

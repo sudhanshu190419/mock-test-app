@@ -11,13 +11,12 @@
  * @module components/home/CTASection
  */
 
-import React, { useRef, useCallback } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   Image,
   TouchableOpacity,
-  Animated,
   StyleSheet,
 } from 'react-native';
 
@@ -50,51 +49,9 @@ export interface CTASectionProps {
 const CTASection = React.memo(function CTASection({
   onStartFreeTest,
 }: CTASectionProps): React.JSX.Element {
-  // Entrance animation
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-
-  React.useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        delay: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        delay: 200,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim]);
-
-  // Button press animation
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.96,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
-
-  const handlePressOut = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 3,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
-
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-      ]}
+    <View
+      style={styles.container}
       accessibilityRole="summary"
     >
       {/* Left content */}
@@ -104,25 +61,21 @@ const CTASection = React.memo(function CTASection({
           Take a free mock test and experience MockPrep
         </Text>
 
-        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-          <TouchableOpacity
-            style={styles.ctaButton}
-            onPress={onStartFreeTest}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            activeOpacity={0.85}
-            accessibilityLabel="Start Free Test"
-            accessibilityRole="button"
-          >
-            <Text style={styles.ctaText}>Start Free Test</Text>
-            <Icon
-              name="arrow-right"
-              color={colors.text.primary}
-              width={18}
-              height={18}
-            />
-          </TouchableOpacity>
-        </Animated.View>
+        <TouchableOpacity
+          style={styles.ctaButton}
+          onPress={onStartFreeTest}
+          activeOpacity={0.85}
+          accessibilityLabel="Start Free Test"
+          accessibilityRole="button"
+        >
+          <Text style={styles.ctaText}>Start Free Test</Text>
+          <Icon
+            name="arrow-right"
+            color={colors.text.primary}
+            width={18}
+            height={18}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Right: gift-box illustration */}
@@ -134,7 +87,7 @@ const CTASection = React.memo(function CTASection({
           accessibilityLabel="Gift box illustration"
         />
       </View>
-    </Animated.View>
+    </View>
   );
 });
 

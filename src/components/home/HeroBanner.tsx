@@ -1,20 +1,20 @@
 /**
  * HeroBanner
  *
- * Large visually prominent card with:
- * - Left side: headline, subtitle, and "Explore Mock Tests" CTA
- * - Right side: hero illustration image
+ * Premium hero banner with:
+ * - Gradient background card
+ * - CTA button with native press feedback
+ * - Static illustration (no animations)
  *
  * @module components/home/HeroBanner
  */
 
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   Image,
   TouchableOpacity,
-  Animated,
   StyleSheet,
 } from 'react-native';
 
@@ -23,7 +23,6 @@ import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import LinearGradient from 'react-native-linear-gradient';
-
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -47,48 +46,23 @@ export interface HeroBannerProps {
 const HeroBanner = React.memo(function HeroBanner({
   onExplorePress,
 }: HeroBannerProps): React.JSX.Element {
-  // Entrance animation
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim]);
-
   return (
-    // Outer wrapper carries the shadow. Shadows and `overflow: hidden`
-    // don't mix in React Native — putting overflow on this view would
-    // silently clip the shadow, so the radius+clip lives on the inner card.
-    <Animated.View
-      style={[
-        styles.shadowWrapper,
-        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-      ]}
+    <View
+      style={styles.shadowWrapper}
       accessibilityRole="summary"
       accessibilityLabel="Hero banner: Ready to achieve your goals?"
     >
       <LinearGradient
-  colors={[
-  '#FFFFFF',
-  '#FFFFFF',
-  '#FBFAFF',
-  '#F3EEFF',
-]}
-start={{ x: 1, y: 0.5 }}
-end={{ x: 1, y: 0.5 }}
-  style={styles.card}
->
+        colors={[
+          '#FFFFFF',
+          '#FFFFFF',
+          '#FBFAFF',
+          '#F3EEFF',
+        ]}
+        start={{ x: 1, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={styles.card}
+      >
         {/* Left content */}
         <View style={styles.content}>
           <Text style={styles.headline}>
@@ -117,9 +91,8 @@ end={{ x: 1, y: 0.5 }}
           </TouchableOpacity>
         </View>
 
-        {/* Right: illustration */}
+        {/* Right: static illustration */}
         <View style={styles.imageWrapper}>
-          
           <Image
             source={HERO_IMAGE}
             style={styles.image}
@@ -127,28 +100,22 @@ end={{ x: 1, y: 0.5 }}
           />
         </View>
       </LinearGradient>
-    </Animated.View>
+    </View>
   );
 });
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  // Carries margin + shadow only — no overflow, no borderRadius clipping,
-  // so the shadow can render outside the card's bounds.
   shadowWrapper: {
     marginHorizontal: spacing[16],
     borderRadius: 20,
-    
     shadowColor: '#4A3AFF',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 3,
   },
-  // Carries the actual layout. Height is intentionally NOT fixed —
-  // it sizes to its content, which is what prevents the clipping seen
-  // in the previous version (fixed height 160 vs. ~190+ of real content).
   card: {
     flexDirection: 'row',
     alignItems: 'center',

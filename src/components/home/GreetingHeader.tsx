@@ -15,6 +15,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import Icon from './Icons';
+import NotificationBell from '../notification/NotificationBell';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
@@ -32,6 +33,8 @@ export interface GreetingHeaderProps {
   onProfilePress?: () => void;
   /** Whether to show the notification dot indicator. */
   hasUnreadNotifications?: boolean;
+  /** Number of unread notifications (for badge count). */
+  unreadCount?: number;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -41,6 +44,7 @@ const GreetingHeader = React.memo(function GreetingHeader({
   onNotificationPress,
   onProfilePress,
   hasUnreadNotifications = false,
+  unreadCount = 0,
 }: GreetingHeaderProps): React.JSX.Element {
   return (
     <View style={[styles.container, { paddingTop: spacing[12] }]}>
@@ -58,17 +62,12 @@ const GreetingHeader = React.memo(function GreetingHeader({
 
       {/* Right: Notification + Avatar */}
       <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.iconButton}
-          onPress={onNotificationPress}
-          activeOpacity={0.7}
-          accessibilityLabel="Notifications"
-          accessibilityRole="button"
-          hitSlop={sizes.hitSlop}
-        >
-          <Icon name="bell" color={colors.text.primary} width={24} height={24} />
-          {hasUnreadNotifications && <View style={styles.badgeDot} />}
-        </TouchableOpacity>
+        <NotificationBell
+          unreadCount={unreadCount}
+          onPress={onNotificationPress ?? (() => {})}
+          color={colors.text.primary}
+          size={24}
+        />
 
         <TouchableOpacity
           style={styles.avatar}
@@ -133,17 +132,6 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  badgeDot: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#EF4444',
-    borderWidth: 2,
-    borderColor: colors.background,
   },
   avatar: {
     width: 36,

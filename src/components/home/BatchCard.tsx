@@ -12,12 +12,11 @@
  * @module components/home/BatchCard
  */
 
-import React, { useRef, useCallback, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
-  Animated,
   StyleSheet,
   Platform,
 } from 'react-native';
@@ -32,8 +31,6 @@ import { radius } from '../../theme/radius';
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 export interface BatchCardProps extends BatchItem {
-  /** Stagger delay for entrance animation (ms). */
-  animationDelay?: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -57,167 +54,74 @@ const BatchCard = React.memo(function BatchCard({
   startDate,
   duration,
   iconName,
-  animationDelay = 0,
   onPress,
 }: BatchCardProps): React.JSX.Element {
-  // ── Entrance animation ────────────────────────────────────────
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 500,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 500,
-        delay: animationDelay,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim, animationDelay]);
-
-  // ── Press scale feedback ──────────────────────────────────────
-  const pressScale = useRef(new Animated.Value(1)).current;
-  const shadowElevation = useRef(new Animated.Value(0)).current;
-
-  const handlePressIn = useCallback(() => {
-    Animated.parallel([
-      Animated.spring(pressScale, {
-        toValue: 0.97,
-        useNativeDriver: false,
-      }),
-      Animated.timing(shadowElevation, {
-        toValue: 1,
-        duration: 120,
-        useNativeDriver: false,
-      }),
-    ]).start();
-  }, [pressScale, shadowElevation]);
-
-  const handlePressOut = useCallback(() => {
-    Animated.parallel([
-      Animated.spring(pressScale, {
-        toValue: 1,
-        friction: 4,
-        useNativeDriver: false,
-      }),
-      Animated.timing(shadowElevation, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: false,
-      }),
-    ]).start();
-  }, [pressScale, shadowElevation]);
-
   return (
-    <Animated.View
-      style={[
-        styles.shadowWrapper,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
-        },
-      ]}
+    <View
+      style={styles.shadowWrapper}
       accessibilityRole="summary"
       accessibilityLabel={`Batch: ${name}`}
     >
       <TouchableOpacity
         onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={0.95}
+        activeOpacity={0.85}
         style={styles.touchable}
       >
-        {/* Inner Animated.View for press effects — runs with JS driver (supports shadow) */}
-        <Animated.View
-          style={[
-            styles.innerPressWrapper,
-            {
-              transform: [{ scale: pressScale }],
-              ...Platform.select({
-                ios: {
-                  shadowOpacity: shadowElevation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.08, 0.18],
-                  }),
-                  shadowRadius: shadowElevation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [6, 14],
-                  }),
-                },
-                android: {
-                  elevation: shadowElevation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [3, 8],
-                  }),
-                },
-              }),
-            },
-          ]}
-        >
-          <View style={styles.card}>
-            {/* ── Top: Icon + Badge ──────────────────────────── */}
-            <View style={styles.topRow}>
-              <View style={[styles.iconContainer, { backgroundColor: accentColor + '18' }]}>
-                <Icon
-                  name={iconName as any}
-                  color={accentColor}
-                  width={20}
-                  height={20}
-                />
-              </View>
-              <View style={[styles.badge, { backgroundColor: accentColor + '15' }]}>
-                <Text style={[styles.badgeText, { color: accentColor }]}>{badgeLabel}</Text>
-              </View>
-            </View>
-
-            {/* ── Middle: Name + Subtitle ────────────────────── */}
-            <Text style={styles.batchName} numberOfLines={2}>
-              {name}
-            </Text>
-            <Text style={styles.batchSubtitle}>{subtitle}</Text>
-
-            {/* ── Bottom: Stats ──────────────────────────────── */}
-            <View style={styles.statsContainer}>
-              <View style={styles.statRow}>
-                <Text style={styles.statEmoji}>👥</Text>
-                <Text style={styles.statText}>{formatStudentCount(studentCount)}</Text>
-              </View>
-              <View style={styles.statRow}>
-                <Text style={styles.statEmoji}>📅</Text>
-                <Text style={styles.statText}>{startDate}</Text>
-              </View>
-              <View style={styles.statRow}>
-                <Text style={styles.statEmoji}>⏱</Text>
-                <Text style={styles.statText}>{duration}</Text>
-              </View>
-            </View>
-
-            {/* ── CTA Button ────────────────────────────────── */}
-            <View style={styles.ctaButton}>
-              <Text style={[styles.ctaText, { color: accentColor }]}>Explore Batch</Text>
+        <View style={styles.card}>
+          {/* Top: Icon + Badge */}
+          <View style={styles.topRow}>
+            <View style={[styles.iconContainer, { backgroundColor: accentColor + '18' }]}>
               <Icon
-                name="arrow-right"
+                name={iconName as any}
                 color={accentColor}
-                width={14}
-                height={14}
+                width={20}
+                height={20}
               />
             </View>
+            <View style={[styles.badge, { backgroundColor: accentColor + '15' }]}>
+              <Text style={[styles.badgeText, { color: accentColor }]}>{badgeLabel}</Text>
+            </View>
           </View>
-        </Animated.View>
+
+          {/* Middle: Name + Subtitle */}
+          <Text style={styles.batchName} numberOfLines={2}>
+            {name}
+          </Text>
+          <Text style={styles.batchSubtitle}>{subtitle}</Text>
+
+          {/* Bottom: Stats */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statRow}>
+              <Text style={styles.statEmoji}>👥</Text>
+              <Text style={styles.statText}>{formatStudentCount(studentCount)}</Text>
+            </View>
+            <View style={styles.statRow}>
+              <Text style={styles.statEmoji}>📅</Text>
+              <Text style={styles.statText}>{startDate}</Text>
+            </View>
+            <View style={styles.statRow}>
+              <Text style={styles.statEmoji}>⏱</Text>
+              <Text style={styles.statText}>{duration}</Text>
+            </View>
+          </View>
+
+          {/* CTA Button */}
+          <View style={styles.ctaButton}>
+            <Text style={[styles.ctaText, { color: accentColor }]}>Explore Batch</Text>
+            <Icon
+              name="arrow-right"
+              color={accentColor}
+              width={14}
+              height={14}
+            />
+          </View>
+        </View>
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 });
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
-
-const CARD_HEIGHT = 205;
 
 const styles = StyleSheet.create({
   shadowWrapper: {
@@ -239,13 +143,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     overflow: 'hidden',
   },
-  innerPressWrapper: {
-    borderRadius: radius.xl,
-    overflow: 'hidden',
-  },
   card: {
-    width: '100%',
-    height: CARD_HEIGHT,
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
     borderWidth: 1,
@@ -255,8 +153,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[8],
     justifyContent: 'space-between',
   },
-
-  // ── Top row: icon + badge ─────────────────────────────────
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -280,8 +176,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-
-  // ── Name + Subtitle ────────────────────────────────────────
   batchName: {
     ...typography.subtitle,
     fontSize: 13,
@@ -298,8 +192,6 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     marginTop: 2,
   },
-
-  // ── Stats ──────────────────────────────────────────────────
   statsContainer: {
     gap: spacing[4],
     marginTop: spacing[4],
@@ -320,8 +212,6 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     lineHeight: 14,
   },
-
-  // ── CTA ────────────────────────────────────────────────────
   ctaButton: {
     flexDirection: 'row',
     alignItems: 'center',

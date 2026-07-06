@@ -4,6 +4,9 @@
  * Root navigation component that gates the app experience based on
  * authentication state from the Redux store.
  *
+ * All screen transitions use a subtle horizontal slide (250ms
+ * ease-in-out) for a premium, native feel.
+ *
  * ## Navigation flow
  *
  * ```
@@ -24,21 +27,11 @@
  *              └────────────┘
  * ```
  *
- * ## Architecture
- *
- * This component uses **conditional rendering** rather than a switch
- * navigator.  React Navigation handles this gracefully — when the
- * condition flips, the previous stack is unmounted and the new stack
- * mounts with its initial route.
- *
- * - No API calls (handled by AuthProvider)
- * - No business logic (handled by authService / authSlice)
- * - Pure presentation derived from Redux selectors
- *
  * @module AuthNavigator
  */
 
 import React, { useCallback } from 'react';
+import { Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -57,6 +50,15 @@ import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
 import SplashScreen from '../screens/splash/SplashScreen';
 import AppNavigator from './AppNavigator';
 
+// ─── Transition Config ───────────────────────────────────────────────────────
+
+const TRANSITION_DURATION = 250;
+
+const screenAnimation = {
+  animation: 'slide_from_right' as const,
+  animationDuration: TRANSITION_DURATION,
+};
+
 // ─── Auth Stack (unauthenticated) ───────────────────────────────────────────
 
 const AuthStack = createNativeStackNavigator();
@@ -65,7 +67,11 @@ function AuthStackScreens(): React.JSX.Element {
   return (
     <AuthStack.Navigator
       initialRouteName="Login"
-      screenOptions={{ headerShown: false }}>
+      screenOptions={{
+        headerShown: false,
+        ...screenAnimation,
+      }}
+    >
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Register" component={RegisterScreen} />
       <AuthStack.Screen

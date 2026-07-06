@@ -6,19 +6,17 @@
  * Features:
  * - Horizontal FlatList with snap-to-card animation
  * - Shows 2 full cards + preview of 3rd to encourage scrolling
- * - Fade-in/slide entrance animation
  * - View All header (matching other sections)
  *
  * @module components/home/BatchesSection
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   FlatList,
-  Animated,
   StyleSheet,
   Dimensions,
 } from 'react-native';
@@ -58,37 +56,14 @@ const BatchesSection = React.memo(function BatchesSection({
   onViewAllPress,
   onBatchPress,
 }: BatchesSectionProps): React.JSX.Element {
-  // ── Entrance animation for the whole section ────────────────
-  const sectionFadeAnim = useRef(new Animated.Value(0)).current;
-  const sectionSlideAnim = useRef(new Animated.Value(30)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(sectionFadeAnim, {
-        toValue: 1,
-        duration: 600,
-        delay: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(sectionSlideAnim, {
-        toValue: 0,
-        duration: 600,
-        delay: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [sectionFadeAnim, sectionSlideAnim]);
-
-  // ── FlatList renderers ─────────────────────────────────────
   const renderItem = useCallback(
-    ({ item, index }: { item: BatchItem; index: number }) => {
+    ({ item }: { item: BatchItem }) => {
       const { key: _key, ...cardProps } = item;
       return (
         <View style={styles.cardWrapper}>
           <BatchCard
             key={_key}
             {...cardProps}
-            animationDelay={100 + index * 80}
             onPress={() => onBatchPress?.(item.key)}
           />
         </View>
@@ -103,16 +78,8 @@ const BatchesSection = React.memo(function BatchesSection({
   );
 
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          opacity: sectionFadeAnim,
-          transform: [{ translateY: sectionSlideAnim }],
-        },
-      ]}
-    >
-      {/* ── Header ───────────────────────────────────────────── */}
+    <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>Our Batches</Text>
@@ -137,7 +104,7 @@ const BatchesSection = React.memo(function BatchesSection({
         </TouchableOpacity>
       </View>
 
-      {/* ── Horizontal Carousel ──────────────────────────────── */}
+      {/* Horizontal Carousel */}
       <FlatList
         data={batches}
         renderItem={renderItem}
@@ -152,7 +119,7 @@ const BatchesSection = React.memo(function BatchesSection({
         maxToRenderPerBatch={5}
         windowSize={3}
       />
-    </Animated.View>
+    </View>
   );
 });
 

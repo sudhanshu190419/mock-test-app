@@ -1,23 +1,23 @@
 /**
  * MainTabNavigator
  *
- * Bottom tab navigator for the authenticated app experience.
- *
- * Tabs:
- * - Home
- * - Courses
- * - Mock Tests
- * - Live Classes
- * - Profile
- *
- * Uses @react-navigation/bottom-tabs with a custom tab bar styled
- * to match the premium design system.
+ * Bottom tab navigator with instant tab switching:
+ * - Tabs mount lazily (lazy: true) — only the active tab screen mounts
+ * - Freeze inactive screens to preserve their state without JS thread overhead
+ * - Active icon gets a highlighted background
+ * - Focused label uses bold weight for clear visual state
+ * - Optimised for instant response — no tab-icon animations
  *
  * @module navigation/MainTabNavigator
  */
 
 import React from 'react';
-import { Text, StyleSheet, Platform, View } from 'react-native';
+import {
+  Text,
+  StyleSheet,
+  Platform,
+  View,
+} from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -59,26 +59,43 @@ const TAB_CONFIG: Record<keyof MainTabParamList, TabConfig> = {
   Profile: { label: 'Profile', icon: 'user' },
 };
 
-// ─── Custom Tab Bar Icon ────────────────────────────────────────────────────
+// ─── Tab Icon ──────────────────────────────────────────────────────────────
 
-interface TabIconProps {
+function TabIcon({
+  routeName,
+  focused,
+  color,
+  size,
+}: {
   routeName: keyof MainTabParamList;
   focused: boolean;
   color: string;
   size: number;
-}
-
-function TabIcon({ routeName, focused, color, size }: TabIconProps): React.JSX.Element {
+}): React.JSX.Element {
   const config = TAB_CONFIG[routeName];
   return (
-    <View style={focused ? styles.activeIconContainer : undefined}>
-      <Icon
-        name={config.icon}
-        color={color}
-        width={size}
-        height={size}
-      />
+    <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+      <Icon name={config.icon} color={color} width={size} height={size} />
     </View>
+  );
+}
+
+// ─── Tab Label ─────────────────────────────────────────────────────────────
+
+function TabLabel({
+  routeName,
+  focused,
+  color,
+}: {
+  routeName: keyof MainTabParamList;
+  focused: boolean;
+  color: string;
+}): React.JSX.Element {
+  const config = TAB_CONFIG[routeName];
+  return (
+    <Text style={[styles.tabLabel, { color, fontWeight: focused ? '700' : '500' }]}>
+      {config.label}
+    </Text>
   );
 }
 
@@ -91,6 +108,8 @@ export default function MainTabNavigator(): React.JSX.Element {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        lazy: true,
+        freezeOnBlur: true,
         tabBarIcon: ({ focused, color, size }) => (
           <TabIcon
             routeName={route.name as keyof MainTabParamList}
@@ -99,19 +118,13 @@ export default function MainTabNavigator(): React.JSX.Element {
             size={size}
           />
         ),
-        tabBarLabel: ({ focused, color }) => {
-          const config = TAB_CONFIG[route.name as keyof MainTabParamList];
-          return (
-            <Text
-              style={[
-                styles.tabLabel,
-                { color },
-              ]}
-            >
-              {config.label}
-            </Text>
-          );
-        },
+        tabBarLabel: ({ focused, color }) => (
+          <TabLabel
+            routeName={route.name as keyof MainTabParamList}
+            focused={focused}
+            color={color}
+          />
+        ),
         tabBarActiveTintColor: colors.secondary,
         tabBarInactiveTintColor: colors.text.secondary,
         tabBarStyle: {
@@ -157,6 +170,9 @@ const styles = StyleSheet.create({
   tabBarItem: {
     paddingVertical: spacing[4],
     paddingHorizontal: spacing[4],
+  },
+  iconContainer: {
+    padding: spacing[4],
   },
   activeIconContainer: {
     backgroundColor: colors.highlight,
