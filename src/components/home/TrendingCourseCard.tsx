@@ -139,7 +139,7 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
 
           {/* Content (on top of gradient) */}
           <View style={styles.content}>
-            {/* Top section */}
+            {/* Top section — fills remaining space naturally */}
             <View style={styles.topSection}>
               {/* Header row: Best Seller badge + Bookmark */}
               <View style={styles.topRow}>
@@ -168,10 +168,12 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
               {/* Content row: text */}
               <View style={styles.contentRow}>
                 <View style={styles.textColumn}>
-                  {/* Category chip */}
-                  <View style={styles.categoryChip}>
-                    <Text style={styles.categoryText}>{category}</Text>
-                  </View>
+                  {/* Category chip — hidden when empty */}
+                  {category ? (
+                    <View style={styles.categoryChip}>
+                      <Text style={styles.categoryText}>{category}</Text>
+                    </View>
+                  ) : null}
 
                   {/* Title */}
                   <Text style={styles.title} numberOfLines={3}>
@@ -192,11 +194,11 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
               </View>
             </View>
 
-            {/* Divider */}
-            <View style={styles.divider} />
+            {/* Bottom section: divider + price + CTA — anchored to bottom */}
+            <View style={styles.bottomSection}>
+              {/* Divider */}
+              <View style={styles.divider} />
 
-            {/* Bottom section: price + CTA buttons */}
-            <View>
               {/* Price row */}
               <View style={styles.priceRow}>
                 <View style={styles.priceLeft}>
@@ -291,10 +293,13 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: spacing[20],
-    justifyContent: 'space-between',
   },
   topSection: {
     flexShrink: 1,
+  },
+  /** Anchors divider + price + CTA to the bottom of the card. */
+  bottomSection: {
+    marginTop: 'auto',
   },
   topRow: {
     flexDirection: 'row',
@@ -402,7 +407,7 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
     marginTop: spacing[20],
-    marginBottom: spacing[8],
+    marginBottom: spacing[16],
   },
   priceRow: {
     flexDirection: 'row',

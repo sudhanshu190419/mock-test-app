@@ -255,8 +255,7 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
-          snapToInterval={SCREEN_WIDTH}
-          decelerationRate="fast"
+          decelerationRate="normal"
           onMomentumScrollEnd={handleScrollEnd}
           getItemLayout={getItemLayout}
           removeClippedSubviews

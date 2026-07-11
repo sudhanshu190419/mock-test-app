@@ -49,9 +49,6 @@
 -- auth.users). Real user phone numbers should also have their '+' stripped,
 -- which is correct since Supabase Auth stores them without it.
 
-update public.profiles
-set phone = ltrim(phone, '+')
-where phone like '+%';
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- SECTION 2 — Drop old constraint
@@ -61,6 +58,15 @@ where phone like '+%';
 
 alter table only public.profiles
   drop constraint if exists ck_profiles_phone_format;
+
+
+
+
+
+update public.profiles
+set phone = ltrim(phone, '+')
+where phone like '+%';
+
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- SECTION 3 — Create new constraint (Supabase Auth format)

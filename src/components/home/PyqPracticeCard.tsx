@@ -104,7 +104,7 @@ const PremiumFeatureRow = React.memo(function PremiumFeatureRow({
 const PyqPracticeCard = React.memo(function PyqPracticeCard({
   title,
   category,
-  features,
+  features = [],
   price,
   originalPrice,
   badgeLabel,

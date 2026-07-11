@@ -2,17 +2,24 @@
  * GreetingHeader
  *
  * Top section of the home screen showing:
- * - Greeting ("Good Morning! 👋")
+ * - Greeting ("Good Morning! 👋") — calculated on the client from device time
  * - Welcome title ("Welcome to MockPrep")
  * - Motivational subtitle
  * - Notification bell icon with badge
- * - Profile avatar
+ * - Profile avatar (real image or fallback icon)
+ *
+ * ─── Greeting Rules (calculated client-side) ────────────────────────────────
+ *
+ *   05:00–11:59  →  Good Morning
+ *   12:00–16:59  →  Good Afternoon
+ *   17:00–20:59  →  Good Evening
+ *   21:00–04:59  →  Good Evening
  *
  * @module components/home/GreetingHeader
  */
 
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 
 import Icon from './Icons';
 import NotificationBell from '../notification/NotificationBell';
@@ -27,6 +34,8 @@ import { sizes } from '../../theme/sizes';
 export interface GreetingHeaderProps {
   /** User's display name (e.g. "Sudhanshu"). */
   userName?: string;
+  /** Optional avatar URL for the profile image. Falls back to icon when null. */
+  avatarUrl?: string | null;
   /** Callback when the notification bell is pressed. */
   onNotificationPress?: () => void;
   /** Callback when the profile avatar is pressed. */
@@ -37,26 +46,55 @@ export interface GreetingHeaderProps {
   unreadCount?: number;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Calculate a time-appropriate greeting based on the device's current hour.
+ *
+ * Rules:
+ *   Morning   05:00–11:59   Good Morning
+ *   Afternoon 12:00–16:59   Good Afternoon
+ *   Evening   17:00–20:59   Good Evening
+ *   Night     21:00–04:59   Good Evening
+ */
+function getGreeting(): string {
+  const hour = new Date().getHours();
+
+  if (hour >= 5 && hour < 12) {
+    return 'Good Morning!';
+  }
+  if (hour >= 12 && hour < 17) {
+    return 'Good Afternoon!';
+  }
+  // 17:00–04:59 → Good Evening
+  return 'Good Evening!';
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 const GreetingHeader = React.memo(function GreetingHeader({
-  userName = 'Sudhanshu',
+  userName = 'Learner',
+  avatarUrl,
   onNotificationPress,
   onProfilePress,
   hasUnreadNotifications = false,
   unreadCount = 0,
 }: GreetingHeaderProps): React.JSX.Element {
+  // Calculate greeting once on mount and whenever the component re-renders
+  // (typically only on mount, since the screen is not re-rendered at every hour)
+  const greeting = useMemo(() => getGreeting(), []);
+
   return (
     <View style={[styles.container, { paddingTop: spacing[12] }]}>
       {/* Left: Greeting text */}
       <View style={styles.textSection}>
         <View style={styles.greetingRow}>
           <Text style={styles.emoji}>👋</Text>
-          <Text style={styles.title}>Good Morning!</Text>
+          <Text style={styles.greeting}>{greeting}</Text>
         </View>
         <Text style={styles.title}>{userName}!</Text>
         <Text style={styles.subtitle}>
-          Keep learning, keep growing! 
+          Keep learning, keep growing!
         </Text>
       </View>
 
@@ -76,7 +114,16 @@ const GreetingHeader = React.memo(function GreetingHeader({
           accessibilityLabel="Profile"
           accessibilityRole="button"
         >
-          <Icon name="user" color={colors.text.inverse} width={20} height={20} />
+          {avatarUrl ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              style={styles.avatarImage}
+              resizeMode="cover"
+              accessibilityLabel="Profile avatar"
+            />
+          ) : (
+            <Icon name="user" color={colors.text.inverse} width={20} height={20} />
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -141,6 +188,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.small,
+  },
+  avatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
 });
 
