@@ -16,3 +16,7 @@ export const supabase = createClient(
     },
   },
 );
+
+// ── [CONFIG] Log Supabase connection info for diagnostics ─────────────────
+console.log('[CONFIG] SUPABASE_URL:', supabaseUrl);
+console.log('[CONFIG] SUPABASE_ANON_KEY (first 20 chars):', supabaseAnonKey?.substring(0, 20));

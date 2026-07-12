@@ -330,9 +330,17 @@ export async function uploadQuestionImage(
     // ── 1. Generate image ID ────────────────────────────────────────────
     const imageId = generateUUID();
 
-    // ── 2. Upload to storage via storageService ─────────────────────────
+    // ── [UPLOAD_TRACE] Log the path params before upload ────────────────
     const ext = getFileExtension(file);
+    console.log('[UPLOAD_TRACE] Path params to storageUploadFile:', {
+      resourceType: 'question_image',
+      instituteId,
+      questionId,
+      imageId,
+      ext,
+    });
 
+    // ── 2. Upload to storage via storageService ─────────────────────────
     const uploadResult = await storageUploadFile({
       file,
       resourceType: 'question_image',
@@ -344,6 +352,9 @@ export async function uploadQuestionImage(
       },
       onProgress,
     });
+
+    // ── [UPLOAD_TRACE] Log the upload result ────────────────────────────
+    console.log('[UPLOAD_TRACE] Upload result:', JSON.stringify(uploadResult, null, 2));
 
     if (!uploadResult.success || !uploadResult.data) {
       return { success: false, error: `Image upload failed: ${uploadResult.error}` };
@@ -362,6 +373,12 @@ export async function uploadQuestionImage(
       }
     }
 
+    // ── [UPLOAD_TRACE] Log the exact values about to be written to DB ─
+    console.log('[UPLOAD_TRACE] DB insert — storage_bucket:', storageBucket);
+    console.log('[UPLOAD_TRACE] DB insert — storage_path:', storagePath);
+    console.log('[UPLOAD_TRACE] DB insert — image_role:', imageRole);
+    console.log('[UPLOAD_TRACE] Did storagePath match upload path?', 'YES (same variable)');
+
     // ── 4. Insert DB record ─────────────────────────────────────────────
     const dbRecord: Record<string, unknown> = {
       image_id: imageId,
@@ -379,6 +396,12 @@ export async function uploadQuestionImage(
       .insert(dbRecord)
       .select()
       .single<DbQuestionImage>();
+
+    // ── [UPLOAD_TRACE] Log the DB insert result ────────────────────────
+    if (dbData) {
+      console.log('[UPLOAD_TRACE] DB insert success — returned storage_bucket:', dbData.storage_bucket);
+      console.log('[UPLOAD_TRACE] DB insert success — returned storage_path:', dbData.storage_path);
+    }
 
     // ── 5. Rollback on DB failure ───────────────────────────────────────
     if (dbError) {

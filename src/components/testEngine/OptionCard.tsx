@@ -11,6 +11,7 @@ import React, { useCallback } from 'react';
 import {
   View,
   Text,
+  Image,
   Pressable,
   StyleSheet,
   type GestureResponderEvent,
@@ -27,6 +28,8 @@ interface OptionCardProps {
   label: string;
   /** Option text / content. */
   text: string;
+  /** Optional image URL for image-based options. */
+  imageUrl?: string;
   /** Whether this option is currently selected. */
   isSelected: boolean;
   /** Whether this option is disabled (test submitted). */
@@ -42,10 +45,14 @@ const OptionCard = React.memo(function OptionCard({
   id,
   label,
   text,
+  imageUrl,
   isSelected,
   disabled = false,
   onSelect,
 }: OptionCardProps): React.JSX.Element {
+  // ── [STEP5] Log what OptionCard receives ────────────────────────────
+  console.log('[STEP5] OptionCard — id:', id, 'label:', label, 'text:', text, 'imageUrl:', imageUrl);
+
   const handlePress = useCallback(
     (e: GestureResponderEvent) => {
       e.stopPropagation?.();
@@ -90,16 +97,31 @@ const OptionCard = React.memo(function OptionCard({
         {label}.
       </Text>
 
-      {/* Option text */}
-      <Text
-        style={[
-          styles.optionText,
-          isSelected && styles.optionTextSelected,
-        ]}
-        numberOfLines={0}
-      >
-        {text}
-      </Text>
+      {/* Option content: text + optional image */}
+      <View style={styles.optionContent}>
+        {text ? (
+          <Text
+            style={[
+              styles.optionText,
+              isSelected && styles.optionTextSelected,
+            ]}
+            numberOfLines={0}
+          >
+            {text}
+          </Text>
+        ) : null}
+
+        {imageUrl ? (
+          <View style={styles.optionImageContainer}>
+            <Image
+              source={{ uri: imageUrl }}
+              style={styles.optionImage}
+              resizeMode="contain"
+              accessibilityLabel={`Option ${label} image`}
+            />
+          </View>
+        ) : null}
+      </View>
 
       {/* Focus ring — visible when selected */}
       {isSelected && <View style={styles.focusRing} pointerEvents="none" />}
@@ -162,17 +184,35 @@ const styles = StyleSheet.create({
   labelSelected: {
     color: colors.primary,
   },
+  optionContent: {
+    flex: 1,
+    marginLeft: spacing[4],
+  },
   optionText: {
     ...typography.body,
     fontSize: 15,
     color: palette.slate700,
     lineHeight: 22,
-    flex: 1,
-    marginLeft: spacing[4],
   },
   optionTextSelected: {
     fontWeight: '600',
     color: palette.slate800,
+  },
+  optionImageContainer: {
+    marginTop: spacing[8],
+    backgroundColor: palette.slate50,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: palette.slate200,
+    overflow: 'hidden',
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionImage: {
+    width: '100%',
+    height: '100%',
+    opacity: 0.85,
   },
   focusRing: {
     position: 'absolute',

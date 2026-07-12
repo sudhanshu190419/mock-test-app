@@ -33,6 +33,12 @@ const QuestionCard = React.memo(function QuestionCard({
   isSubmitted = false,
   onOptionSelect,
 }: QuestionCardProps): React.JSX.Element {
+  // ── [STEP4] Log what QuestionCard receives ──────────────────────────
+  console.log('[STEP4] QuestionCard received — text:', question.text);
+  console.log('[STEP4] QuestionCard received — imageUrl:', question.imageUrl);
+  console.log('[STEP4] QuestionCard received — imageAlt:', question.imageAlt);
+  console.log('[STEP4] QuestionCard received — options:', JSON.stringify(question.options, null, 2));
+
   const handleOptionSelect = useCallback(
     (optionId: string) => {
       onOptionSelect(optionId);
@@ -86,6 +92,7 @@ const QuestionCard = React.memo(function QuestionCard({
             id={option.id}
             label={option.label}
             text={option.text}
+            imageUrl={option.imageUrl}
             isSelected={selectedOptionId === option.id}
             disabled={isSubmitted}
             onSelect={handleOptionSelect}

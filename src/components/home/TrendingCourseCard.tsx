@@ -120,7 +120,7 @@ const TrendingCourseCard = React.memo(function TrendingCourseCard({
     >
       <TouchableOpacity
         onPress={onPress}
-        activeOpacity={0.95}
+        activeOpacity={1}
         style={styles.touchable}
       >
         <ImageBackground

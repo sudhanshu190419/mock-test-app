@@ -24,6 +24,8 @@ import ExamPackDetailScreen from '../screens/tests/ExamPackDetailScreen';
 import TestInstructionsScreen from '../screens/tests/TestInstructionsScreen';
 import TestEngineScreen from '../screens/tests/TestEngineScreen';
 import TestResultScreen from '../screens/tests/TestResultScreen';
+import TestSubmittedScreen from '../screens/tests/TestSubmittedScreen';
+import MyResultsScreen from '../screens/tests/MyResultsScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 
 // DEV ONLY - Remove after frontend integration
@@ -49,6 +51,7 @@ import type { ExamPackDetailParams } from '../screens/tests/ExamPackDetailScreen
 import type { TestInstructionsParams } from '../screens/tests/TestInstructionsScreen';
 import type { TestEngineParams } from '../screens/tests/TestEngineScreen';
 import type { TestResultParams } from '../screens/tests/TestResultScreen';
+import type { TestSubmittedParams } from '../screens/tests/TestSubmittedScreen';
 
 export type AppStackParamList = {
   MainTabs: undefined;
@@ -60,6 +63,8 @@ export type AppStackParamList = {
   TestInstructions: TestInstructionsParams;
   TestEngine: TestEngineParams;
   TestResult: TestResultParams;
+  TestSubmitted: TestSubmittedParams;
+  MyResults: undefined;
   // DEV ONLY - Remove after frontend integration
   DevHub: undefined;
 };
@@ -158,6 +163,25 @@ export default function AppNavigator(): React.JSX.Element {
       <Stack.Screen
         name="TestResult"
         component={TestResultScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="TestSubmitted"
+        component={TestSubmittedScreen}
+        options={{
+          headerShown: false,
+          animation: 'fade_from_bottom',
+          animationDuration: 300,
+        }}
+      />
+
+      <Stack.Screen
+        name="MyResults"
+        component={MyResultsScreen}
         options={{
           headerShown: false,
           ...slideFromRight,

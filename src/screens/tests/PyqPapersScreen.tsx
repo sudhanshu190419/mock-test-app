@@ -1,20 +1,18 @@
 /**
  * PyqPapersScreen
  *
- * Screen shown when a user taps an exam card (e.g. "JEE Main") from the
- * MockTests tab. Displays a searchable, filterable list of previous-year
- * papers grouped by year, matching the reference HTML/CSS design.
+ * Screen that displays the list of papers for a PYQ package, fetched
+ * from the backend via `usePracticeDetail(packageId)`.
  *
  * Features:
- * - Sticky header with back button, exam title, and subtitle
- * - Search bar and filter chips scroll with the list content
- * - FlatList of year cards with calendar icon, badge, stats, and CTA
- * - Info footer explaining PYQ content
+ * - Sticky header with package name and subtitle
+ * - Search bar and filter chips (operate on loaded papers)
+ * - FlatList of paper cards with stats and CTA
  *
  * @module screens/tests/PyqPapersScreen
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,45 +21,38 @@ import {
   FlatList,
   StyleSheet,
   Platform,
+  ActivityIndicator,
   type ListRenderItemInfo,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import Icon from '../../components/home/Icons';
-import type { IconName } from '../../components/home/Icons';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
+import { usePracticeDetail } from '../../hooks/practice/usePractice';
+import { getPaperMockMapping } from '../../services/practice/practiceService';
 import { colors, palette } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
+import type { PracticePaper } from '../../types/practice';
+import { Alert } from 'react-native';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Types
 // ═══════════════════════════════════════════════════════════════════
 
 export interface PyqPapersScreenParams {
-  /** Display title for the exam (e.g. "JEE Main"). */
-  examTitle: string;
-  /** Icon name for the exam. */
-  examIcon: IconName;
+  /** UUID of the PYQ package whose papers to display. */
+  packageId: string;
+  /** Display name of the package (for the header). */
+  packageName: string;
 }
 
-interface PyqYearData {
-  /** Year identifier, e.g. "2025". */
-  year: string;
-  /** Display label, e.g. "JEE Main 2025". */
-  displayLabel: string;
-  /** Paper description, e.g. "Paper 1" or "Paper 1 & Paper 2". */
-  papers: string;
-  /** Number of questions. */
-  questions: number;
-  /** Duration in minutes. */
-  durationMin: number;
-}
-
-type FilterKey = 'all' | 'paper1' | 'paper2' | 'latest' | 'oldest';
+type FilterKey = 'all' | 'latest' | 'oldest';
 
 interface FilterChip {
   key: FilterKey;
@@ -69,63 +60,15 @@ interface FilterChip {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Constants & Data
+//  Constants
 // ═══════════════════════════════════════════════════════════════════
 
-/** Brand green from the reference HTML design. */
 const BRAND_GREEN = '#008c3a';
 
 const FILTER_CHIPS: FilterChip[] = [
   { key: 'all', label: 'All' },
-  { key: 'paper1', label: 'Paper 1' },
-  { key: 'paper2', label: 'Paper 2' },
   { key: 'latest', label: 'Latest' },
   { key: 'oldest', label: 'Oldest' },
-];
-
-const MOCK_PYQ_DATA: PyqYearData[] = [
-  {
-    year: '2025',
-    displayLabel: 'JEE Main 2025',
-    papers: 'Paper 1',
-    questions: 90,
-    durationMin: 180,
-  },
-  {
-    year: '2024',
-    displayLabel: 'JEE Main 2024',
-    papers: 'Paper 1 & Paper 2',
-    questions: 90,
-    durationMin: 180,
-  },
-  {
-    year: '2023',
-    displayLabel: 'JEE Main 2023',
-    papers: 'Paper 1 & Paper 2',
-    questions: 90,
-    durationMin: 180,
-  },
-  {
-    year: '2022',
-    displayLabel: 'JEE Main 2022',
-    papers: 'Paper 1 & Paper 2',
-    questions: 90,
-    durationMin: 180,
-  },
-  {
-    year: '2021',
-    displayLabel: 'JEE Main 2021',
-    papers: 'Paper 1 & Paper 2',
-    questions: 90,
-    durationMin: 180,
-  },
-  {
-    year: '2020',
-    displayLabel: 'JEE Main 2020',
-    papers: 'Paper 1 & Paper 2',
-    questions: 90,
-    durationMin: 180,
-  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -136,13 +79,13 @@ const MOCK_PYQ_DATA: PyqYearData[] = [
 
 interface HeaderProps {
   safeAreaTop: number;
-  examTitle: string;
+  packageName: string;
   onBackPress: () => void;
 }
 
 const Header = React.memo(function Header({
   safeAreaTop,
-  examTitle,
+  packageName,
   onBackPress,
 }: HeaderProps): React.JSX.Element {
   return (
@@ -164,10 +107,10 @@ const Header = React.memo(function Header({
         </TouchableOpacity>
         <View style={styles.headerTextGroup}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {examTitle} Previous Year Papers
+            {packageName}
           </Text>
           <Text style={styles.headerSubtitle}>
-            Practice official PYQs with real exam timing
+            Previous Year Papers
           </Text>
         </View>
       </View>
@@ -193,14 +136,14 @@ const SearchBar = React.memo(function SearchBar({
       </View>
       <TextInput
         style={styles.searchInput}
-        placeholder="Search by year or paper..."
+        placeholder="Search by year or title..."
         placeholderTextColor={palette.slate400}
         value={value}
         onChangeText={onChangeText}
         autoCorrect={false}
         autoCapitalize="none"
         returnKeyType="search"
-        accessibilityLabel="Search by year or paper"
+        accessibilityLabel="Search by year or title"
       />
     </View>
   );
@@ -243,25 +186,20 @@ const FilterChips = React.memo(function FilterChips({
   );
 });
 
-// ── Year Card ─────────────────────────────────────────────────────
+// ── Paper Card ────────────────────────────────────────────────────
 
-interface YearCardProps {
-  item: PyqYearData;
-  onViewPapers: (item: PyqYearData) => void;
+interface PaperCardProps {
+  paper: PracticePaper;
+  onViewPapers: (paper: PracticePaper) => void;
 }
 
-const YearCard = React.memo(function YearCard({
-  item,
+const PaperCard = React.memo(function PaperCard({
+  paper,
   onViewPapers,
-}: YearCardProps): React.JSX.Element {
-  // Split "JEE Main 2025" into exam name and year
-  const lastSpaceIndex = item.displayLabel.lastIndexOf(' ');
-  const examName = lastSpaceIndex >= 0 ? item.displayLabel.slice(0, lastSpaceIndex) : item.displayLabel;
-  const year = lastSpaceIndex >= 0 ? item.displayLabel.slice(lastSpaceIndex + 1) : '';
-
+}: PaperCardProps): React.JSX.Element {
   return (
     <View style={styles.card}>
-      {/* Official PYQ badge — top-right of the card */}
+      {/* Official PYQ badge */}
       <View style={styles.officialBadge}>
         <Text style={styles.officialBadgeText}>Official PYQ</Text>
       </View>
@@ -272,24 +210,17 @@ const YearCard = React.memo(function YearCard({
           <Icon name="calendar" color={BRAND_GREEN} width={24} height={24} />
         </View>
 
-        {/* Right column: content stacked above, action at bottom */}
+        {/* Right column */}
         <View style={styles.cardRightCol}>
-          {/* Content area */}
           <View style={styles.cardContent}>
-            {/* Title: exam name on one line, year on next */}
-            <View style={styles.cardTitleBlock}>
-              <Text style={styles.cardTitle} numberOfLines={1}>
-                {examName}
-              </Text>
-              <View style={styles.cardYearRow}>
-                <Text style={styles.cardYear}>{year}</Text>
-              </View>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {paper.title}
+            </Text>
+
+            <View style={styles.cardYearRow}>
+              <Text style={styles.cardYear}>Year: {paper.examYear}</Text>
             </View>
 
-            {/* Paper info */}
-            <Text style={styles.cardPapers}>{item.papers}</Text>
-
-            {/* Stats: questions + duration */}
             <View style={styles.cardStatsRow}>
               <View style={styles.cardStat}>
                 <Icon
@@ -299,44 +230,35 @@ const YearCard = React.memo(function YearCard({
                   height={14}
                 />
                 <Text style={styles.cardStatText}>
-                  {item.questions} Questions
+                  {paper.totalQuestions} Questions
                 </Text>
               </View>
-              <View style={styles.cardStat}>
-                <Icon
-                  name="timer"
-                  color={palette.slate400}
-                  width={14}
-                  height={14}
-                />
-                <Text style={styles.cardStatText}>
-                  {item.durationMin} Minutes
-                </Text>
-              </View>
-            </View>
-
-            {/* Real Exam Pattern tag */}
-            <View style={styles.examPatternTag}>
-              <Icon
-                name="shield-check"
-                color={BRAND_GREEN}
-                width={12}
-                height={12}
-              />
-              <Text style={styles.examPatternText}>Real Exam Pattern</Text>
+              {paper.durationMin ? (
+                <View style={styles.cardStat}>
+                  <Icon
+                    name="timer"
+                    color={palette.slate400}
+                    width={14}
+                    height={14}
+                  />
+                  <Text style={styles.cardStatText}>
+                    {paper.durationMin} Minutes
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
 
-          {/* View Papers — bottom-right */}
+          {/* View Papers */}
           <View style={styles.cardActionRow}>
             <TouchableOpacity
               style={styles.viewPapersButton}
-              onPress={() => onViewPapers(item)}
+              onPress={() => onViewPapers(paper)}
               activeOpacity={0.7}
-              accessibilityLabel={`View papers for ${item.displayLabel}`}
+              accessibilityLabel={`View ${paper.title}`}
               accessibilityRole="button"
             >
-              <Text style={styles.viewPapersText}>View Papers</Text>
+              <Text style={styles.viewPapersText}>Attempt Paper</Text>
               <Icon
                 name="arrow-right"
                 color={colors.text.inverse}
@@ -364,7 +286,7 @@ const InfoFooter = React.memo(function InfoFooter(): React.JSX.Element {
           Every paper contains official previous year questions.
         </Text>
         <Text style={styles.infoSubtitle}>
-          Tap any year to access all shifts and start the timed PYQ mock test.
+          Tap any paper to start the timed PYQ mock test.
         </Text>
       </View>
     </View>
@@ -414,6 +336,17 @@ const ListFooter = React.memo(function ListFooter(): React.JSX.Element {
   );
 });
 
+// ── Loading State ─────────────────────────────────────────────────
+
+const LoadingState = React.memo(function LoadingState(): React.JSX.Element {
+  return (
+    <View style={styles.loadingContainer}>
+      <ActivityIndicator size="large" color={BRAND_GREEN} />
+      <Text style={styles.loadingText}>Loading papers...</Text>
+    </View>
+  );
+});
+
 // ═══════════════════════════════════════════════════════════════════
 //  Main Screen
 // ═══════════════════════════════════════════════════════════════════
@@ -427,11 +360,20 @@ export default function PyqPapersScreen({
   route,
   navigation,
 }: PyqPapersScreenProps): React.JSX.Element {
-  const { examTitle } = route.params;
+  const { packageId, packageName } = route.params;
   const insets = useSafeAreaInsets();
+  const scrollOffset = useRef(0);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
+
+  const {
+    data: detail,
+    isLoading,
+    error,
+  } = usePracticeDetail(packageId);
+
+  const papers = detail?.papers ?? [];
 
   const handleBackPress = useCallback(() => {
     navigation.goBack();
@@ -445,96 +387,150 @@ export default function PyqPapersScreen({
     setSearchQuery(text);
   }, []);
 
-  // Filtered & sorted data based on search query and filter selection
-  const filteredData = useMemo(() => {
-    let data = MOCK_PYQ_DATA;
+  // Filtered & sorted papers
+  const filteredPapers = useMemo(() => {
+    let data = [...papers];
 
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       data = data.filter(
         (item) =>
-          item.year.includes(query) ||
-          item.displayLabel.toLowerCase().includes(query) ||
-          item.papers.toLowerCase().includes(query),
+          String(item.examYear).includes(query) ||
+          item.title.toLowerCase().includes(query),
       );
     }
 
-    // Apply sort/filter by active chip
+    // Apply sort
     switch (activeFilter) {
-      case 'paper1':
-        data = data.filter((item) => item.papers.includes('Paper 1'));
-        break;
-      case 'paper2':
-        data = data.filter((item) => item.papers.includes('Paper 2'));
-        break;
       case 'latest':
-        data = [...data].sort(
-          (a, b) => parseInt(b.year, 10) - parseInt(a.year, 10),
-        );
+        data.sort((a, b) => b.examYear - a.examYear);
         break;
       case 'oldest':
-        data = [...data].sort(
-          (a, b) => parseInt(a.year, 10) - parseInt(b.year, 10),
-        );
+        data.sort((a, b) => a.examYear - b.examYear);
         break;
       case 'all':
       default:
-        // Default: newest first
-        data = [...data].sort(
-          (a, b) => parseInt(b.year, 10) - parseInt(a.year, 10),
-        );
+        data.sort((a, b) => b.examYear - a.examYear);
         break;
     }
 
     return data;
-  }, [searchQuery, activeFilter]);
+  }, [papers, searchQuery, activeFilter]);
 
   const stackNavigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
 
   const handleViewPapers = useCallback(
-    (item: PyqYearData) =>
-      stackNavigation.navigate('TestInstructions', {
-        examTitle,
-        year: item.year,
-        displayLabel: item.displayLabel,
-        durationMin: item.durationMin,
-        questions: item.questions,
-        totalMarks: 300,
-        negativeMarking: -1,
-      }),
-    [stackNavigation, examTitle],
+    async (paper: PracticePaper) => {
+      try {
+        const result = await getPaperMockMapping(paper.paperId);
+
+        if (!result.success) {
+          Alert.alert('Error', 'Failed to load mock test details. Please try again.');
+          return;
+        }
+
+        if (!result.data) {
+          // No mock test has been generated for this paper
+          Alert.alert(
+            'Not Available',
+            'This paper does not have a mock test generated yet. Please check back later.',
+          );
+          return;
+        }
+
+        if (!result.data.isPublished) {
+          Alert.alert(
+            'Not Available',
+            'The mock test for this paper is not yet published. Please check back later.',
+          );
+          return;
+        }
+
+        const { testId } = result.data;
+
+        stackNavigation.navigate('TestInstructions', {
+          examTitle: packageName,
+          year: String(paper.examYear),
+          displayLabel: paper.title,
+          durationMin: paper.durationMin ?? 60,
+          questions: paper.totalQuestions,
+          totalMarks: paper.totalMarks ?? paper.totalQuestions * 4,
+          negativeMarking: -1,
+          testId,
+          paperId: paper.paperId,
+        });
+      } catch {
+        Alert.alert('Error', 'Something went wrong. Please try again.');
+      }
+    },
+    [stackNavigation, packageName],
   );
 
   const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<PyqYearData>) => (
-      <YearCard item={item} onViewPapers={handleViewPapers} />
+    ({ item }: ListRenderItemInfo<PracticePaper>) => (
+      <PaperCard paper={item} onViewPapers={handleViewPapers} />
     ),
     [handleViewPapers],
   );
 
-  const keyExtractor = useCallback((item: PyqYearData) => item.year, []);
+  const keyExtractor = useCallback((item: PracticePaper) => item.paperId, []);
 
-  // Header height used to offset list content below the sticky header.
-  // Header has: safeAreaTop + spacing[12] (paddingTop)
-  //             + 40 (back button height)
-  //             + 20 (subtitle lineHeight)
-  //             + spacing[12] (paddingBottom)
-  //             + 1 (borderBottom)
+  // Header height
   const headerHeight =
     insets.top + spacing[12] + 40 + 20 + spacing[12] + 1;
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrollOffset.current = e.nativeEvent.contentOffset.y;
+    },
+    [],
+  );
+
+  // ── Loading / Error ──────────────────────────────────────────────
+
+  if (isLoading) {
+    return (
+      <View style={styles.screen}>
+        <Header
+          safeAreaTop={insets.top}
+          packageName={packageName}
+          onBackPress={handleBackPress}
+        />
+        <LoadingState />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.screen}>
+        <Header
+          safeAreaTop={insets.top}
+          packageName={packageName}
+          onBackPress={handleBackPress}
+        />
+        <View style={styles.loadingContainer}>
+          <Icon name="bell" color={colors.error} width={40} height={40} />
+          <Text style={styles.errorText}>
+            Failed to load papers. Please try again.
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
       {/* Sticky header */}
       <Header
         safeAreaTop={insets.top}
-        examTitle={examTitle}
+        packageName={packageName}
         onBackPress={handleBackPress}
       />
 
       <FlatList
-        data={filteredData}
+        data={filteredPapers}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         contentContainerStyle={[
@@ -555,6 +551,8 @@ export default function PyqPapersScreen({
         bounces
         overScrollMode="never"
         keyboardShouldPersistTaps="handled"
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       />
     </View>
   );
@@ -569,6 +567,26 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+
+  // ── Loading / Error ─────────────────────────────────────────────
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[48],
+  },
+  loadingText: {
+    ...typography.body,
+    color: palette.slate500,
+    marginTop: spacing[12],
+  },
+  errorText: {
+    ...typography.body,
+    color: colors.error,
+    marginTop: spacing[12],
+    textAlign: 'center',
+    paddingHorizontal: spacing[16],
   },
 
   // ── Header ──────────────────────────────────────────────────────
@@ -718,9 +736,6 @@ const styles = StyleSheet.create({
   cardContent: {
     flex: 0,
   },
-  cardTitleBlock: {
-    marginBottom: 4,
-  },
   cardTitle: {
     ...typography.subtitle,
     fontSize: 17,
@@ -732,7 +747,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 2,
-    gap: spacing[8],
   },
   cardYear: {
     ...typography.bodySmall,
@@ -759,17 +773,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  cardPapers: {
-    ...typography.bodySmall,
-    fontSize: 13,
-    color: palette.slate500,
-    marginBottom: spacing[8],
-    lineHeight: 18,
-  },
   cardStatsRow: {
     flexDirection: 'row',
     gap: spacing[16],
     marginBottom: spacing[8],
+    marginTop: spacing[4],
   },
   cardStat: {
     flexDirection: 'row',
@@ -781,17 +789,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: palette.slate400,
     lineHeight: 16,
-  },
-  examPatternTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  examPatternText: {
-    ...typography.caption,
-    fontSize: 11,
-    color: palette.slate500,
-    lineHeight: 14,
   },
   cardActionRow: {
     flexDirection: 'row',

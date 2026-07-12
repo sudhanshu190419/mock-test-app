@@ -1,29 +1,39 @@
 /**
  * TrendingCoursesSection
  *
- * Premium auto-scrolling carousel of course cards (Netflix/Unacademy-style).
- *
- * Features:
- * - Paging FlatList with full-width cards
- * - Auto-scroll every 3.5s with infinite looping
- * - Pauses when screen is not focused
- * - Simple static dot indicators
- * - Snap-to-card with no partial cuts
+ * Ultra-premium auto-scrolling carousel of course cards with:
+ * - 3D perspective card tilt (rotateY) for a cover-flow tunnel effect
+ * - Parallax background with subtle hue shift
+ * - Spring-animated dot indicators with width transitions
+ * - Dynamic shadow depth — center card has deeper shadow
+ * - Smooth auto-scroll every 3.5s with infinite looping
+ * - Pauses when screen is not focused or user is interacting
  *
  * @module components/home/TrendingCoursesSection
  */
 
-import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
-  FlatList,
   StyleSheet,
   Dimensions,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  interpolate,
+  interpolateColor,
+  Extrapolation,
+  type SharedValue,
+} from 'react-native-reanimated';
+import LinearGradient from 'react-native-linear-gradient';
 import { useIsFocused } from '@react-navigation/native';
 
 import TrendingCourseCard from './TrendingCourseCard';
@@ -37,74 +47,164 @@ import { radius } from '../../theme/radius';
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const AUTO_SCROLL_INTERVAL = 3500; // ms between auto-scrolls
+const AUTO_SCROLL_INTERVAL = 3500;
+const DOT_ACTIVE_WIDTH = 28;
+const DOT_INACTIVE_WIDTH = 8;
+const DOT_HEIGHT = 6;
+const CARD_SCALE_FULL = 1;
+const CARD_SCALE_MIN = 0.92;
+const PERSPECTIVE = 800;
+const ROTATE_DEG_MAX = 8;
+const SHADOW_ACTIVE_ELEVATION = 16;
+const SHADOW_INACTIVE_ELEVATION = 4;
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 export interface TrendingCoursesSectionProps {
-  /** All courses to display in the carousel. */
   courses: TrendingCourseItem[];
-  /** Callback when "View All" is pressed. */
   onViewAllPress?: () => void;
-  /** Callback when a course card is pressed. */
   onCoursePress?: (key: string) => void;
-  /** Callback when Explore on a card is pressed. */
   onHeroExplorePress?: (key: string) => void;
-  /** Callback when Enroll Now on a card is pressed. */
   onHeroEnrollPress?: (key: string) => void;
 }
 
-// ─── Carousel Card Wrapper ──────────────────────────────────────────────────
+// ─── Animated Card with 3D transform ─────────────────────────────────────────
 
-interface CarouselCardProps {
+interface AnimatedCardProps {
   item: TrendingCourseItem;
+  index: number;
+  scrollX: SharedValue<number>;
+  courseCount: number;
   onCoursePress?: (key: string) => void;
   onExplorePress?: (key: string) => void;
   onEnrollPress?: (key: string) => void;
 }
 
-const CarouselCard = React.memo(function CarouselCard({
+const AnimatedCard = React.memo(function AnimatedCard({
   item,
+  index,
+  scrollX,
+  courseCount,
   onCoursePress,
   onExplorePress,
   onEnrollPress,
-}: CarouselCardProps): React.JSX.Element {
+}: AnimatedCardProps): React.JSX.Element {
+  const cardStyle = useAnimatedStyle(() => {
+    const inputRange = [
+      (index - 1) * SCREEN_WIDTH,
+      index * SCREEN_WIDTH,
+      (index + 1) * SCREEN_WIDTH,
+    ];
+
+    // Scale — center card full size, side cards slightly smaller
+    const scale = interpolate(
+      scrollX.value,
+      inputRange,
+      [CARD_SCALE_MIN, CARD_SCALE_FULL, CARD_SCALE_MIN],
+      Extrapolation.CLAMP,
+    );
+
+    // Opacity — center card fully visible, side cards dimmed
+    const opacity = interpolate(
+      scrollX.value,
+      inputRange,
+      [0.75, 1, 0.75],
+      Extrapolation.CLAMP,
+    );
+
+    // 3D rotateY — side cards rotate away from center (cover-flow effect)
+    const rotateY = interpolate(
+      scrollX.value,
+      inputRange,
+      [ROTATE_DEG_MAX, 0, -ROTATE_DEG_MAX],
+      Extrapolation.CLAMP,
+    );
+
+    // Shadow — center card has deep premium shadow
+    const elevation = interpolate(
+      scrollX.value,
+      inputRange,
+      [SHADOW_INACTIVE_ELEVATION, SHADOW_ACTIVE_ELEVATION, SHADOW_INACTIVE_ELEVATION],
+      Extrapolation.CLAMP,
+    );
+
+    return {
+      transform: [
+        { perspective: PERSPECTIVE },
+        { rotateY: `${rotateY}deg` },
+        { scale },
+      ],
+      opacity,
+      elevation,
+      shadowOpacity: interpolate(
+        scrollX.value,
+        inputRange,
+        [0.2, 0.5, 0.2],
+        Extrapolation.CLAMP,
+      ),
+    };
+  });
+
   const { key: _key, ...cardProps } = item;
+
   return (
     <View style={styles.carouselItem}>
-      <TrendingCourseCard
-        key={_key}
-        {...cardProps}
-        onPress={() => onCoursePress?.(item.key)}
-        onExplorePress={() => onExplorePress?.(item.key)}
-        onEnrollPress={() => onEnrollPress?.(item.key)}
-        onBookmarkPress={() => {}}
-      />
+      {/* Card with 3D transforms */}
+      <Animated.View style={[styles.cardAnimatedWrapper, cardStyle]}>
+        <TrendingCourseCard
+          key={_key}
+          {...cardProps}
+          onPress={() => onCoursePress?.(item.key)}
+          onExplorePress={() => onExplorePress?.(item.key)}
+          onEnrollPress={() => onEnrollPress?.(item.key)}
+          onBookmarkPress={() => {}}
+        />
+      </Animated.View>
     </View>
   );
 });
 
-// ─── Static Dot ─────────────────────────────────────────────────────────────
+// ─── Animated Dot ────────────────────────────────────────────────────────────
 
 interface DotProps {
   index: number;
-  activeIndex: number;
+  scrollX: SharedValue<number>;
+  courseCount: number;
 }
 
-const Dot = React.memo(function Dot({
+const AnimatedDot = React.memo(function AnimatedDot({
   index,
-  activeIndex,
+  scrollX,
+  courseCount,
 }: DotProps): React.JSX.Element {
-  return (
-    <View
-      style={[
-        styles.dot,
-        {
-          backgroundColor: index === activeIndex ? colors.secondary : colors.disabled,
-        },
-      ]}
-    />
-  );
+  const dotStyle = useAnimatedStyle(() => {
+    const currentPage = scrollX.value / SCREEN_WIDTH;
+    const distance = Math.abs(currentPage - index);
+    const isActive = distance < 0.5;
+
+    const width = withSpring(
+      isActive ? DOT_ACTIVE_WIDTH : DOT_INACTIVE_WIDTH,
+      { damping: 14, stiffness: 220 },
+    );
+
+    const opacity = withTiming(isActive ? 1 : 0.3, { duration: 200 });
+
+    const scale = withSpring(isActive ? 1.15 : 1, {
+      damping: 12,
+      stiffness: 200,
+    });
+
+    return {
+      width,
+      height: DOT_HEIGHT,
+      borderRadius: DOT_HEIGHT / 2,
+      opacity,
+      backgroundColor: isActive ? colors.secondary : colors.disabled,
+      transform: [{ scale }],
+    };
+  });
+
+  return <Animated.View style={[styles.dot, dotStyle]} />;
 });
 
 // ─── Section Component ──────────────────────────────────────────────────────
@@ -116,18 +216,39 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
   onHeroExplorePress,
   onHeroEnrollPress,
 }: TrendingCoursesSectionProps): React.JSX.Element {
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<Animated.FlatList<TrendingCourseItem>>(null);
   const isInteracting = useRef(false);
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollIndexRef = useRef(0);
-  const [activeDotIndex, setActiveDotIndex] = useState(0);
   const isFocused = useIsFocused();
+
+  // ── Reanimated shared values ────────────────────────────────────
+  const scrollX = useSharedValue(0);
 
   // ── Duplicate data for infinite loop illusion ──────────────────
   const loopedCourses = useMemo(
     () => (courses.length > 1 ? [...courses, courses[0]] : courses),
     [courses],
   );
+
+  // ── Reanimated scroll handler ──────────────────────────────────
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      'worklet';
+      scrollX.value = event.contentOffset.x;
+    },
+  });
+
+  // ── Parallax background hue shift ───────────────────────────────
+  const parallaxBgStyle = useAnimatedStyle(() => {
+    return {
+      backgroundColor: interpolateColor(
+        scrollX.value,
+        [0, SCREEN_WIDTH * courses.length],
+        ['#F2F4FC', '#EEEFF8'],
+      ),
+    };
+  });
 
   // ── Auto-scroll logic — pauses when screen not focused ─────────
   useEffect(() => {
@@ -144,7 +265,6 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
           animated: false,
         });
         scrollIndexRef.current = 0;
-        setActiveDotIndex(0);
       } else {
         flatListRef.current.scrollToIndex({
           index: nextIndex,
@@ -157,23 +277,19 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
     return () => clearInterval(interval);
   }, [courses.length, loopedCourses.length, isFocused]);
 
-  // ── Track scroll position for dot updates ──────────────────────
+  // ── Track scroll position for auto-scroll resumption ──────────
   const handleScrollEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetX = e.nativeEvent.contentOffset.x;
       const index = Math.round(offsetX / SCREEN_WIDTH);
 
-      // If we scrolled to the duplicate first card, snap back to real first
       if (index >= courses.length) {
         flatListRef.current?.scrollToIndex({ index: 0, animated: false });
         scrollIndexRef.current = 0;
-        setActiveDotIndex(0);
       } else {
         scrollIndexRef.current = index;
-        setActiveDotIndex(index);
       }
 
-      // Resume auto-scroll after 3s of inactivity
       if (isInteracting.current) {
         if (resumeTimer.current) clearTimeout(resumeTimer.current);
         resumeTimer.current = setTimeout(() => {
@@ -192,15 +308,18 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
 
   // ── FlatList renderers ─────────────────────────────────────────
   const renderCarouselItem = useCallback(
-    ({ item }: { item: TrendingCourseItem }) => (
-      <CarouselCard
+    ({ item, index }: { item: TrendingCourseItem; index: number }) => (
+      <AnimatedCard
         item={item}
+        index={index}
+        scrollX={scrollX}
+        courseCount={courses.length}
         onCoursePress={onCoursePress}
         onExplorePress={onHeroExplorePress}
         onEnrollPress={onHeroEnrollPress}
       />
     ),
-    [onCoursePress, onHeroExplorePress, onHeroEnrollPress],
+    [scrollX, courses.length, onCoursePress, onHeroExplorePress, onHeroEnrollPress],
   );
 
   const keyExtractor = useCallback(
@@ -245,9 +364,12 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
         </TouchableOpacity>
       </View>
 
-      {/* Carousel */}
+      {/* Carousel with parallax background */}
       <View style={styles.carouselContainer}>
-        <FlatList
+        {/* Parallax background — subtle hue shift on scroll */}
+        <Animated.View style={[styles.parallaxBg, parallaxBgStyle]} pointerEvents="none" />
+
+        <Animated.FlatList
           ref={flatListRef}
           data={loopedCourses}
           renderItem={renderCarouselItem}
@@ -256,6 +378,8 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           decelerationRate="normal"
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
           onMomentumScrollEnd={handleScrollEnd}
           getItemLayout={getItemLayout}
           removeClippedSubviews
@@ -265,14 +389,20 @@ const TrendingCoursesSection = React.memo(function TrendingCoursesSection({
           bounces={false}
           onScrollBeginDrag={handleTouchStart}
           onScrollEndDrag={handleScrollEnd}
+          contentContainerStyle={styles.carouselContent}
         />
       </View>
 
-      {/* Static Page Indicators */}
+      {/* Animated Page Indicators */}
       {courses.length > 1 && (
         <View style={styles.dotsContainer}>
           {courses.map((_, i) => (
-            <Dot key={i} index={i} activeIndex={activeDotIndex} />
+            <AnimatedDot
+              key={i}
+              index={i}
+              scrollX={scrollX}
+              courseCount={courses.length}
+            />
           ))}
         </View>
       )}
@@ -333,22 +463,38 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   carouselContainer: {
+    position: 'relative',
     marginBottom: spacing[4],
   },
+  carouselContent: {
+    // Inner padding not needed — cards are full-width
+  },
+  parallaxBg: {
+    position: 'absolute',
+    left: -80,
+    right: -80,
+    top: -24,
+    bottom: -24,
+    borderRadius: radius.xl,
+  },
   carouselItem: {
+    width: SCREEN_WIDTH,
+  },
+  cardAnimatedWrapper: {
     width: SCREEN_WIDTH,
   },
   dotsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: spacing[8],
+    gap: spacing[4],
     paddingVertical: spacing[8],
+    paddingHorizontal: spacing[16],
   },
   dot: {
-    width: 20,
-    height: 6,
-    borderRadius: 3,
+    height: DOT_HEIGHT,
+    borderRadius: DOT_HEIGHT / 2,
+    backgroundColor: colors.disabled,
   },
 });
 

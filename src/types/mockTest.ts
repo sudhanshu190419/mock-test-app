@@ -124,6 +124,27 @@ export type AttemptStatus = 'in_progress' | 'submitted' | 'timed_out' | 'abandon
  *
  * @see QuestionSnapshot.options
  */
+/**
+ * Reference to an image stored within a question snapshot.
+ * Contains the storage bucket and path needed to generate a signed URL
+ * at render time.
+ */
+export interface SnapshotImage {
+  /** Supabase Storage bucket name. */
+  storageBucket: string;
+  /** Object path within `storageBucket`. */
+  storagePath: string;
+  /** Accessibility description of the image. */
+  altText?: string;
+}
+
+/**
+ * Frozen option snapshot within a question snapshot.
+ *
+ * Contains the option data as it existed at test publish time.
+ *
+ * @see QuestionSnapshot.options
+ */
 export interface QuestionSnapshotOption {
   /** FK → question_options.option_id at snapshot time. */
   optionId: string;
@@ -133,6 +154,12 @@ export interface QuestionSnapshotOption {
   isCorrect: boolean;
   /** 1-indexed display order within the question. */
   orderSequence: number;
+  /**
+   * Images embedded in this option (e.g. diagrams, figures).
+   * Each entry contains the storage bucket and path needed to
+   * generate a signed URL at render time.
+   */
+  images?: SnapshotImage[];
 }
 
 /**
@@ -159,6 +186,12 @@ export interface QuestionSnapshot {
   marks: number;
   /** Negative marks deducted for a wrong answer. 0 means no negative marking. */
   negativeMarks: number;
+  /**
+   * Images embedded in the question stem (e.g. diagrams, figures).
+   * Each entry contains the storage bucket and path needed to
+   * generate a signed URL at render time.
+   */
+  images?: SnapshotImage[];
   /** Frozen answer options (empty for numerical type). */
   options: QuestionSnapshotOption[];
   /** Correct answer value for numerical type questions. NULL for non-numerical. */

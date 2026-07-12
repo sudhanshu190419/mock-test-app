@@ -1,21 +1,27 @@
 /**
  * Test Engine Service
  *
- * Placeholder service layer for the PYQ Mock Test Engine.
- * Currently uses mock data. When the backend is connected, replace
- * each method's implementation with real API calls without changing
- * the UI code.
+ * Service layer for the PYQ Mock Test Engine.
+ * submitTest() now uses the real evaluation engine.
+ * Placeholder functions remain for future implementation.
  *
  * @module services/testEngineService
  */
 
 import { MOCK_QUESTIONS, MOCK_TEST_CONFIG, MOCK_DURATION_SECONDS } from '../data/mockTestEngine';
+import { resolveCurrentStudentId } from './mockTest/studentResolver';
+import { createMockAttempt, updateMockAttempt, updateMockAnswer, createMockAnswer, createMockAnswerOption } from './mockTest/mockAttemptService';
+import { evaluateAttempt } from './mockTest/mockEvaluationService';
+import { getMockTestById } from './mockTest/mockTestService';
+import { getMockTestQuestions } from './mockTest/mockTestQuestionService';
 import type {
   QuestionDisplay,
   TestConfig,
   SaveAnswerInput,
   SubmitTestInput,
+  SubmitTestOutput,
 } from '../types/testEngine';
+import type { MockTest } from '../types/mockTest';
 
 // ─── Test Data ──────────────────────────────────────────────────────
 
@@ -87,13 +93,215 @@ export async function markForReview(
 }
 
 /**
- * Submit the entire test.
- * Replace with: POST /api/attempts/:attemptId/submit
+ * Submit the test — creates an attempt, saves all answers,
+ * evaluates, and returns the attempt and result IDs.
+ *
+ * Steps:
+ * 1. Resolve the current student ID from the auth session
+ * 2. Fetch the mock test to get instituteId
+ * 3. Create a mock_attempts row
+ * 4. Pre-populate mock_answers rows (one per question)
+ * 5. Save selected options to mock_answer_options
+ * 6. Update attempt status to 'submitted'
+ * 7. Call evaluateAttempt() to compute and persist the result
+ * 8. Return the attemptId and resultId
  */
-export async function submitTest(input: SubmitTestInput): Promise<{ success: boolean }> {
-  await delay(300);
-  console.log('[testEngineService] submitTest:', input);
-  return { success: true };
+export async function submitTest(input: SubmitTestInput): Promise<SubmitTestOutput> {
+  console.log('[SUBMIT_STEP_2] testEngineService.submitTest()');
+  console.log('[SUBMIT_STEP_2] input.testId:', input.testId);
+  console.log('[SUBMIT_STEP_2] input.paperId:', input.paperId);
+  console.log('[SUBMIT_STEP_2] input.questions.length:', input.questions?.length);
+  console.log('[SUBMIT_STEP_2] input.answers keys:', Object.keys(input.answers));
+  console.log('[SUBMIT_STEP_2] input.timeTakenSeconds:', input.timeTakenSeconds);
+
+  // ── 1. Resolve current student ───────────────────────────────────────
+  console.log('[SUBMIT_STEP_3] Calling resolveCurrentStudentId()...');
+  const resolved = await resolveCurrentStudentId();
+  console.log('[SUBMIT_STEP_3] resolveCurrentStudentId resolved:', JSON.stringify(resolved));
+  if (!resolved) {
+    console.log('[SUBMIT_STEP_3_ERROR] resolveCurrentStudentId returned null');
+    throw new Error('Cannot submit test: no student profile found for the current user.');
+  }
+  const studentId = resolved.studentId;
+
+  // ── 2. Fetch mock test for instituteId ───────────────────────────────
+  console.log('[SUBMIT_STEP_4] Calling getMockTestById()...');
+  const testResult = await getMockTestById(input.testId);
+  console.log('[SUBMIT_STEP_4] getMockTestById success:', testResult.success);
+  console.log('[SUBMIT_STEP_4] getMockTestById error:', testResult.error);
+  console.log('[SUBMIT_STEP_4] getMockTestById data (testId):', testResult.data?.testId);
+  console.log('[SUBMIT_STEP_4] getMockTestById data (instituteId):', testResult.data?.instituteId);
+  if (!testResult.success || !testResult.data) {
+    console.log('[SUBMIT_STEP_4_ERROR] Mock test not found');
+    throw new Error(`Mock test not found: ${input.testId}`);
+  }
+  const mockTest: MockTest = testResult.data;
+  const instituteId = mockTest.instituteId;
+
+  // ── 3. Create mock attempt ───────────────────────────────────────────
+  console.log('[SUBMIT_STEP_5] Calling createMockAttempt()...');
+  const attemptResult = await createMockAttempt({
+    testId: input.testId,
+    studentId,
+    instituteId,
+  });
+  console.log('[SUBMIT_STEP_5] createMockAttempt success:', attemptResult.success);
+  console.log('[SUBMIT_STEP_5] createMockAttempt error:', attemptResult.error);
+  console.log('[SUBMIT_STEP_5] createMockAttempt data (attemptId):', attemptResult.data?.attemptId);
+
+  if (!attemptResult.success || !attemptResult.data) {
+    console.log('[SUBMIT_STEP_5_ERROR] Failed to create attempt');
+    throw new Error(`Failed to create attempt: ${attemptResult.error}`);
+  }
+
+  const attempt = attemptResult.data;
+  const attemptId = attempt.attemptId;
+  let answerCreateCount = 0;
+  let answerOptionCreateCount = 0;
+
+  try {
+    // ── 4. Fetch questions to map indices → questionIds ────────────────
+    console.log('[SUBMIT_STEP_6] Calling getMockTestQuestions()...');
+    const questionsResult = await getMockTestQuestions(input.testId, 'orderSequence', 'asc');
+    console.log('[SUBMIT_STEP_6] getMockTestQuestions success:', questionsResult.success);
+    console.log('[SUBMIT_STEP_6] getMockTestQuestions error:', questionsResult.error);
+    console.log('[SUBMIT_STEP_6] getMockTestQuestions data.length:', questionsResult.data?.length);
+    if (!questionsResult.success || !questionsResult.data) {
+      throw new Error('Failed to load test questions.');
+    }
+    const testQuestions = questionsResult.data;
+
+    // Build questionId lookup by orderSequence (1-indexed)
+    const questionIdBySequence = new Map<number, string>();
+    for (const mtq of testQuestions) {
+      questionIdBySequence.set(mtq.orderSequence, mtq.questionId);
+    }
+
+    // ── 5. Create mock_answers and mock_answer_options for each answer ─
+    console.log('[SUBMIT_STEP_7] Starting answer creation loop...');
+    for (const [indexStr, selectedOptionId] of Object.entries(input.answers)) {
+      const questionIndex = Number(indexStr);
+      const displayQuestion = input.questions[questionIndex];
+      if (!displayQuestion) {
+        console.log('[SUBMIT_STEP_7_WARN] No displayQuestion at index', questionIndex, '- skipping');
+        continue;
+      }
+
+      // Find the questionId from the test questions using orderSequence
+      const orderSequence = questionIndex + 1; // 0-based → 1-based
+      const questionId = questionIdBySequence.get(orderSequence);
+      if (!questionId) {
+        console.log('[SUBMIT_STEP_7_WARN] No questionId for orderSequence', orderSequence, '- skipping');
+        continue;
+      }
+
+      console.log('[SUBMIT_STEP_7_ANSWER] Creating answer for question', questionIndex, 'questionId:', questionId, 'selectedOptionId:', selectedOptionId);
+
+      // Create mock_answer row
+      const answerResult = await createMockAnswer({
+        attemptId,
+        questionId,
+        instituteId,
+      });
+
+      console.log('[SUBMIT_STEP_7_ANSWER_RESULT] createMockAnswer success:', answerResult.success);
+      console.log('[SUBMIT_STEP_7_ANSWER_RESULT] createMockAnswer error:', answerResult.error);
+      console.log('[SUBMIT_STEP_7_ANSWER_RESULT] createMockAnswer data (answerId):', answerResult.data?.answerId);
+
+      if (!answerResult.success || !answerResult.data) {
+        console.log('[SUBMIT_STEP_7_ANSWER_FAIL] Skipping answer creation due to failure');
+        continue;
+      }
+
+      answerCreateCount++;
+      const answerId = answerResult.data.answerId;
+
+      // If an option was selected, create mock_answer_option row
+      if (selectedOptionId !== null) {
+        console.log('[SUBMIT_STEP_7_OPTION] Calling createMockAnswerOption() for answerId:', answerId, 'optionId:', selectedOptionId);
+        const optResult = await createMockAnswerOption({
+          answerId,
+          optionId: selectedOptionId,
+        });
+        console.log('[SUBMIT_STEP_7_OPTION_RESULT] createMockAnswerOption success:', optResult.success);
+        console.log('[SUBMIT_STEP_7_OPTION_RESULT] createMockAnswerOption error:', optResult.error);
+        if (optResult.success) {
+          answerOptionCreateCount++;
+        } else {
+          console.log('[SUBMIT_STEP_7_OPTION_FAIL] Failed to create option');
+        }
+      }
+
+      // Mark answer as answered if selectedOptionId is set
+      if (selectedOptionId !== null) {
+        console.log('[SUBMIT_STEP_7_UPDATE] Calling updateMockAnswer() for answerId:', answerId);
+        const updateResult = await updateMockAnswer(answerId, {
+          isAnswered: true,
+          answeredAt: new Date().toISOString(),
+        });
+        console.log('[SUBMIT_STEP_7_UPDATE_RESULT] updateMockAnswer success:', updateResult.success);
+        console.log('[SUBMIT_STEP_7_UPDATE_RESULT] updateMockAnswer error:', updateResult.error);
+      }
+    }
+    console.log('[SUBMIT_STEP_7_DONE] Created', answerCreateCount, 'answers and', answerOptionCreateCount, 'option selections');
+
+    // ── 6. Mark attempt as submitted ────────────────────────────────────
+    console.log('[SUBMIT_STEP_8] Calling updateMockAttempt(status=submitted)...');
+    const submitUpdateResult = await updateMockAttempt(attemptId, {
+      status: 'submitted',
+      submittedAt: new Date().toISOString(),
+      timeRemainingSeconds: Math.max(0, mockTest.durationMin * 60 - input.timeTakenSeconds),
+    });
+    console.log('[SUBMIT_STEP_8] updateMockAttempt success:', submitUpdateResult.success);
+    console.log('[SUBMIT_STEP_8] updateMockAttempt error:', submitUpdateResult.error);
+
+    // ── 7. Evaluate the attempt ────────────────────────────────────────
+    console.log('[SUBMIT_STEP_EVAL] Calling evaluateAttempt()...');
+    const evalResult = await evaluateAttempt(attemptId);
+    console.log('[SUBMIT_STEP_EVAL] evaluateAttempt success:', evalResult.success);
+    console.log('[SUBMIT_STEP_EVAL] evaluateAttempt error:', evalResult.error);
+    console.log('[SUBMIT_STEP_EVAL] evaluateAttempt data:', JSON.stringify(evalResult.data));
+
+    if (!evalResult.success || !evalResult.data) {
+      console.log('[SUBMIT_STEP_EVAL_ERROR] Evaluation failed:', evalResult.error);
+      throw new Error(`Evaluation failed: ${evalResult.error}`);
+    }
+
+    const result = evalResult.data;
+    console.log('[SUBMIT_STEP_SUCCESS] Returning: attemptId:', attemptId, 'resultId:', result.resultId);
+    return { attemptId, resultId: result.resultId };
+  } catch (err) {
+    console.log('[SUBMIT_STEP_CATCH] Submit pipeline failed after attempt creation');
+    console.log('[SUBMIT_STEP_CATCH] Full error object:');
+    if (err instanceof Error) {
+      console.log('[SUBMIT_STEP_CATCH] name:', err.name);
+      console.log('[SUBMIT_STEP_CATCH] message:', err.message);
+      console.log('[SUBMIT_STEP_CATCH] stack:', err.stack);
+      const castErr = err as unknown as Record<string, unknown>;
+      if (castErr.cause) console.log('[SUBMIT_STEP_CATCH] cause:', castErr.cause);
+      const pgErr = castErr.details;
+      if (pgErr) console.log('[SUBMIT_STEP_CATCH] Postgres details:', pgErr);
+      const pgHint = castErr.hint;
+      if (pgHint) console.log('[SUBMIT_STEP_CATCH] Postgres hint:', pgHint);
+      const pgCode = castErr.code;
+      if (pgCode) console.log('[SUBMIT_STEP_CATCH] Postgres code:', pgCode);
+    } else {
+      console.log('[SUBMIT_STEP_CATCH] raw error:', String(err));
+    }
+    // If something fails after attempt creation, still mark as submitted
+    // so the attempt isn't left in an inconsistent state.
+    try {
+      console.log('[SUBMIT_STEP_CATCH_CLEANUP] Marking attempt as submitted (best-effort)...');
+      await updateMockAttempt(attemptId, {
+        status: 'submitted',
+        submittedAt: new Date().toISOString(),
+      });
+      console.log('[SUBMIT_STEP_CATCH_CLEANUP] Done');
+    } catch (cleanupErr) {
+      console.log('[SUBMIT_STEP_CATCH_CLEANUP_ERROR] Failed to mark attempt as submitted:', cleanupErr);
+    }
+    throw err;
+  }
 }
 
 /**

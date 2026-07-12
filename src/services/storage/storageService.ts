@@ -375,6 +375,9 @@ async function _performUpload(
   const { fileBytes, fileSize, mimeType, bucket, storagePath, onProgress } = params;
 
   try {
+    // ── [UPLOAD_TRACE] Log the exact path passed to Supabase Storage ──
+    console.log('[UPLOAD_TRACE] _performUpload — bucket:', bucket, 'storagePath:', storagePath);
+
     const uploadResult = await retryUpload(async () => {
       return supabase.storage.from(bucket).upload(storagePath, fileBytes, {
         contentType: mimeType,
@@ -383,6 +386,9 @@ async function _performUpload(
         ...(onProgress ? { onUploadProgress: onProgress } : {}),
       });
     });
+
+    // ── [UPLOAD_TRACE] Log the raw Supabase upload response ──────────
+    console.log('[UPLOAD_TRACE] _performUpload — raw response:', JSON.stringify(uploadResult, null, 2));
 
     if (uploadResult.error) {
       return { success: false, error: extractStorageError(uploadResult.error) };

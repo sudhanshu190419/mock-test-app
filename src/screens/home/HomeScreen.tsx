@@ -37,6 +37,7 @@ import { useAppSelector } from '../../store/hooks';
 import { selectUser } from '../../store/authSlice';
 import { useHomeDashboard } from '../../hooks/home/useHome';
 import { useTrendingCourses } from '../../hooks/home/useCourses';
+import { useFeaturedPractice } from '../../hooks/practice/usePractice';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
 import type { TrendingCourse } from '../../types/home';
 
@@ -50,7 +51,8 @@ import CTASection from '../../components/home/CTASection';
 import TrendingCoursesSection from '../../components/home/TrendingCoursesSection';
 import PyqPracticeSection from '../../components/home/PyqPracticeSection';
 
-import type { QuickActionItem, FeatureItem, PopularExamItem, TrendingCourseItem, PyqItem } from '../../components/home/types';
+import type { QuickActionItem, FeatureItem, PopularExamItem, TrendingCourseItem, PyqItem as PyqItemType } from '../../components/home/types';
+type PyqItem = PyqItemType;
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 
@@ -176,7 +178,12 @@ const PYQ_ITEMS: PyqItem[] = [
     key: 'neet-pyq-bank',
     title: 'NEET Previous Year Question Bank',
     category: 'NEET',
-    description: '✔ 15 Previous Year Papers\n✔ Timed Test Mode\n✔ AI Performance Analytics\n✔ Detailed Solution Explanations',
+    features: [
+      { icon: 'calendar', text: '2015–2025 Coverage' },
+      { icon: 'timer', text: 'Timed Test Mode' },
+      { icon: 'bar-chart-2', text: 'AI Performance Analytics' },
+      { icon: 'trophy', text: '15 Previous Papers' },
+    ],
     rating: 4.9,
     totalStudents: 31250,
     price: 299,
@@ -189,7 +196,12 @@ const PYQ_ITEMS: PyqItem[] = [
     key: 'jee-pyq-pack',
     title: 'JEE PYQ + Mock Test Pack',
     category: 'JEE',
-    description: '✔ 20 Previous Year Papers\n✔ Chapter-wise Topic Tests\n✔ AI Performance Analytics\n✔ Detailed Solution Explanations',
+    features: [
+      { icon: 'calendar', text: '2014–2025 Coverage' },
+      { icon: 'timer', text: 'Timed Test Mode' },
+      { icon: 'bar-chart-2', text: 'AI Performance Analytics' },
+      { icon: 'trophy', text: '20 Previous Papers' },
+    ],
     rating: 4.8,
     totalStudents: 25480,
     price: 399,
@@ -202,7 +214,12 @@ const PYQ_ITEMS: PyqItem[] = [
     key: 'class12-pyq',
     title: 'Class 12 Board PYQ Papers',
     category: 'Class 12',
-    description: '✔ 10 Previous Year Papers\n✔ Subject-wise Practice Sets\n✔ AI Performance Analytics\n✔ Detailed Solution Explanations',
+    features: [
+      { icon: 'calendar', text: '2015–2024 Coverage' },
+      { icon: 'timer', text: 'Timed Test Mode' },
+      { icon: 'bar-chart-2', text: 'AI Performance Analytics' },
+      { icon: 'trophy', text: '10 Previous Papers' },
+    ],
     rating: 4.7,
     totalStudents: 38920,
     price: 199,
@@ -215,7 +232,12 @@ const PYQ_ITEMS: PyqItem[] = [
     key: 'upsc-pyq',
     title: 'UPSC Prelims PYQ Compilation',
     category: 'UPSC',
-    description: '✔ 25 Previous Year Papers\n✔ GS & CSAT Section Tests\n✔ AI Performance Analytics\n✔ Detailed Solution Explanations',
+    features: [
+      { icon: 'calendar', text: '2000–2025 Coverage' },
+      { icon: 'timer', text: 'Timed Test Mode' },
+      { icon: 'bar-chart-2', text: 'AI Performance Analytics' },
+      { icon: 'trophy', text: '25 Previous Papers' },
+    ],
     rating: 4.8,
     totalStudents: 18960,
     price: 599,
@@ -228,7 +250,12 @@ const PYQ_ITEMS: PyqItem[] = [
     key: 'cuet-pyq',
     title: 'CUET UG PYQ Question Bank',
     category: 'CUET',
-    description: '✔ 12 Previous Year Papers\n✔ Domain Subject Tests\n✔ AI Performance Analytics\n✔ Detailed Solution Explanations',
+    features: [
+      { icon: 'calendar', text: '2020–2025 Coverage' },
+      { icon: 'timer', text: 'Timed Test Mode' },
+      { icon: 'bar-chart-2', text: 'AI Performance Analytics' },
+      { icon: 'trophy', text: '12 Previous Papers' },
+    ],
     rating: 4.6,
     totalStudents: 15830,
     price: 249,
@@ -241,7 +268,12 @@ const PYQ_ITEMS: PyqItem[] = [
     key: 'ssc-pyq',
     title: 'SSC CGL Previous Year Papers',
     category: 'SSC',
-    description: '✔ 18 Previous Year Papers\n✔ Tier I & II Practice Tests\n✔ AI Performance Analytics\n✔ Detailed Solution Explanations',
+    features: [
+      { icon: 'calendar', text: '2010–2025 Coverage' },
+      { icon: 'timer', text: 'Timed Test Mode' },
+      { icon: 'bar-chart-2', text: 'AI Performance Analytics' },
+      { icon: 'trophy', text: '18 Previous Papers' },
+    ],
     rating: 4.5,
     totalStudents: 21340,
     price: 349,
@@ -254,7 +286,12 @@ const PYQ_ITEMS: PyqItem[] = [
     key: 'neet-again-pyq',
     title: 'NEET UG Previous Year Papers',
     category: 'NEET',
-    description: '✔ 10 Previous Year Papers\n✔ Physics, Chem & Bio Tests\n✔ AI Performance Analytics\n✔ Detailed Solution Explanations',
+    features: [
+      { icon: 'calendar', text: '2015–2024 Coverage' },
+      { icon: 'timer', text: 'Timed Test Mode' },
+      { icon: 'bar-chart-2', text: 'AI Performance Analytics' },
+      { icon: 'trophy', text: '10 Previous Papers' },
+    ],
     rating: 4.9,
     totalStudents: 27890,
     price: 249,
@@ -449,10 +486,33 @@ export default function HomeScreen(): React.JSX.Element {
   const handleCoursePress = useCallback((_key: string) => {}, []);
   const handleHeroExplorePress = useCallback((_key: string) => {}, []);
   const handleHeroEnrollPress = useCallback((_key: string) => {}, []);
-  const handleViewAllPyq = useCallback(() => {}, []);
-  const handlePyqItemPress = useCallback((_key: string) => {}, []);
-  const handlePyqPreviewPress = useCallback((_key: string) => {}, []);
-  const handlePyqStartPracticePress = useCallback((_key: string) => {}, []);
+
+  // ── PYQ Navigation ────────────────────────────────────────────────
+  const handleViewAllPyq = useCallback(() => {
+    // Navigate to the Practice (MockTests) tab
+    navigation.getParent()?.navigate('MockTests');
+  }, [navigation]);
+
+  const handlePyqItemPress = useCallback(
+    (packageId: string) => {
+      navigation.navigate('ExamPackDetail', { packageId });
+    },
+    [navigation],
+  );
+
+  const handlePyqPreviewPress = useCallback(
+    (packageId: string) => {
+      navigation.navigate('ExamPackDetail', { packageId });
+    },
+    [navigation],
+  );
+
+  const handlePyqStartPracticePress = useCallback(
+    (packageId: string) => {
+      navigation.navigate('ExamPackDetail', { packageId });
+    },
+    [navigation],
+  );
 
   const quickActions = useMemo(() => QUICK_ACTIONS, []);
   const features = useMemo(() => FEATURES, []);
@@ -483,7 +543,63 @@ export default function HomeScreen(): React.JSX.Element {
     },
     [trendingData],
   );
-  const pyqItems = useMemo(() => PYQ_ITEMS, []);
+
+  // ── PYQ Practice: live backend data via useFeaturedPractice ───────────
+  const DEFAULT_PYQ_GRADIENTS: [string, string, ...string[]][] = [
+    ['#155215', '#0C3D0C'],
+    ['#1E3A5F', '#15294A'],
+    ['#4A1942', '#2E0F2A'],
+    ['#1A4A4A', '#0D2F2F'],
+    ['#3D2B1F', '#2A1D14'],
+    ['#2B1B4A', '#1A0F30'],
+  ];
+
+  const DEFAULT_PYQ_ILLUSTRATIONS = ['📄', '📚', '📝', '📋', '📖', '📑'];
+
+  const {
+    data: featuredPracticeData,
+    isLoading: featuredLoading,
+    error: featuredError,
+  } = useFeaturedPractice(6);
+
+  if (featuredError) {
+    console.warn('[HomeScreen] Featured practice fetch failed:', featuredError);
+  }
+
+  const pyqItems = useMemo<PyqItem[]>(() => {
+    const backendData = featuredPracticeData?.data;
+    if (backendData && backendData.length > 0) {
+      return backendData.map((pkg, index) => {
+        const gIndex = index % DEFAULT_PYQ_GRADIENTS.length;
+        const discountPercent =
+          pkg.originalPrice && pkg.originalPrice > pkg.price
+            ? Math.round((1 - pkg.price / pkg.originalPrice) * 100)
+            : 0;
+
+        return {
+          key: pkg.packageId,
+          title: pkg.name,
+          category: pkg.streamName,
+          features: [
+            { icon: 'calendar', text: `${pkg.yearFrom || ''}–${pkg.yearTo || ''} Coverage` },
+            { icon: 'timer', text: 'Timed Test Mode' },
+            { icon: 'bar-chart-2', text: 'AI Performance Analytics' },
+            { icon: 'trophy', text: `${pkg.totalPapers} Previous Papers` },
+          ],
+          rating: pkg.rating || 4.5,
+          totalStudents: 0,
+          price: pkg.price,
+          originalPrice: pkg.originalPrice ?? undefined,
+          badgeLabel: discountPercent > 0 ? `${discountPercent}% OFF` : pkg.badgeLabel ?? '⭐ Featured',
+          gradientColors: DEFAULT_PYQ_GRADIENTS[gIndex],
+          illustration: DEFAULT_PYQ_ILLUSTRATIONS[gIndex],
+        };
+      });
+    }
+
+    // Fallback: static PYQ items when backend is empty
+    return PYQ_ITEMS;
+  }, [featuredPracticeData]);
 
   const renderSection = useCallback(
     ({ item }: { item: Section }) => {

@@ -1,20 +1,22 @@
 /**
  * MockTestsTabScreen
  *
- * Premium "Choose Your Exam" screen with glassmorphism cards matching the
- * reference design. Features:
+ * Premium "Practice" screen with glassmorphism cards matching the
+ * original design — now populated with live backend data from
+ * `usePracticeList()` instead of hardcoded exam cards.
  *
+ * Features:
  * - Ambient background gradient layers for depth
  * - Glass card exam items with icon, title, subtitle, and chevron
- * - Stats grid (PYQs, Mock Tests, Year Range) per exam
- * - Color-coded themes per exam (purple, blue, green, cyan, amber, rose)
- * - Optimised with React.memo & useCallback
- * - Sticky translucent header with back button and descriptive subtitle
+ * - Stats grid (year range, papers, price) per package
+ * - Color-coded themes per card (purple, blue, green, cyan, amber, rose)
+ * - Spring animation on press
+ * - Sticky translucent header with "View All" link to full listing
  *
  * @module screens/tabs/MockTestsTabScreen
  */
 
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,6 +24,7 @@ import {
   ScrollView,
   StyleSheet,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -31,13 +34,11 @@ import LinearGradient from 'react-native-linear-gradient';
 import Icon from '../../components/home/Icons';
 import type { IconName } from '../../components/home/Icons';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
+import { usePracticeList } from '../../hooks/practice/usePractice';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
-
-// ═══════════════════════════════════════════════════════════════════
-//  Constants
-// ═══════════════════════════════════════════════════════════════════
+import type { PracticePackage } from '../../types/practice';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Types
@@ -63,101 +64,53 @@ interface ExamCardData {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Data
+//  Constants
 // ═══════════════════════════════════════════════════════════════════
 
-const EXAMS: ExamCardData[] = [
-  {
-    key: 'jee-main',
-    icon: 'science',
-    title: 'JEE Main',
-    subtitle: 'PYQ + Mock Tests',
-    accentColor: '#9333EA',
-    iconBg: '#FFFFFF',
-    iconBorder: '#E9D5FF',
-    hoverTint: 'rgba(147, 51, 234, 0.05)',
-    stats: [
-      { label: 'PYQs', value: '12 Years', caption: 'PYQs', icon: 'calendar' },
-      { label: 'Timed Mock Tests', value: '150+', caption: 'Timed Mock Tests', icon: 'description' },
-      { label: 'Papers', value: '2013 - 2025', caption: 'Papers', icon: 'timer' },
-    ],
-  },
-  {
-    key: 'jee-advanced',
-    icon: 'architecture',
-    title: 'JEE Advanced',
-    subtitle: 'PYQ + Mock Tests',
-    accentColor: '#2563EB',
-    iconBg: '#FFFFFF',
-    iconBorder: '#BFDBFE',
-    hoverTint: 'rgba(37, 99, 235, 0.05)',
-    stats: [
-      { label: 'PYQs', value: '11 Years', caption: 'PYQs', icon: 'calendar' },
-      { label: 'Timed Mock Tests', value: '120+', caption: 'Timed Mock Tests', icon: 'description' },
-      { label: 'Papers', value: '2014 - 2025', caption: 'Papers', icon: 'timer' },
-    ],
-  },
-  {
-    key: 'neet-ug',
-    icon: 'stethoscope',
-    title: 'NEET UG',
-    subtitle: 'PYQ + Mock Tests',
-    accentColor: '#16A34A',
-    iconBg: '#FFFFFF',
-    iconBorder: '#BBF7D0',
-    hoverTint: 'rgba(22, 163, 74, 0.05)',
-    stats: [
-      { label: 'PYQs', value: '13 Years', caption: 'PYQs', icon: 'calendar' },
-      { label: 'Timed Mock Tests', value: '180+', caption: 'Timed Mock Tests', icon: 'description' },
-      { label: 'Papers', value: '2012 - 2025', caption: 'Papers', icon: 'timer' },
-    ],
-  },
-  {
-    key: 'cuet',
-    icon: 'school',
-    title: 'CUET',
-    subtitle: 'PYQ + Mock Tests',
-    accentColor: '#0891B2',
-    iconBg: '#FFFFFF',
-    iconBorder: '#A5F3FC',
-    hoverTint: 'rgba(8, 145, 178, 0.05)',
-    stats: [
-      { label: 'PYQs', value: '6 Years', caption: 'PYQs', icon: 'calendar' },
-      { label: 'Timed Mock Tests', value: '80+', caption: 'Timed Mock Tests', icon: 'description' },
-      { label: 'Papers', value: '2019 - 2025', caption: 'Papers', icon: 'timer' },
-    ],
-  },
-  {
-    key: 'clat',
-    icon: 'balance',
-    title: 'CLAT',
-    subtitle: 'PYQ + Mock Tests',
-    accentColor: '#D97706',
-    iconBg: '#FFFFFF',
-    iconBorder: '#FDE68A',
-    hoverTint: 'rgba(217, 119, 6, 0.05)',
-    stats: [
-      { label: 'PYQs', value: '10 Years', caption: 'PYQs', icon: 'calendar' },
-      { label: 'Timed Mock Tests', value: '100+', caption: 'Timed Mock Tests', icon: 'description' },
-      { label: 'Papers', value: '2015 - 2025', caption: 'Papers', icon: 'timer' },
-    ],
-  },
-  {
-    key: 'foundation',
-    icon: 'menu-book',
-    title: 'Foundation (8th - 10th)',
-    subtitle: 'PYQ + Mock Tests',
-    accentColor: '#E11D48',
-    iconBg: '#FFFFFF',
-    iconBorder: '#FECDD3',
-    hoverTint: 'rgba(225, 29, 72, 0.05)',
-    stats: [
-      { label: 'PYQs', value: '8 Years', caption: 'PYQs', icon: 'calendar' },
-      { label: 'Timed Mock Tests', value: '60+', caption: 'Timed Mock Tests', icon: 'description' },
-      { label: 'Papers', value: '2018 - 2025', caption: 'Papers', icon: 'timer' },
-    ],
-  },
+/** 6 color themes cycled across live packages. */
+const THEMES: Array<{
+  accentColor: string;
+  iconBg: string;
+  iconBorder: string;
+  hoverTint: string;
+}> = [
+  { accentColor: '#9333EA', iconBg: '#FFFFFF', iconBorder: '#E9D5FF', hoverTint: 'rgba(147, 51, 234, 0.05)' },
+  { accentColor: '#2563EB', iconBg: '#FFFFFF', iconBorder: '#BFDBFE', hoverTint: 'rgba(37, 99, 235, 0.05)' },
+  { accentColor: '#16A34A', iconBg: '#FFFFFF', iconBorder: '#BBF7D0', hoverTint: 'rgba(22, 163, 74, 0.05)' },
+  { accentColor: '#0891B2', iconBg: '#FFFFFF', iconBorder: '#A5F3FC', hoverTint: 'rgba(8, 145, 178, 0.05)' },
+  { accentColor: '#D97706', iconBg: '#FFFFFF', iconBorder: '#FDE68A', hoverTint: 'rgba(217, 119, 6, 0.05)' },
+  { accentColor: '#E11D48', iconBg: '#FFFFFF', iconBorder: '#FECDD3', hoverTint: 'rgba(225, 29, 72, 0.05)' },
 ];
+
+const ICONS: IconName[] = ['science', 'architecture', 'stethoscope', 'school', 'balance', 'menu-book'];
+
+function buildExamCards(packages: PracticePackage[]): ExamCardData[] {
+  return packages.map((pkg, index) => {
+    const theme = THEMES[index % THEMES.length];
+    const yearRange =
+      pkg.yearFrom && pkg.yearTo
+        ? `${pkg.yearFrom} – ${pkg.yearTo}`
+        : pkg.yearFrom
+          ? `Since ${pkg.yearFrom}`
+          : 'All Years';
+
+    return {
+      key: pkg.packageId,
+      icon: ICONS[index % ICONS.length],
+      title: pkg.name,
+      subtitle: `${pkg.totalPapers} Papers`,
+      accentColor: theme.accentColor,
+      iconBg: theme.iconBg,
+      iconBorder: theme.iconBorder,
+      hoverTint: theme.hoverTint,
+      stats: [
+        { label: 'Coverage', value: yearRange, caption: 'Years', icon: 'calendar' },
+        { label: 'Papers', value: `${pkg.totalPapers}`, caption: 'Papers', icon: 'description' },
+        { label: 'Price', value: `₹${pkg.price}`, caption: 'Price', icon: 'timer' },
+      ],
+    };
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  Sub-components
@@ -165,13 +118,12 @@ const EXAMS: ExamCardData[] = [
 
 // ── Ambient Background ────────────────────────────────────────────
 
-/** Soft glowing gradient circles for depth. */
 const AmbientBackground = React.memo(function AmbientBackground(): React.JSX.Element {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <View/>
-      <View/>
-      <View/>
+      <View />
+      <View />
+      <View />
     </View>
   );
 });
@@ -188,23 +140,10 @@ const Header = React.memo(function Header({
   return (
     <View style={[styles.header, { paddingTop: safeAreaTop + spacing[12] }]}>
       <View style={styles.headerRow}>
-        <TouchableOpacity
-          style={styles.backButton}
-          activeOpacity={0.6}
-          accessibilityLabel="Go back"
-          accessibilityRole="button"
-        >
-          <Icon
-            name="arrow-left"
-            color={colors.text.primary}
-            width={24}
-            height={24}
-          />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Choose Your Exam</Text>
+        <Text style={styles.headerTitle}>Practice with PYQs</Text>
       </View>
       <Text style={styles.headerSubtitle}>
-        Practice real PYQs in a timed environment with AI-powered analytics.
+        Browse previous year question packages with timed tests and smart analytics.
       </Text>
     </View>
   );
@@ -341,7 +280,7 @@ const ExamCard = React.memo(function ExamCard({
 
               {/* Title & subtitle */}
               <View style={styles.titleGroup}>
-                <Text style={styles.cardTitle} numberOfLines={1}>
+                <Text style={styles.cardTitle} numberOfLines={2}>
                   {item.title}
                 </Text>
                 <Text style={styles.cardSubtitle}>{item.subtitle}</Text>
@@ -349,14 +288,7 @@ const ExamCard = React.memo(function ExamCard({
             </View>
 
             {/* Chevron circle */}
-            <View
-              style={[
-                styles.chevronCircle,
-                {
-                  backgroundColor: 'rgba(255,255,255,0.5)',
-                },
-              ]}
-            >
+            <View style={styles.chevronCircle}>
               <Icon
                 name="chevron-right"
                 color={colors.text.secondary}
@@ -381,6 +313,17 @@ const ExamCard = React.memo(function ExamCard({
   );
 });
 
+// ── Loading State ─────────────────────────────────────────────────
+
+const LoadingState = React.memo(function LoadingState(): React.JSX.Element {
+  return (
+    <View style={styles.centerState}>
+      <ActivityIndicator size="large" color={colors.secondary} />
+      <Text style={styles.centerStateText}>Loading packages...</Text>
+    </View>
+  );
+});
+
 // ═══════════════════════════════════════════════════════════════════
 //  Main Screen
 // ═══════════════════════════════════════════════════════════════════
@@ -391,23 +334,27 @@ export default function MockTestsTabScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
 
+  const { data, isLoading, error } = usePracticeList(undefined, undefined, {
+    page: 1,
+    pageSize: 50,
+  });
+
+  const examCards = useMemo<ExamCardData[]>(() => {
+    const packages = data?.data ?? [];
+    return buildExamCards(packages);
+  }, [data]);
+
   const handleExamPress = useCallback(
     (exam: ExamCardData) =>
       navigation.navigate('ExamPackDetail', {
-        examTitle: exam.title,
-        examIcon: exam.icon,
+        packageId: exam.key,
       }),
     [navigation],
   );
 
-  // The header's total visible height (from the screen's content area top):
-  //   safeAreaTop + spacing[12] (dynamic paddingTop)
-  //   + 40 (headerRow — tallest child)
-  //   + spacing[8] (gap)
-  //   + 20 (subtitle lineHeight)
-  //   + spacing[12] (paddingBottom)
-  //   + 1 (borderBottom)
-  const headerHeight = insets.top + spacing[12] + 40 + spacing[8] + 20 + spacing[12] + 1;
+  // Header height calculation for content offset
+  const headerHeight =
+    insets.top + spacing[12] + 24 + spacing[8] + 20 + spacing[12] + 1;
 
   return (
     <View style={styles.screen}>
@@ -417,29 +364,43 @@ export default function MockTestsTabScreen(): React.JSX.Element {
       {/* Sticky header */}
       <Header safeAreaTop={insets.top} />
 
-      {/* Scrollable card list */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={{
-          paddingTop: headerHeight + spacing[40],
-          paddingHorizontal: spacing[16],
-          paddingBottom: spacing[8],
-        }}
-        showsVerticalScrollIndicator={false}
-        bounces
-        overScrollMode="never"
-      >
-        {EXAMS.map((exam) => (
-          <ExamCard
-            key={exam.key}
-            item={exam}
-            onPress={() => handleExamPress(exam)}
-          />
-        ))}
+      {isLoading ? (
+        <View style={[styles.scrollView, { paddingTop: headerHeight + spacing[40] }]}>
+          <LoadingState />
+        </View>
+      ) : error ? (
+        <View style={[styles.scrollView, { paddingTop: headerHeight + spacing[40] }]}>
+          <View style={styles.centerState}>
+            <Icon name="bell" color={colors.error} width={40} height={40} />
+            <Text style={[styles.centerStateText, { color: colors.error, marginTop: spacing[12] }]}>
+              Failed to load packages.
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{
+            paddingTop: headerHeight + spacing[40],
+            paddingHorizontal: spacing[16],
+            paddingBottom: spacing[8],
+          }}
+          showsVerticalScrollIndicator={false}
+          bounces
+          overScrollMode="never"
+        >
+          {examCards.map((exam) => (
+            <ExamCard
+              key={exam.key}
+              item={exam}
+              onPress={() => handleExamPress(exam)}
+            />
+          ))}
 
-        {/* Bottom padding for tab bar */}
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+          {/* Bottom padding for tab bar */}
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -457,10 +418,17 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  // ── Ambient Background ──────────────────────────────────────────
-  ambientBlob: {
-    position: 'absolute',
-    borderRadius: 9999,
+
+  // ── Center State (loading/error) ────────────────────────────────
+  centerState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[48],
+  },
+  centerStateText: {
+    ...typography.body,
+    color: colors.text.secondary,
+    marginTop: spacing[12],
   },
 
   // ── Header ──────────────────────────────────────────────────────
@@ -481,14 +449,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[8],
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: -8,
   },
   headerTitle: {
     ...typography.title,
@@ -511,13 +471,13 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     backgroundColor: 'rgba(255, 255, 255, 0.4)',
     shadowColor: '#000',
-shadowOpacity: 0.08,
-shadowRadius: 10,
-shadowOffset: {
-    width:0,
-    height:4,
-},
-elevation:6,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    elevation: 6,
   },
   cardTouchable: {
     borderRadius: 24,
@@ -572,7 +532,7 @@ elevation:6,
   cardSubtitle: {
     ...typography.bodySmall,
     fontSize: 13,
-    fontWeight:'700',
+    fontWeight: '700',
     color: colors.text.secondary,
     marginTop: 1,
   },
@@ -587,7 +547,7 @@ elevation:6,
   // ── Divider ─────────────────────────────────────────────────────
   cardDivider: {
     height: 1,
-    backgroundColor:'#EEF1F5',
+    backgroundColor: '#EEF1F5',
     zIndex: 1,
   },
 
@@ -616,7 +576,6 @@ elevation:6,
   statCaption: {
     ...typography.caption,
     fontSize: 9,
-    
     color: '#727785',
     fontWeight: '600',
     letterSpacing: 1,

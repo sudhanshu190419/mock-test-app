@@ -39,6 +39,8 @@ export interface OptionDisplay {
   label: string;
   /** Option text / content. */
   text: string;
+  /** Optional image URL for image-based options. */
+  imageUrl?: string;
 }
 
 /** A question as rendered in the test engine. */
@@ -156,6 +158,13 @@ export interface SaveAnswerInput {
 export interface SubmitTestInput {
   testId: string;
   paperId: string;
+  questions: QuestionDisplay[];
   answers: Record<number, string | null>;
   timeTakenSeconds: number;
+}
+
+/** Result of a successful test submission. */
+export interface SubmitTestOutput {
+  attemptId: string;
+  resultId: string;
 }

@@ -53,6 +53,10 @@ export interface TestInstructionsParams {
   totalMarks: number;
   /** Negative marking per wrong answer. */
   negativeMarking: number;
+  /** UUID of the linked mock test (from pyq_mock_mappings). */
+  testId: string;
+  /** UUID of the PYQ paper. */
+  paperId: string;
 }
 
 interface SummaryItem {
@@ -70,16 +74,26 @@ interface SummaryItem {
 
 const BRAND_GREEN = '#006948';
 
-const INSTRUCTIONS: string[] = [
-  'The test contains 90 multiple-choice questions.',
-  'The total duration of the test is 180 minutes.',
-  '+4 marks for each correct answer and -1 mark for each incorrect answer.',
-  'You can mark a question for review and revisit it later.',
-  'Once started, the timer cannot be paused.',
-  'Do not refresh or leave the test screen during the test.',
-];
+// ── Instructions Section ──────────────────────────────────────────
 
-const SYLLABUS_TAGS: string[] = ['Physics', 'Chemistry', 'Mathematics'];
+interface InstructionsSectionProps {
+  questions: number;
+  durationMin: number;
+  totalMarks: number;
+  negativeMarking: number;
+}
+
+const getInstructions = (questions: number, durationMin: number, negativeMarking: number, totalMarks: number): string[] => {
+  const marksPerCorrect = questions > 0 ? Math.round(totalMarks / questions) : 4;
+  return [
+    `The test contains ${questions} multiple-choice questions.`,
+    `The total duration of the test is ${durationMin} minutes.`,
+    `+${Math.abs(marksPerCorrect)} marks for each correct answer and ${Math.abs(negativeMarking)} mark for each incorrect answer.`,
+    'You can mark a question for review and revisit it later.',
+    'Once started, the timer cannot be paused.',
+    'Do not refresh or leave the test screen during the test.',
+  ];
+};
 
 // ═══════════════════════════════════════════════════════════════════
 //  Sub-components
@@ -228,9 +242,13 @@ const SummaryGrid = React.memo(function SummaryGrid({
   );
 });
 
-// ── Instructions Section ──────────────────────────────────────────
-
-const InstructionsSection = React.memo(function InstructionsSection(): React.JSX.Element {
+const InstructionsSection = React.memo(function InstructionsSection({
+  questions,
+  durationMin,
+  totalMarks,
+  negativeMarking,
+}: InstructionsSectionProps): React.JSX.Element {
+  const instructions = getInstructions(questions, durationMin, negativeMarking, totalMarks);
   return (
     <View style={styles.sectionCard}>
       <View style={styles.sectionHeader}>
@@ -238,36 +256,13 @@ const InstructionsSection = React.memo(function InstructionsSection(): React.JSX
         <Text style={styles.sectionTitle}>Instructions</Text>
       </View>
       <View style={styles.instructionsList}>
-        {INSTRUCTIONS.map((instruction, index) => (
+        {instructions.map((instruction, index) => (
           <View key={index} style={styles.instructionRow}>
             <View style={styles.bullet} />
             <Text style={styles.instructionText}>{instruction}</Text>
           </View>
         ))}
       </View>
-    </View>
-  );
-});
-
-// ── Syllabus Section ──────────────────────────────────────────────
-
-const SyllabusSection = React.memo(function SyllabusSection(): React.JSX.Element {
-  return (
-    <View style={styles.sectionCard}>
-      <View style={styles.sectionHeader}>
-        <Icon name="book" color={BRAND_GREEN} width={22} height={22} />
-        <Text style={styles.sectionTitle}>Syllabus Covered</Text>
-      </View>
-      <View style={styles.tagRow}>
-        {SYLLABUS_TAGS.map((tag) => (
-          <View key={tag} style={styles.tag}>
-            <Text style={styles.tagText}>{tag}</Text>
-          </View>
-        ))}
-      </View>
-      <Text style={styles.syllabusDescription}>
-        Full JEE Main Class 11th & 12th Syllabus as per NTA.
-      </Text>
     </View>
   );
 });
@@ -333,11 +328,14 @@ export default function TestInstructionsScreen({
 }: TestInstructionsScreenProps): React.JSX.Element {
   const {
     examTitle,
+    year,
     displayLabel,
     durationMin,
     questions,
     totalMarks,
     negativeMarking,
+    testId,
+    paperId,
   } = route.params;
   const insets = useSafeAreaInsets();
 
@@ -349,16 +347,16 @@ export default function TestInstructionsScreen({
 
   const handleStartTest = useCallback(() => {
     stackNavigation.navigate('TestEngine', {
-      testId: 'test_jee_main_2025',
-      paperId: 'jee_main_2025_shift1',
-      title: 'JEE Advanced: Practice Test 01',
-      shortTitle: 'Test 01',
+      testId,
+      paperId,
+      title: displayLabel,
+      shortTitle: `${examTitle} ${year}`,
       durationMin,
       totalQuestions: questions,
       totalMarks,
       negativeMarking,
     });
-  }, [stackNavigation, durationMin, questions, totalMarks, negativeMarking]);
+  }, [stackNavigation, testId, paperId, displayLabel, examTitle, year, durationMin, questions, totalMarks, negativeMarking]);
 
   // Header height: safeAreaTop + spacing[12] (paddingTop)
   //                + 40 (icon height)
@@ -402,10 +400,12 @@ export default function TestInstructionsScreen({
         />
 
         {/* Instructions */}
-        <InstructionsSection />
-
-        {/* Syllabus */}
-        <SyllabusSection />
+        <InstructionsSection
+          questions={questions}
+          durationMin={durationMin}
+          totalMarks={totalMarks}
+          negativeMarking={negativeMarking}
+        />
       </ScrollView>
 
       {/* Fixed bottom bar */}
