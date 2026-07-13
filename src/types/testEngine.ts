@@ -65,6 +65,8 @@ export interface QuestionDisplay {
   subjectName?: string;
   /** Section this question belongs to. */
   sectionName?: string;
+  /** Question type (MCQ, MSQ, Numerical, etc.) */
+  questionType?: 'mcq' | 'msq' | 'numerical' | 'true_false';
 }
 
 /** Frozen test configuration (loaded at screen mount). */
@@ -159,8 +161,9 @@ export interface SubmitTestInput {
   testId: string;
   paperId: string;
   questions: QuestionDisplay[];
-  answers: Record<number, string | null>;
+  answers: Record<number, string | string[] | null>;
   timeTakenSeconds: number;
+  markedForReviewIndices?: number[];
 }
 
 /** Result of a successful test submission. */

@@ -43,8 +43,8 @@ export const practiceKeys = {
     /** Root key for all featured practice queries. */
     all: () => [...practiceKeys.all, 'featured'] as const,
 
-    /** Key for the single featured list query (keyed by limit). */
-    list: (limit?: number) => [...practiceKeys.featured.all(), limit] as const,
+    /** Key for the single featured list query (keyed by limit and streamId). */
+    list: (limit?: number, streamId?: string | null) => [...practiceKeys.featured.all(), limit, streamId] as const,
   },
 
   // ═════════════════════════════════════════════════════════════════════════

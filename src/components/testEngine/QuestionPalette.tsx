@@ -1,9 +1,12 @@
 /**
  * QuestionPalette
  *
- * Grid of question number buttons indicating answer status via colour.
- * Rendered as a side panel on desktop or a modal on mobile.
- * Supports filtering by subject.
+ * Implements the Question Palette component matching Figma specifications. Displays:
+ * - Grouped subject columns (Physics, Chemistry, Maths)
+ * - Progress indicators and progress bars per subject
+ * - Color-coded question buttons indicating status (Answered, Marked, Skipped, Not Visited)
+ * - Highlights the currently active question with an outline ring
+ * - Modal layout for mobile, sidebar layout for desktop/tablet
  *
  * @module components/testEngine/QuestionPalette
  */
@@ -15,408 +18,466 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Modal,
   Platform,
+  Dimensions,
 } from 'react-native';
+
+import Icon from '../home/Icons';
 import { colors, palette } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
-import Icon from '../home/Icons';
-import type { QuestionDisplay, PaletteQuestionStatus } from '../../types/testEngine';
-import { SUBJECTS } from '../../data/mockTestEngine';
-import type { SubjectSection } from '../../types/testEngine';
+import type { QuestionDisplay } from '../../types/testEngine';
 
 interface QuestionPaletteProps {
-  /** All questions in the paper. */
+  /** All questions in the mock test. */
   questions: QuestionDisplay[];
-  /** Currently selected question index (0-based). */
+  /** Map of question index to option selected (or array/string). */
+  selectedOptions: Record<number, string | string[] | null>;
+  /** Set of question indices marked for review. */
+  markedForReview: Set<number>;
+  /** Set of question indices visited by the user. */
+  visitedQuestions: Set<number>;
+  /** Currently active question index. */
   currentIndex: number;
-  /** Set of answered question indices. */
-  answeredIndices: Set<number>;
-  /** Set of marked-for-review question indices. */
-  markedForReviewIndices: Set<number>;
-  /** Set of visited question indices. */
-  visitedIndices: Set<number>;
-  /** Active subject filter (null for all). */
-  activeSubject: string | null;
-  /** Subject filter change callback. */
-  onSubjectChange: (subjectId: string | null) => void;
-  /** Question navigation callback. */
+  /** Navigation callback to jump to a question. */
   onQuestionSelect: (index: number) => void;
-  /** Submit test callback. */
-  onSubmitTest: () => void;
-  /** Close the palette (for mobile modal). */
-  onClose?: () => void;
-  /** Whether this is rendered in a modal (mobile). */
-  isModal?: boolean;
+  /** Visible status of the mobile sheet. */
+  open: boolean;
+  /** Close action for mobile sheet. */
+  onClose: () => void;
+  /** Force sidebar rendering (for desktop view). */
+  isSidebar?: boolean;
 }
 
-/** Returns the palette colour for a question's status. */
-function getStatusColor(
-  index: number,
-  currentIndex: number,
-  answeredIndices: Set<number>,
-  markedForReviewIndices: Set<number>,
-  visitedIndices: Set<number>,
-): { bg: string; text: string; ring: boolean } {
-  if (index === currentIndex) {
-    return { bg: '#E8F5E9', text: colors.primary, ring: true };
-  }
-  if (markedForReviewIndices.has(index)) {
-    return { bg: '#FFF3CD', text: '#856404', ring: false };
-  }
-  if (answeredIndices.has(index)) {
-    return { bg: colors.primary, text: colors.text.inverse, ring: false };
-  }
-  if (visitedIndices.has(index)) {
-    return { bg: palette.slate200, text: palette.slate600, ring: false };
-  }
-  return { bg: palette.slate100, text: palette.slate400, ring: false };
-}
+const SUBJECT_META: Record<string, { tint: string; bar: string; text: string }> = {
+  Physics: { tint: '#EFF6FF', bar: '#1D4ED8', text: '#1E40AF' },
+  Chemistry: { tint: '#F0FDF4', bar: '#15803D', text: '#166534' },
+  Maths: { tint: '#F5F3FF', bar: '#7C3AED', text: '#5B21B6' },
+  Biology: { tint: '#FFF5F5', bar: '#DC2626', text: '#991B1B' },
+};
 
-const QuestionPalette = React.memo(function QuestionPalette({
+export const QuestionPalette = React.memo(function QuestionPalette({
   questions,
+  selectedOptions,
+  markedForReview,
+  visitedQuestions,
   currentIndex,
-  answeredIndices,
-  markedForReviewIndices,
-  visitedIndices,
-  activeSubject,
-  onSubjectChange,
   onQuestionSelect,
-  onSubmitTest,
+  open,
   onClose,
-  isModal = false,
+  isSidebar = false,
 }: QuestionPaletteProps): React.JSX.Element {
-  // Determine which questions to show based on subject filter
-  const filteredQuestions = useMemo(() => {
-    if (!activeSubject) return questions;
-    return questions.filter(
-      (q) => q.subjectName?.toLowerCase() === activeSubject.toLowerCase(),
-    );
-  }, [questions, activeSubject]);
+  // Group questions by subject name
+  const groupedData = useMemo(() => {
+    const map: Record<string, QuestionDisplay[]> = {};
+    for (const q of questions) {
+      const subject = q.subjectName || 'General';
+      if (!map[subject]) {
+        map[subject] = [];
+      }
+      map[subject].push(q);
+    }
+    return map;
+  }, [questions]);
 
-  return (
-    <View style={[styles.container, isModal && styles.containerModal]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <Icon
-            name={isModal ? 'layers' : 'menu-book'}
-            color={palette.slate700}
-            width={20}
-            height={20}
-          />
-          <Text style={styles.headerTitle}>Question Palette</Text>
-        </View>
-        {isModal && onClose && (
-          <TouchableOpacity
-            onPress={onClose}
-            style={styles.closeButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityLabel="Close palette"
-          >
-            <Icon name="arrow-left" color={palette.slate500} width={20} height={20} />
-          </TouchableOpacity>
+  // Derived counts
+  const answeredCount = useMemo(() => {
+    let count = 0;
+    for (const [idx, val] of Object.entries(selectedOptions)) {
+      if (val !== null && val !== undefined && (typeof val !== 'string' || val !== '')) {
+        if (!Array.isArray(val) || val.length > 0) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }, [selectedOptions]);
+
+  const markedCount = markedForReview.size;
+
+  const handleJump = useCallback(
+    (index: number) => {
+      onQuestionSelect(index);
+      if (!isSidebar) {
+        onClose();
+      }
+    },
+    [onQuestionSelect, onClose, isSidebar]
+  );
+
+  const getQuestionStatus = useCallback(
+    (index: number) => {
+      const isAnswered =
+        selectedOptions[index] !== null &&
+        selectedOptions[index] !== undefined &&
+        (typeof selectedOptions[index] !== 'string' || selectedOptions[index] !== '');
+
+      const isMarked = markedForReview.has(index);
+      const isVisited = visitedQuestions.has(index);
+
+      if (isAnswered) return 'answered';
+      if (isMarked) return 'marked';
+      if (isVisited) return 'skipped';
+      return 'not-visited';
+    },
+    [selectedOptions, markedForReview, visitedQuestions]
+  );
+
+  const renderContent = () => {
+    const subjectsList = Object.keys(groupedData);
+
+    return (
+      <View style={styles.paletteContent}>
+        {/* Drag handle (mobile only) */}
+        {!isSidebar && (
+          <View style={styles.dragHandleContainer}>
+            <View style={styles.dragHandle} />
+          </View>
         )}
-      </View>
 
-      {/* Subject Filter Chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.subjectRow}
-        contentContainerStyle={styles.subjectRowContent}
-      >
-        <TouchableOpacity
-          style={[
-            styles.subjectChip,
-            !activeSubject && styles.subjectChipActive,
-          ]}
-          onPress={() => onSubjectChange(null)}
-          activeOpacity={0.7}
-        >
-          <Text
-            style={[
-              styles.subjectChipText,
-              !activeSubject && styles.subjectChipTextActive,
-            ]}
-          >
-            All
-          </Text>
-        </TouchableOpacity>
-        {SUBJECTS.map((subject) => (
-          <TouchableOpacity
-            key={subject.id}
-            style={[
-              styles.subjectChip,
-              activeSubject === subject.id && styles.subjectChipActive,
-            ]}
-            onPress={() => onSubjectChange(subject.id)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.subjectChipText,
-                activeSubject === subject.id && styles.subjectChipTextActive,
-              ]}
-            >
-              {subject.name}
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.headerTitle}>Question Palette</Text>
+            <Text style={styles.headerSubtitle}>
+              {answeredCount} answered  •  {markedCount} marked  •  {questions.length - answeredCount - markedCount} remaining
             </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Legend */}
-      <View style={styles.legend}>
-        <LegendItem color={palette.slate200} label="Not Visited" />
-        <LegendItem color={colors.primary} label="Answered" />
-        <LegendItem color="#FFF3CD" label="Marked" />
-        <LegendItem color={palette.slate100} label="Unvisited" />
-      </View>
-
-      {/* Question Grid */}
-      <ScrollView
-        style={styles.gridScroll}
-        contentContainerStyle={styles.gridContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.grid}>
-          {filteredQuestions.map((q) => {
-            const status = getStatusColor(
-              q.index - 1,
-              currentIndex,
-              answeredIndices,
-              markedForReviewIndices,
-              visitedIndices,
-            );
-            return (
-              <TouchableOpacity
-                key={q.id}
-                style={[
-                  styles.gridButton,
-                  { backgroundColor: status.bg },
-                  status.ring && styles.gridButtonCurrent,
-                ]}
-                onPress={() => onQuestionSelect(q.index - 1)}
-                activeOpacity={0.6}
-                accessibilityLabel={`Question ${q.index}, ${getStatusLabel(
-                  q.index - 1,
-                  currentIndex,
-                  answeredIndices,
-                  markedForReviewIndices,
-                  visitedIndices,
-                )}`}
-              >
-                <Text style={[styles.gridButtonText, { color: status.text }]}>
-                  {q.index}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          </View>
+          {!isSidebar && (
+            <TouchableOpacity style={styles.closeIconButton} onPress={onClose} activeOpacity={0.7}>
+              <Icon name="x" color="#64748B" width={16} height={16} />
+            </TouchableOpacity>
+          )}
         </View>
-      </ScrollView>
 
-      {/* Submit Button */}
-      <View style={styles.submitSection}>
-        <TouchableOpacity
-          style={styles.submitButton}
-          onPress={onSubmitTest}
-          activeOpacity={0.8}
-          accessibilityLabel="Submit test"
-          accessibilityRole="button"
+        {/* Legend */}
+        <View style={styles.legendContainer}>
+          {[
+            { color: '#22C55E', label: 'Answered' },
+            { color: '#7C3AED', label: 'Marked' },
+            { color: '#D1D5DB', label: 'Skipped' },
+            { color: '#F3F4F6', label: 'Not Visited', border: '#E5E7EB' },
+          ].map((item) => (
+            <View key={item.label} style={styles.legendItem}>
+              <View
+                style={[
+                  styles.legendDot,
+                  { backgroundColor: item.color },
+                  item.border ? { borderWidth: 1, borderColor: item.border } : null,
+                ]}
+              />
+              <Text style={styles.legendLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Subject columns scroll container */}
+        <ScrollView
+          style={styles.subjectScroll}
+          contentContainerStyle={styles.subjectScrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <Icon name="log-out" color={colors.error} width={20} height={20} />
-          <Text style={styles.submitText}>Submit Test</Text>
-        </TouchableOpacity>
+          <View style={isSidebar ? styles.gridStacked : styles.gridColumns}>
+            {subjectsList.map((subject, sIdx) => {
+              const sc = SUBJECT_META[subject] || { tint: '#F3F4F6', bar: '#64748B', text: '#334155' };
+              const subjectQs = groupedData[subject] || [];
+
+              // Calculate subject specific answered count
+              const subjectAnswered = subjectQs.filter((q) => {
+                const globalIndex = q.index - 1;
+                const opt = selectedOptions[globalIndex];
+                return opt !== null && opt !== undefined && (typeof opt !== 'string' || opt !== '');
+              }).length;
+
+              const progressPct = subjectQs.length > 0 ? (subjectAnswered / subjectQs.length) * 100 : 0;
+
+              return (
+                <View key={subject} style={styles.subjectCard}>
+                  {/* Subject Header */}
+                  <View style={[styles.subjectHeader, { backgroundColor: sc.tint }]}>
+                    <Text style={[styles.subjectTitle, { color: sc.text }]}>{subject}</Text>
+                    <View style={styles.progressRow}>
+                      <View style={styles.progressBarBg}>
+                        <View
+                          style={[
+                            styles.progressBarFill,
+                            { width: `${progressPct}%`, backgroundColor: sc.bar },
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.progressRatio, { color: sc.text }]}>
+                        {subjectAnswered}/{subjectQs.length}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Buttons Grid */}
+                  <View style={styles.buttonsContainer}>
+                    {subjectQs.map((q) => {
+                      const globalIndex = q.index - 1;
+                      const status = getQuestionStatus(globalIndex);
+                      const isCurrent = globalIndex === currentIndex;
+
+                      const bg =
+                        status === 'answered' ? '#22C55E' :
+                        status === 'marked' ? '#7C3AED' :
+                        status === 'skipped' ? '#D1D5DB' : '#F3F4F6';
+
+                      const fg =
+                        status === 'answered' || status === 'marked' ? '#FFFFFF' :
+                        status === 'skipped' ? '#374151' : '#94A3B8';
+
+                      return (
+                        <TouchableOpacity
+                          key={q.id}
+                          style={[
+                            styles.badgeButton,
+                            { backgroundColor: bg },
+                            isCurrent && styles.badgeButtonCurrent,
+                          ]}
+                          onPress={() => handleJump(globalIndex)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.badgeText, { color: fg }]}>
+                            {q.index}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
       </View>
-    </View>
-  );
-});
+    );
+  };
 
-// ─── Legend Item ────────────────────────────────────────────────────
+  if (isSidebar) {
+    return <View style={styles.sidebarContainer}>{renderContent()}</View>;
+  }
 
-interface LegendItemProps {
-  color: string;
-  label: string;
-}
-
-const LegendItem = React.memo(function LegendItem({
-  color,
-  label,
-}: LegendItemProps): React.JSX.Element {
   return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendDot, { backgroundColor: color }]} />
-      <Text style={styles.legendLabel}>{label}</Text>
-    </View>
+    <Modal
+      transparent
+      visible={open}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.mobileModalContainer}>
+        {/* Backdrop Scrim */}
+        <TouchableOpacity
+          style={styles.mobileModalScrim}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        {/* Bottom Sheet wrapper */}
+        <View style={styles.mobileSheet}>
+          {renderContent()}
+        </View>
+      </View>
+    </Modal>
   );
 });
 
-// ─── Helpers ────────────────────────────────────────────────────────
-
-function getStatusLabel(
-  index: number,
-  currentIndex: number,
-  answeredIndices: Set<number>,
-  markedForReviewIndices: Set<number>,
-  visitedIndices: Set<number>,
-): string {
-  if (index === currentIndex) return 'current question';
-  if (markedForReviewIndices.has(index)) return 'marked for review';
-  if (answeredIndices.has(index)) return 'answered';
-  if (visitedIndices.has(index)) return 'visited';
-  return 'not visited';
-}
-
-export { QuestionPalette, getStatusColor };
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: palette.slate50,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: palette.slate200,
-    overflow: 'hidden',
-    flex: 1,
+  // Desktop sidebar wrapper
+  sidebarContainer: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#FFFFFF',
+    borderLeftWidth: 1,
+    borderLeftColor: '#E2E8F0',
   },
-  containerModal: {
-    borderRadius: 0,
-    borderWidth: 0,
+  // Mobile Modal layout
+  mobileModalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  mobileModalScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+  },
+  mobileSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: SCREEN_HEIGHT * 0.75,
+    width: '100%',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 16,
+      },
+    }),
+  },
+
+  // Main Palette Content
+  paletteContent: {
+    flexDirection: 'column',
+    width: '100%',
+  },
+  dragHandleContainer: {
+    alignItems: 'center',
+    paddingVertical: spacing[12],
+  },
+  dragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#CBD5E1',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing[16],
-    paddingVertical: spacing[12],
-    backgroundColor: colors.surface,
+    paddingBottom: spacing[12],
     borderBottomWidth: 1,
-    borderBottomColor: palette.slate200,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[8],
+    borderBottomColor: '#F1F5F9',
   },
   headerTitle: {
-    ...typography.subtitle,
-    fontSize: 16,
-    fontWeight: '600',
-    color: palette.slate700,
+    ...typography.title,
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
   },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  headerSubtitle: {
+    ...typography.caption,
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  closeIconButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: palette.slate100,
   },
-  subjectRow: {
-    maxHeight: 44,
-    borderBottomWidth: 1,
-    borderBottomColor: palette.slate200,
-  },
-  subjectRowContent: {
-    paddingHorizontal: spacing[12],
-    paddingVertical: spacing[8],
-    gap: spacing[8],
-    flexDirection: 'row',
-  },
-  subjectChip: {
-    paddingHorizontal: spacing[12],
-    paddingVertical: spacing[4],
-    borderRadius: radius.xxl,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: palette.slate200,
-  },
-  subjectChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  subjectChipText: {
-    ...typography.caption,
-    fontSize: 12,
-    fontWeight: '600',
-    color: palette.slate600,
-  },
-  subjectChipTextActive: {
-    color: colors.text.inverse,
-  },
-  legend: {
+
+  // Legend
+  legendContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: spacing[12],
+    alignItems: 'center',
+    gap: spacing[12],
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: spacing[16],
     paddingVertical: spacing[8],
-    gap: spacing[4],
     borderBottomWidth: 1,
-    borderBottomColor: palette.slate200,
+    borderBottomColor: '#F1F5F9',
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginRight: spacing[8],
+    gap: spacing[4],
   },
   legendDot: {
     width: 10,
     height: 10,
-    borderRadius: 5,
+    borderRadius: 2,
   },
   legendLabel: {
     ...typography.caption,
     fontSize: 10,
-    color: palette.slate500,
+    fontWeight: '600',
+    color: '#64748B',
   },
-  gridScroll: {
-    flex: 1,
+
+  // Subject scroll area
+  subjectScroll: {
+    maxHeight: SCREEN_HEIGHT * 0.52,
   },
-  gridContent: {
+  subjectScrollContent: {
     padding: spacing[12],
   },
-  grid: {
+  gridColumns: {
+    flexDirection: 'row',
+    gap: spacing[8],
+  },
+  gridStacked: {
+    flexDirection: 'column',
+    gap: spacing[12],
+  },
+  subjectCard: {
+    flex: 1,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    minWidth: 100,
+  },
+  subjectHeader: {
+    paddingHorizontal: spacing[8],
+    paddingVertical: spacing[8],
+  },
+  subjectTitle: {
+    ...typography.labelSmall,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[4],
+    marginTop: spacing[4],
+  },
+  progressBarBg: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  progressRatio: {
+    ...typography.caption,
+    fontSize: 9,
+    fontWeight: '700',
+  },
+
+  // Buttons Grid
+  buttonsContainer: {
+    padding: spacing[8],
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing[8],
   },
-  gridButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  badgeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  gridButtonCurrent: {
+  badgeButtonCurrent: {
     borderWidth: 2,
-    borderColor: colors.primary,
+    borderColor: '#194080', // var(--exam-blue)
   },
-  gridButtonText: {
-    ...typography.labelSmall,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  submitSection: {
-    padding: spacing[12],
-    borderTopWidth: 1,
-    borderTopColor: palette.slate200,
-    backgroundColor: colors.surface,
-  },
-  submitButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[8],
-    paddingVertical: spacing[12],
-    borderRadius: radius.sm,
-    borderWidth: 2,
-    borderColor: palette.red500,
-    backgroundColor: colors.surface,
-  },
-  submitText: {
-    ...typography.buttonSmall,
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.error,
+  badgeText: {
+    ...typography.caption,
+    fontSize: 10,
+    fontWeight: '800',
   },
 });

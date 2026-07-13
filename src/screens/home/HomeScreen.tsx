@@ -29,17 +29,23 @@ import {
   View,
   FlatList,
   StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Text,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useAppSelector } from '../../store/hooks';
-import { selectUser } from '../../store/authSlice';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { selectUser, selectSelectedStreamId, setSelectedStreamId } from '../../store/authSlice';
 import { useHomeDashboard } from '../../hooks/home/useHome';
 import { useTrendingCourses } from '../../hooks/home/useCourses';
 import { useFeaturedPractice } from '../../hooks/practice/usePractice';
+import { useStreams } from '../../hooks/academic/useStreams';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
 import type { TrendingCourse } from '../../types/home';
+import Icon from '../../components/home/Icons';
 
 import GreetingHeader from '../../components/home/GreetingHeader';
 import HeroBanner from '../../components/home/HeroBanner';
@@ -55,6 +61,9 @@ import type { QuickActionItem, FeatureItem, PopularExamItem, TrendingCourseItem,
 type PyqItem = PyqItemType;
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
+import { radius } from '../../theme/radius';
+import { typography } from '../../theme/typography';
+import { shadows } from '../../theme/shadows';
 
 // --- Data ---
 
@@ -424,6 +433,7 @@ function mapTrendingCourseToItem(
 
 type SectionId =
   | 'greeting'
+  | 'stream-selector'
   | 'hero'
   | 'trending-courses'
   | 'pyq-practice'
@@ -438,6 +448,7 @@ interface Section {
 
 const SECTIONS: Section[] = [
   { id: 'greeting' },
+  { id: 'stream-selector' },
   { id: 'hero' },
   { id: 'trending-courses' },
   { id: 'pyq-practice' },
@@ -451,7 +462,16 @@ const SECTIONS: Section[] = [
 
 export default function HomeScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const dispatch = useAppDispatch();
   const user = useAppSelector(selectUser);
+  const selectedStreamId = useAppSelector(selectSelectedStreamId);
+
+  // ── Streams listing for interactive pill selector ──────────────
+  const { data: streamsData } = useStreams(
+    { isActive: true, instituteId: user?.instituteId ?? undefined },
+    { sortBy: 'displayOrder', sortDirection: 'asc' }
+  );
+  const streams = useMemo(() => streamsData?.data ?? [], [streamsData]);
 
   // ── Greeting: live authenticated user data ────────────────────────────
   const {
@@ -482,10 +502,30 @@ export default function HomeScreen(): React.JSX.Element {
   const handleExamPress = useCallback((_key: string) => {}, []);
   const handleStartFreeTest = useCallback(() => {}, []);
   const handleViewAllExams = useCallback(() => {}, []);
-  const handleViewAllTrending = useCallback(() => {}, []);
-  const handleCoursePress = useCallback((_key: string) => {}, []);
-  const handleHeroExplorePress = useCallback((_key: string) => {}, []);
-  const handleHeroEnrollPress = useCallback((_key: string) => {}, []);
+  const handleViewAllTrending = useCallback(() => {
+    navigation.navigate('MyStreamCourses');
+  }, [navigation]);
+  const handleCoursePress = useCallback(
+    (courseId: string) => {
+      navigation.navigate('CourseDetail', { courseId });
+    },
+    [navigation],
+  );
+  const handleHeroExplorePress = useCallback(
+    (courseId: string) => {
+      navigation.navigate('CourseDetail', { courseId });
+    },
+    [navigation],
+  );
+  const handleHeroEnrollPress = useCallback(
+    (courseId: string) => {
+      navigation.navigate('CourseDetail', { courseId });
+    },
+    [navigation],
+  );
+  const handleExploreGlobalPress = useCallback(() => {
+    (navigation as any).navigate('MainTabs', { screen: 'Courses' });
+  }, [navigation]);
 
   // ── PYQ Navigation ────────────────────────────────────────────────
   const handleViewAllPyq = useCallback(() => {
@@ -521,7 +561,7 @@ export default function HomeScreen(): React.JSX.Element {
   const {
     data: trendingData,
     error: trendingError,
-  } = useTrendingCourses({ page: 1, pageSize: 8 });
+  } = useTrendingCourses({ page: 1, pageSize: 8 }, selectedStreamId);
 
   // Log trending errors silently — the UI falls back gracefully.
   if (trendingError) {
@@ -560,7 +600,7 @@ export default function HomeScreen(): React.JSX.Element {
     data: featuredPracticeData,
     isLoading: featuredLoading,
     error: featuredError,
-  } = useFeaturedPractice(6);
+  } = useFeaturedPractice(6, selectedStreamId);
 
   if (featuredError) {
     console.warn('[HomeScreen] Featured practice fetch failed:', featuredError);
@@ -616,6 +656,52 @@ export default function HomeScreen(): React.JSX.Element {
             />
           );
 
+        case 'stream-selector':
+          if (streams.length === 0) return null;
+          return (
+            <View style={styles.selectorWrapper}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.selectorScroll}
+              >
+                {streams.map((stream) => {
+                  const isSelected = stream.streamId === selectedStreamId;
+                  return (
+                    <TouchableOpacity
+                      key={stream.streamId}
+                      style={[
+                        styles.selectorPill,
+                        isSelected && styles.selectorPillActive,
+                      ]}
+                      onPress={async () => {
+                        try {
+                          if (user?.id) {
+                            const storageKey = `selected_exam_stream_id_${user.id}`;
+                            await AsyncStorage.setItem(storageKey, stream.streamId);
+                          }
+                          dispatch(setSelectedStreamId(stream.streamId));
+                        } catch (e) {
+                          console.warn('[HomeScreen] Failed to save stream selection:', e);
+                        }
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.selectorText,
+                          isSelected && styles.selectorTextActive,
+                        ]}
+                      >
+                        {stream.code}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          );
+
         case 'hero':
           return (
             <View style={styles.heroWrapper}>
@@ -624,6 +710,29 @@ export default function HomeScreen(): React.JSX.Element {
           );
 
         case 'trending-courses':
+          if (trendingData?.data && trendingData.data.length === 0) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Trending Courses" />
+                <View style={[styles.emptyCard, shadows.small]}>
+                  <Text style={styles.emptyEmoji}>🚀</Text>
+                  <Text style={styles.emptyCardTitle}>Coming Soon</Text>
+                  <Text style={styles.emptyCardText}>
+                    We are currently designing courses tailored specifically for your target exam.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.emptyCardButton}
+                    onPress={handleExploreGlobalPress}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.emptyCardButtonText}>Explore Other Courses</Text>
+                    <Icon name="arrow-right" color={colors.text.inverse} width={14} height={14} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          }
+
           return (
             <TrendingCoursesSection
               courses={trendingCourses}
@@ -656,7 +765,6 @@ export default function HomeScreen(): React.JSX.Element {
                     <View key={key} style={styles.gridHalf}>
                       <QuickActionCard
                         {...actionProps}
-                        animationDelay={index * 80}
                         onPress={() => handleActionPress(key)}
                       />
                     </View>
@@ -698,7 +806,6 @@ export default function HomeScreen(): React.JSX.Element {
                     <View key={key} style={styles.gridHalf}>
                       <PopularExamCard
                         {...examProps}
-                        animationDelay={index * 80}
                         onPress={() => handleExamPress(key)}
                       />
                     </View>
@@ -722,6 +829,7 @@ export default function HomeScreen(): React.JSX.Element {
     [
       greetingUserName, greetingAvatarUrl, hasUnreadNotifications, greetingUnreadCount,
       user, quickActions, features, popularExams, trendingCourses, pyqItems,
+      streams, selectedStreamId, dispatch,
       handleExplorePress, handleNotificationPress, handleProfilePress,
       handleActionPress, handleExamPress, handleStartFreeTest, handleViewAllExams,
       handleViewAllTrending, handleCoursePress, handleHeroExplorePress, handleHeroEnrollPress,
@@ -776,5 +884,77 @@ const styles = StyleSheet.create({
   gridHalf: {
     width: '48%',
     flexGrow: 1,
+  },
+  selectorWrapper: {
+    paddingVertical: spacing[8],
+    backgroundColor: colors.background,
+  },
+  selectorScroll: {
+    paddingHorizontal: spacing[16],
+    gap: spacing[8],
+  },
+  selectorPill: {
+    paddingHorizontal: spacing[16],
+    paddingVertical: spacing[8],
+    borderRadius: radius.xxl,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  selectorPillActive: {
+    backgroundColor: colors.secondary,
+    borderColor: colors.secondary,
+  },
+  selectorText: {
+    ...typography.labelSmall,
+    color: colors.text.secondary,
+    fontWeight: '600',
+  },
+  selectorTextActive: {
+    color: colors.text.inverse,
+    fontWeight: '700',
+  },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing[24],
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    marginTop: spacing[8],
+  },
+  emptyEmoji: {
+    fontSize: 36,
+    marginBottom: spacing[8],
+  },
+  emptyCardTitle: {
+    ...typography.title,
+    fontWeight: '800',
+    color: colors.text.primary,
+    marginBottom: spacing[4],
+  },
+  emptyCardText: {
+    ...typography.bodySmall,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: spacing[16],
+    paddingHorizontal: spacing[12],
+  },
+  emptyCardButton: {
+    backgroundColor: colors.secondary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing[16],
+    paddingVertical: spacing[8],
+    borderRadius: radius.md,
+    gap: spacing[4],
+  },
+  emptyCardButtonText: {
+    ...typography.buttonSmall,
+    color: colors.text.inverse,
+    fontWeight: '700',
   },
 });

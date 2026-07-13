@@ -163,11 +163,12 @@ function mapSortField(sortBy: PracticeSortOptions['sortBy']): string {
  */
 export async function getFeaturedPractice(
   limit: number = DEFAULT_FEATURED_LIMIT,
+  streamId?: string | null,
 ): Promise<ApiResponse<PaginatedResponse<PracticePackage>>> {
   try {
     const { page, pageSize, from, to } = buildPagination({ page: 1, pageSize: limit });
 
-    const { data, error, count } = await supabase
+    let query = supabase
       .from('pyq_packages')
       .select(
         `
@@ -188,9 +189,17 @@ export async function getFeaturedPractice(
         { count: 'exact' },
       )
       .eq('is_active', true)
-      .not('published_at', 'is', null)
+      .not('published_at', 'is', null);
+
+    if (streamId) {
+      query = query.eq('stream_id', streamId);
+    }
+
+    query = query
       .order('published_at', { ascending: false })
       .range(from, to);
+
+    const { data, error, count } = await query;
 
     if (error) {
       return { success: false, error: extractErrorMessage(error) };

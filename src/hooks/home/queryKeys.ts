@@ -68,9 +68,9 @@ export const homeKeys = {
     /** Key for every course list query (used for broad invalidation). */
     lists: () => [...homeKeys.courses.all(), 'list'] as const,
 
-    /** Key for trending courses (only pagination param). */
-    trending: (pagination?: PaginationParams) =>
-      [...homeKeys.courses.all(), 'trending', pagination] as const,
+    /** Key for trending courses (with optional streamId). */
+    trending: (pagination?: PaginationParams, streamId?: string | null) =>
+      [...homeKeys.courses.all(), 'trending', pagination, streamId] as const,
 
     /** Key for latest courses. */
     latest: (limit?: number) => [...homeKeys.courses.all(), 'latest', limit] as const,
@@ -80,6 +80,10 @@ export const homeKeys = {
 
     /** Key for featured courses by ID set. */
     featured: (ids?: string[]) => [...homeKeys.courses.all(), 'featured', ids] as const,
+
+    /** Key for courses filtered by stream. */
+    byStream: (streamId: string, pagination?: PaginationParams) =>
+      [...homeKeys.courses.all(), 'byStream', streamId, pagination] as const,
   },
 
   // ═════════════════════════════════════════════════════════════════════════

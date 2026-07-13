@@ -39,6 +39,7 @@ import {
   selectIsInitialized,
   selectIsAuthenticated,
   selectOnboardingCompleted,
+  selectSelectedStreamId,
   setOnboardingCompleted,
 } from '../store/authSlice';
 
@@ -48,6 +49,7 @@ import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 import OtpVerificationScreen from '../screens/auth/OtpVerificationScreen';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
 import SplashScreen from '../screens/splash/SplashScreen';
+import SelectExamScreen from '../screens/onboarding/SelectExamScreen';
 import AppNavigator from './AppNavigator';
 
 // ─── Transition Config ───────────────────────────────────────────────────────
@@ -111,6 +113,7 @@ export default function AuthNavigator(): React.JSX.Element {
   const initialized = useAppSelector(selectIsInitialized);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const onboardingCompleted = useAppSelector(selectOnboardingCompleted);
+  const selectedStreamId = useAppSelector(selectSelectedStreamId);
 
   return (
     <NavigationContainer>
@@ -120,6 +123,8 @@ export default function AuthNavigator(): React.JSX.Element {
         <OnboardingGate />
       ) : !isAuthenticated ? (
         <AuthStackScreens />
+      ) : !selectedStreamId ? (
+        <SelectExamScreen />
       ) : (
         <AppNavigator />
       )}

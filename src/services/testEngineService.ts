@@ -216,32 +216,60 @@ export async function submitTest(input: SubmitTestInput): Promise<SubmitTestOutp
       answerCreateCount++;
       const answerId = answerResult.data.answerId;
 
-      // If an option was selected, create mock_answer_option row
-      if (selectedOptionId !== null) {
-        console.log('[SUBMIT_STEP_7_OPTION] Calling createMockAnswerOption() for answerId:', answerId, 'optionId:', selectedOptionId);
-        const optResult = await createMockAnswerOption({
-          answerId,
-          optionId: selectedOptionId,
-        });
-        console.log('[SUBMIT_STEP_7_OPTION_RESULT] createMockAnswerOption success:', optResult.success);
-        console.log('[SUBMIT_STEP_7_OPTION_RESULT] createMockAnswerOption error:', optResult.error);
-        if (optResult.success) {
-          answerOptionCreateCount++;
-        } else {
-          console.log('[SUBMIT_STEP_7_OPTION_FAIL] Failed to create option');
+      // ── Process answer content based on format / questionType ─────────
+      const val = selectedOptionId;
+      const isMarked = input.markedForReviewIndices?.includes(questionIndex) ?? false;
+      let isAnswered = false;
+      let numericalValue: number | null = null;
+
+      if (val !== null && val !== undefined) {
+        if (displayQuestion.questionType === 'numerical') {
+          // It's a numerical question
+          const numStr = String(val).trim();
+          if (numStr !== '') {
+            const parsedNum = Number(numStr);
+            if (!isNaN(parsedNum)) {
+              numericalValue = parsedNum;
+              isAnswered = true;
+            }
+          }
+        } else if (Array.isArray(val)) {
+          // MSQ (Multiple select option IDs)
+          if (val.length > 0) {
+            isAnswered = true;
+            for (const optId of val) {
+              const optResult = await createMockAnswerOption({
+                answerId,
+                optionId: optId,
+              });
+              if (optResult.success) {
+                answerOptionCreateCount++;
+              }
+            }
+          }
+        } else if (typeof val === 'string' && val.trim() !== '') {
+          // MCQ (Single select option ID)
+          isAnswered = true;
+          const optResult = await createMockAnswerOption({
+            answerId,
+            optionId: val,
+          });
+          if (optResult.success) {
+            answerOptionCreateCount++;
+          }
         }
       }
 
-      // Mark answer as answered if selectedOptionId is set
-      if (selectedOptionId !== null) {
-        console.log('[SUBMIT_STEP_7_UPDATE] Calling updateMockAnswer() for answerId:', answerId);
-        const updateResult = await updateMockAnswer(answerId, {
-          isAnswered: true,
-          answeredAt: new Date().toISOString(),
-        });
-        console.log('[SUBMIT_STEP_7_UPDATE_RESULT] updateMockAnswer success:', updateResult.success);
-        console.log('[SUBMIT_STEP_7_UPDATE_RESULT] updateMockAnswer error:', updateResult.error);
-      }
+      // Update the mock answer fields
+      console.log('[SUBMIT_STEP_7_UPDATE] Calling updateMockAnswer() for answerId:', answerId);
+      const updateResult = await updateMockAnswer(answerId, {
+        isAnswered,
+        isMarkedForReview: isMarked,
+        numericalAnswer: numericalValue,
+        answeredAt: isAnswered ? new Date().toISOString() : null,
+      });
+      console.log('[SUBMIT_STEP_7_UPDATE_RESULT] updateMockAnswer success:', updateResult.success);
+      console.log('[SUBMIT_STEP_7_UPDATE_RESULT] updateMockAnswer error:', updateResult.error);
     }
     console.log('[SUBMIT_STEP_7_DONE] Created', answerCreateCount, 'answers and', answerOptionCreateCount, 'option selections');
 

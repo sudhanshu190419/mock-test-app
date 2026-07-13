@@ -45,6 +45,7 @@ import {
   updatePassword as authUpdatePassword,
   refreshSession as authRefreshSession,
   getSession,
+  suppressNextSessionSync,
 } from '../services/authService';
 import type { UserProfile } from '../types/auth';
 
@@ -294,6 +295,7 @@ export function useAuth() {
       dispatch(clearError());
 
       try {
+        suppressNextSessionSync();
         const result = await authUpdatePassword(newPassword);
 
         if (!result.success) {
