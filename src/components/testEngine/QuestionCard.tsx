@@ -1,118 +1,135 @@
 /**
  * QuestionCard
  *
- * Renders the full question view: header with question number and
- * marks badges, question text, optional image, and all answer options.
+ * Renders the question stem card matching Figma specifications. Displays:
+ * - Header row with subject tag, sequence (e.g. Q. 1 / 90), type label (e.g. Single Correct),
+ *   marks badges (+4, -1), and Bookmark toggle button.
+ * - Body container displaying the question text stem and optional diagram image.
  *
  * @module components/testEngine/QuestionCard
  */
 
-import React, { useCallback } from 'react';
-import { View, Text, ScrollView, Image, StyleSheet, Platform } from 'react-native';
+import React from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+
+import Icon from '../home/Icons';
 import { colors, palette } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
-import { OptionCard } from './OptionCard';
-import type { QuestionDisplay } from '../../types/testEngine';
 
 interface QuestionCardProps {
-  /** The question to display. */
-  question: QuestionDisplay;
-  /** Currently selected option ID (null if none). */
-  selectedOptionId: string | null;
-  /** Whether the test is submitted (disables interactions). */
-  isSubmitted?: boolean;
-  /** Selection callback. */
-  onOptionSelect: (optionId: string) => void;
+  /** The question display model. */
+  question: {
+    id: string;
+    index: number;
+    text: string;
+    imageUrl?: string;
+    imageAlt?: string;
+    marks: number;
+    negativeMarks: number;
+    subjectName?: string;
+    questionType?: 'mcq' | 'msq' | 'numerical' | 'true_false';
+  };
+  /** Total number of questions in test. */
+  totalQuestions: number;
+  /** Whether this question is bookmarked. */
+  isBookmarked: boolean;
+  /** Bookmark toggle callback. */
+  onToggleBookmark: () => void;
 }
 
-const QuestionCard = React.memo(function QuestionCard({
-  question,
-  selectedOptionId,
-  isSubmitted = false,
-  onOptionSelect,
-}: QuestionCardProps): React.JSX.Element {
-  // ── [STEP4] Log what QuestionCard receives ──────────────────────────
-  console.log('[STEP4] QuestionCard received — text:', question.text);
-  console.log('[STEP4] QuestionCard received — imageUrl:', question.imageUrl);
-  console.log('[STEP4] QuestionCard received — imageAlt:', question.imageAlt);
-  console.log('[STEP4] QuestionCard received — options:', JSON.stringify(question.options, null, 2));
+const SUBJECT_COLORS: Record<string, string> = {
+  Physics: '#1D4ED8',
+  Chemistry: '#15803D',
+  Maths: '#6D28D9',
+  Biology: '#DC2626',
+};
 
-  const handleOptionSelect = useCallback(
-    (optionId: string) => {
-      onOptionSelect(optionId);
-    },
-    [onOptionSelect],
-  );
+const TYPE_LABELS: Record<string, string> = {
+  mcq: 'Single Correct',
+  msq: 'Multiple Correct',
+  numerical: 'Integer/Numerical',
+  true_false: 'True/False',
+};
+
+export const QuestionCard = React.memo(function QuestionCard({
+  question,
+  totalQuestions,
+  isBookmarked,
+  onToggleBookmark,
+}: QuestionCardProps): React.JSX.Element {
+  const subjectBg = SUBJECT_COLORS[question.subjectName || ''] || '#475569';
+  const typeLabel = TYPE_LABELS[question.questionType || 'mcq'] || 'MCQ';
 
   return (
     <View style={styles.container}>
-      {/* Question Header */}
+      {/* Header Row */}
       <View style={styles.header}>
-        <Text style={styles.questionNumber}>
-          Question {question.index}
-        </Text>
-        <View style={styles.badgesRow}>
-          <View style={[styles.marksBadge, styles.marksBadgePositive]}>
-            <Text style={styles.marksBadgeText}>
-              +{question.marks} Marks
-            </Text>
+        {/* Left Side: Subject Tag, Index, and Type Label */}
+        <View style={styles.headerLeft}>
+          <View style={[styles.subjectTag, { backgroundColor: subjectBg }]}>
+            <Text style={styles.subjectTagText}>{question.subjectName || 'General'}</Text>
           </View>
-          <View style={[styles.marksBadge, styles.marksBadgeNegative]}>
-            <Text style={[styles.marksBadgeText, styles.marksBadgeTextNegative]}>
-              -{question.negativeMarks} Mark
-            </Text>
+          <Text style={styles.indexText}>
+            Q. {question.index} / {totalQuestions}
+          </Text>
+          <Text style={styles.typeLabel}>{typeLabel}</Text>
+        </View>
+
+        {/* Right Side: Marks and Bookmark Toggle */}
+        <View style={styles.headerRight}>
+          <View style={styles.marksBadgePositive}>
+            <Text style={styles.marksTextPositive}>+{question.marks}</Text>
           </View>
+          <View style={styles.marksBadgeNegative}>
+            <Text style={styles.marksTextNegative}>-{Math.abs(question.negativeMarks)}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.bookmarkButton}
+            onPress={onToggleBookmark}
+            activeOpacity={0.7}
+            accessibilityLabel={isBookmarked ? 'Remove bookmark' : 'Bookmark question'}
+          >
+            <Icon
+              name={isBookmarked ? 'bookmark-check' : 'bookmark'}
+              color={isBookmarked ? '#F59E0B' : '#94A3B8'}
+              width={16}
+              height={16}
+            />
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Question Text */}
-      <Text style={styles.questionText} selectable>
-        {question.text}
-      </Text>
+      {/* Body: Question Text & Image */}
+      <View style={styles.body}>
+        <Text style={styles.questionText} selectable>
+          {question.text || 'Question content is empty or unavailable.'}
+        </Text>
 
-      {/* Question Image */}
-      {question.imageUrl && (
-        <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: question.imageUrl }}
-            style={styles.image}
-            resizeMode="contain"
-            accessibilityLabel={question.imageAlt ?? 'Question diagram'}
-          />
-        </View>
-      )}
-
-      {/* Options */}
-      <View style={styles.optionsList}>
-        {question.options.map((option) => (
-          <OptionCard
-            key={option.id}
-            id={option.id}
-            label={option.label}
-            text={option.text}
-            imageUrl={option.imageUrl}
-            isSelected={selectedOptionId === option.id}
-            disabled={isSubmitted}
-            onSelect={handleOptionSelect}
-          />
-        ))}
+        {question.imageUrl ? (
+          <View style={styles.imageContainer}>
+            <Image
+              source={{ uri: question.imageUrl }}
+              style={styles.image}
+              resizeMode="contain"
+              accessibilityLabel={question.imageAlt || 'Question diagram'}
+            />
+          </View>
+        ) : null}
       </View>
     </View>
   );
 });
 
-export { QuestionCard };
-
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: palette.slate200,
-    padding: spacing[16],
-    marginBottom: spacing[16],
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    marginBottom: spacing[12],
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -121,7 +138,7 @@ const styles = StyleSheet.create({
         shadowRadius: 8,
       },
       android: {
-        elevation: 1,
+        elevation: 2,
       },
     }),
   },
@@ -129,66 +146,107 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing[16],
-    paddingBottom: spacing[12],
+    paddingHorizontal: spacing[16],
+    paddingVertical: spacing[8],
     borderBottomWidth: 1,
-    borderBottomColor: palette.slate100,
+    borderBottomColor: '#F1F5F9',
+    flexWrap: 'wrap',
+    gap: spacing[8],
   },
-  questionNumber: {
-    ...typography.title,
-    fontSize: 18,
-    fontWeight: '700',
-    color: palette.slate800,
-  },
-  badgesRow: {
+  headerLeft: {
     flexDirection: 'row',
-    gap: spacing[4],
+    alignItems: 'center',
+    gap: spacing[8],
+    minWidth: 0,
   },
-  marksBadge: {
+  subjectTag: {
     paddingHorizontal: spacing[8],
     paddingVertical: 2,
-    borderRadius: radius.sm - 2,
+    borderRadius: radius.sm,
   },
-  marksBadgePositive: {
-    backgroundColor: '#E8F5E9',
+  subjectTagText: {
+    ...typography.labelSmall,
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
-  marksBadgeNegative: {
-    backgroundColor: '#FFEBEE',
-  },
-  marksBadgeText: {
+  indexText: {
     ...typography.caption,
     fontSize: 11,
-    fontWeight: '600',
-    color: colors.success,
-    letterSpacing: 0.3,
+    fontWeight: '700',
+    color: '#475569',
   },
-  marksBadgeTextNegative: {
-    color: colors.error,
+  typeLabel: {
+    ...typography.caption,
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[4],
+  },
+  marksBadgePositive: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#DCFCE7',
+    borderWidth: 1,
+    borderRadius: radius.sm - 2,
+    paddingHorizontal: spacing[8],
+    paddingVertical: 2,
+  },
+  marksTextPositive: {
+    ...typography.caption,
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#16A34A',
+  },
+  marksBadgeNegative: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FEE2E2',
+    borderWidth: 1,
+    borderRadius: radius.sm - 2,
+    paddingHorizontal: spacing[8],
+    paddingVertical: 2,
+  },
+  marksTextNegative: {
+    ...typography.caption,
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#DC2626',
+  },
+  bookmarkButton: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  body: {
+    padding: spacing[16],
   },
   questionText: {
     ...typography.bodyLarge,
-    fontSize: 16,
-    color: palette.slate800,
-    lineHeight: 26,
-    marginBottom: spacing[16],
+    fontSize: 14,
+    color: '#0F172A',
+    lineHeight: 22,
+    fontWeight: '500',
   },
   imageContainer: {
-    backgroundColor: palette.slate50,
-    borderRadius: radius.sm,
+    backgroundColor: '#F8FAFC',
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: palette.slate200,
-    overflow: 'hidden',
-    marginBottom: spacing[16],
+    borderColor: '#E2E8F0',
     height: 180,
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: spacing[12],
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
     height: '100%',
-    opacity: 0.85,
-  },
-  optionsList: {
-    gap: spacing[8],
   },
 });

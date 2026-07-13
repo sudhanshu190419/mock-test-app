@@ -14,6 +14,7 @@ import Svg, { Path, Circle, Rect, G, type SvgProps } from 'react-native-svg';
 
 /** Icon names used across home screen components. */
 export type IconName =
+  | 'alert-triangle'
   | 'arrow-left'
   | 'arrow-right'
   | 'architecture'
@@ -25,6 +26,7 @@ export type IconName =
   | 'book'
   | 'book-fill'
   | 'bookmark'
+  | 'bookmark-check'
   | 'book-open'
   | 'calendar'
   | 'chart-fill'
@@ -33,17 +35,21 @@ export type IconName =
   | 'chevron-right'
   | 'clipboard-list'
   | 'description'
+  | 'delete'
   | 'download'
   | 'eye'
   | 'filter'
   | 'graduation-cap'
   | 'headphones'
   | 'home'
+  | 'info'
   | 'layers'
+  | 'layout-grid'
   | 'list'
   | 'log-out'
   | 'menu'
   | 'menu-book'
+  | 'minus'
   | 'minus-circle'
   | 'monitor'
   | 'more-vertical'
@@ -51,6 +57,7 @@ export type IconName =
   | 'school'
   | 'science'
   | 'search'
+  | 'send'
   | 'shield-check'
   | 'star'
   | 'stethoscope'
@@ -61,6 +68,7 @@ export type IconName =
   | 'user'
   | 'users'
   | 'video'
+  | 'x'
   | 'x-circle';
 
 export interface IconProps extends Pick<SvgProps, 'color' | 'width' | 'height'> {
@@ -348,6 +356,98 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     </G>
   ),
 
+
+  'alert-triangle': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <Path d="M12 9v4M12 17h.01" />
+    </G>
+  ),
+
+  'bookmark-check': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" />
+      <Path d="m9 10 2 2 4-4" />
+    </G>
+  ),
+
+
+  'layout-grid': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Rect x={3} y={3} width={7} height={7} rx={1} />
+      <Rect x={14} y={3} width={7} height={7} rx={1} />
+      <Rect x={14} y={14} width={7} height={7} rx={1} />
+      <Rect x={3} y={14} width={7} height={7} rx={1} />
+    </G>
+  ),
+
+  send: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="m22 2-7 20-4-9-9-4Z" />
+      <Path d="M22 2 11 13" />
+    </G>
+  ),
+
+  x: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M18 6 6 18M6 6l12 12" />
+    </G>
+  ),
+
+  info: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Circle cx={12} cy={12} r={10} />
+      <Path d="M12 16v-4M12 8h.01" />
+    </G>
+  ),
+
+  minus: (
+    <Path
+      d="M5 12h14"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    />
+  ),
+
   users: (
     <G
       fill="none"
@@ -412,6 +512,19 @@ const PATHS: Record<IconName, React.JSX.Element> = {
       <Path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
       <Path d="M16 18H8v-2h8v2zm0-4H8v-2h8v2z" />
       <Path d="M13 3v5h5" />
+    </G>
+  ),
+
+  'delete': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z" />
+      <Path d="m18 9-6 6M12 9l6 6" />
     </G>
   ),
 

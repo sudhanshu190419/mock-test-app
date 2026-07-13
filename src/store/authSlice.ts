@@ -87,6 +87,12 @@ export interface AuthState {
    * Used to gate the onboarding screens on first app launch.
    */
   onboardingCompleted: boolean;
+
+  /**
+   * The selected exam stream ID for the student.
+   * Tracked locally via AsyncStorage and cached in Redux.
+   */
+  selectedStreamId: string | null;
 }
 
 const initialState: AuthState = {
@@ -97,6 +103,7 @@ const initialState: AuthState = {
   initialized: false,
   error: null,
   onboardingCompleted: false,
+  selectedStreamId: null,
 };
 
 // ─── Slice ──────────────────────────────────────────────────────────────────
@@ -182,6 +189,10 @@ const authSlice = createSlice({
       state.onboardingCompleted = action.payload;
     },
 
+    setSelectedStreamId(state, action: PayloadAction<string | null>) {
+      state.selectedStreamId = action.payload;
+    },
+
     // ── Logout ────────────────────────────────────────────────────────────
 
     /**
@@ -196,6 +207,7 @@ const authSlice = createSlice({
       state.isAuthenticated = false;
       state.loading = false;
       state.error = null;
+      state.selectedStreamId = null;
       // `initialized` is NOT reset — the app has already booted.
     },
   },
@@ -212,6 +224,7 @@ export const {
   setError,
   clearError,
   setOnboardingCompleted,
+  setSelectedStreamId,
   logout,
 } = authSlice.actions;
 
@@ -316,3 +329,10 @@ export const selectEmailVerified = (state: AuthRootState): boolean =>
  */
 export const selectOnboardingCompleted = (state: AuthRootState): boolean =>
   state.auth.onboardingCompleted;
+
+/**
+ * Return the selected stream ID or `null`.
+ */
+export const selectSelectedStreamId = (state: AuthRootState): string | null =>
+  state.auth.selectedStreamId;
+

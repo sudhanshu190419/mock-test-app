@@ -24,6 +24,7 @@ import {
   getLatestCourses,
   getRecommendedCourses,
   getFeaturedCourses,
+  getCoursesByStream,
 } from '../../services/home/courseService';
 import type { TrendingCourse } from '../../types/home';
 import type { PaginatedResponse, PaginationParams } from '../../types/academic';
@@ -45,11 +46,14 @@ import type { PaginatedResponse, PaginationParams } from '../../types/academic';
  *   console.log(data.data);  // TrendingCourse[]
  * }
  */
-export function useTrendingCourses(pagination?: PaginationParams) {
+export function useTrendingCourses(
+  pagination?: PaginationParams,
+  streamId?: string | null,
+) {
   return useQuery<PaginatedResponse<TrendingCourse>>({
-    queryKey: homeKeys.courses.trending(pagination),
+    queryKey: homeKeys.courses.trending(pagination, streamId),
     queryFn: async () => {
-      const result = await getTrendingCourses(pagination);
+      const result = await getTrendingCourses(pagination, streamId);
       if (!result.success) {
         throw new Error(result.error ?? 'Failed to fetch trending courses.');
       }
@@ -140,5 +144,26 @@ export function useFeaturedCourses(ids: string[]) {
     },
     enabled: ids.length > 0,
     staleTime: 10 * 60 * 1000,
+  });
+}
+
+/**
+ * Fetch all published courses filtered by a specific stream.
+ *
+ * @param streamId   - The target stream UUID to filter by.
+ * @param pagination - Optional pagination parameters.
+ */
+export function useCoursesByStream(streamId: string, pagination?: PaginationParams) {
+  return useQuery<PaginatedResponse<TrendingCourse>>({
+    queryKey: homeKeys.courses.byStream(streamId, pagination),
+    queryFn: async () => {
+      const result = await getCoursesByStream(streamId, pagination);
+      if (!result.success) {
+        throw new Error(result.error ?? 'Failed to fetch courses by stream.');
+      }
+      return result.data!;
+    },
+    enabled: !!streamId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }

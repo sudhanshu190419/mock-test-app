@@ -19,12 +19,12 @@ import {
   View,
   Text,
   ScrollView,
-  Modal,
   StyleSheet,
   useWindowDimensions,
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { colors, palette } from '../../theme/colors';
 import { typography } from '../../theme/typography';
@@ -36,6 +36,8 @@ import { QuestionCard } from '../../components/testEngine/QuestionCard';
 import { QuestionPalette } from '../../components/testEngine/QuestionPalette';
 import { DesktopActionBar } from '../../components/testEngine/DesktopActionBar';
 import { BottomActionBar, BOTTOM_BAR_HEIGHT } from '../../components/testEngine/BottomActionBar';
+import { QuitDialog, SubmissionDialog } from '../../components/testEngine/TestModals';
+import { MCQPanel, MSQPanel, NumericalPanel } from '../../components/testEngine/AnswerPanel';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
@@ -113,7 +115,7 @@ function mockTestQuestionToDisplay(
 
   const result: QuestionDisplay = {
     id: snapshot?.questionId ?? mtq.questionId,
-    index: mtq.orderSequence,
+    index: _arrayIndex + 1,
     text: snapshot?.questionText ?? '',
     options,
     imageUrl: stemImageUrl,
@@ -122,6 +124,7 @@ function mockTestQuestionToDisplay(
     negativeMarks:
       snapshot?.negativeMarks ?? (mtq.negativeMarksOverride ?? 0),
     sectionName: mtq.sectionName ?? undefined,
+    questionType: snapshot?.questionType ?? 'mcq',
   };
 
   // ── [IMG6] Log the signedUrlMap received by the mapper ─────────────
@@ -164,12 +167,18 @@ export default function TestEngineScreen({
   const [questions, setQuestions] = useState<QuestionDisplay[]>([]);
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<Record<number, string | null>>({});
+  const [selectedOption, setSelectedOption] = useState<Record<number, string | string[] | null>>({});
   const [markedForReview, setMarkedForReview] = useState<Set<number>>(new Set());
   const [visitedQuestions, setVisitedQuestions] = useState<Set<number>>(new Set([0]));
+  const [bookmarks, setBookmarks] = useState<Set<number>>(new Set());
   const [activeSubject, setActiveSubject] = useState<string | null>(null);
   const [isPaletteVisible, setIsPaletteVisible] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+
+  const [showQuitDialog, setShowQuitDialog] = useState(false);
+  const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'local'>('saved');
+
   const scrollRef = useRef<ScrollView>(null);
   const handleSubmitTestRef = useRef<(() => void) | undefined>(undefined);
   const stackNavigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
@@ -178,9 +187,11 @@ export default function TestEngineScreen({
   const currentQuestion = questions[currentIndex];
   const answeredIndices = useMemo(() => {
     const indices = new Set<number>();
-    for (const [index, optionId] of Object.entries(selectedOption)) {
-      if (optionId !== null) {
-        indices.add(Number(index));
+    for (const [index, val] of Object.entries(selectedOption)) {
+      if (val !== null && val !== undefined && (typeof val !== 'string' || val !== '')) {
+        if (!Array.isArray(val) || val.length > 0) {
+          indices.add(Number(index));
+        }
       }
     }
     return indices;
@@ -322,6 +333,60 @@ export default function TestEngineScreen({
     };
   }, [testId]);
 
+  // Load saved answers from AsyncStorage when mounting
+  useEffect(() => {
+    async function loadSavedAttempt() {
+      try {
+        const stored = await AsyncStorage.getItem(`attempt_answers_${testId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setSelectedOption(parsed.selectedOption || {});
+          setMarkedForReview(new Set(parsed.markedForReview || []));
+          setVisitedQuestions(new Set(parsed.visitedQuestions || [0]));
+          setBookmarks(new Set(parsed.bookmarks || []));
+        }
+      } catch (err) {
+        console.log('Failed to load saved attempt', err);
+      }
+    }
+    if (!isQuestionsLoading) {
+      loadSavedAttempt();
+    }
+  }, [testId, isQuestionsLoading]);
+
+  // Trigger auto-save whenever answer state changes
+  useEffect(() => {
+    if (isQuestionsLoading || questions.length === 0) return;
+
+    let isMounted = true;
+    async function saveAttempt() {
+      setAutoSaveStatus('saving');
+      try {
+        const payload = {
+          selectedOption,
+          markedForReview: Array.from(markedForReview),
+          visitedQuestions: Array.from(visitedQuestions),
+          bookmarks: Array.from(bookmarks),
+        };
+        await AsyncStorage.setItem(`attempt_answers_${testId}`, JSON.stringify(payload));
+        if (isMounted) {
+          setAutoSaveStatus('saved');
+        }
+      } catch (err) {
+        console.log('AutoSave failed', err);
+        if (isMounted) {
+          setAutoSaveStatus('local');
+        }
+      }
+    }
+
+    const saveTimer = setTimeout(saveAttempt, 800); // debounce saves by 800ms
+    return () => {
+      isMounted = false;
+      clearTimeout(saveTimer);
+    };
+  }, [selectedOption, markedForReview, visitedQuestions, bookmarks, testId, isQuestionsLoading, questions.length]);
+
 
 
   // ── Timer ──────────────────────────────────────────────────────
@@ -333,18 +398,12 @@ export default function TestEngineScreen({
   // ── Handlers ───────────────────────────────────────────────────
 
   const handleOptionSelect = useCallback(
-    (optionId: string) => {
+    (value: string | string[]) => {
       if (isSubmitted) return;
       setSelectedOption((prev) => ({
         ...prev,
-        [currentIndex]: optionId,
+        [currentIndex]: value,
       }));
-      // If this question was marked for review, unmark it when answered
-      setMarkedForReview((prev) => {
-        const next = new Set(prev);
-        next.delete(currentIndex);
-        return next;
-      });
     },
     [currentIndex, isSubmitted],
   );
@@ -362,6 +421,49 @@ export default function TestEngineScreen({
     });
   }, [currentIndex, isSubmitted]);
 
+  const handleToggleBookmark = useCallback(() => {
+    setBookmarks((prev) => {
+      const next = new Set(prev);
+      if (next.has(currentIndex)) {
+        next.delete(currentIndex);
+      } else {
+        next.add(currentIndex);
+      }
+      return next;
+    });
+  }, [currentIndex]);
+
+  const handleClear = useCallback(() => {
+    if (isSubmitted) return;
+    setSelectedOption((prev) => {
+      const next = { ...prev };
+      delete next[currentIndex];
+      return next;
+    });
+    setMarkedForReview((prev) => {
+      const next = new Set(prev);
+      next.delete(currentIndex);
+      return next;
+    });
+  }, [currentIndex, isSubmitted]);
+
+  const handleMarkForReview = useCallback(() => {
+    if (isSubmitted) return;
+    setMarkedForReview((prev) => {
+      const next = new Set(prev);
+      next.add(currentIndex);
+      return next;
+    });
+    if (currentIndex < questions.length - 1) {
+      const newIndex = currentIndex + 1;
+      setCurrentIndex(newIndex);
+      markVisited(newIndex);
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    } else {
+      setShowSubmitDialog(true);
+    }
+  }, [currentIndex, questions.length, isSubmitted]);
+
   const handlePrevious = useCallback(() => {
     if (currentIndex > 0) {
       const newIndex = currentIndex - 1;
@@ -373,14 +475,18 @@ export default function TestEngineScreen({
 
   const handleSaveAndNext = useCallback(() => {
     if (isSubmitted) return;
+    setMarkedForReview((prev) => {
+      const next = new Set(prev);
+      next.delete(currentIndex);
+      return next;
+    });
     if (currentIndex < questions.length - 1) {
       const newIndex = currentIndex + 1;
       setCurrentIndex(newIndex);
       markVisited(newIndex);
       scrollRef.current?.scrollTo({ y: 0, animated: false });
     } else {
-      // Last question — show submit confirmation
-      handleSubmitTest();
+      setShowSubmitDialog(true);
     }
   }, [currentIndex, questions.length, isSubmitted]);
 
@@ -406,87 +512,75 @@ export default function TestEngineScreen({
     setIsPaletteVisible(false);
   }, []);
 
-  // Keep a ref to the latest handleSubmitTest for the timer callback.
-  const handleSubmitTest = useCallback(() => {
-    Alert.alert(
-      'Submit Test',
-      `You have answered ${answeredIndices.size} out of ${questions.length} questions. ${
-        questions.length - answeredIndices.size
-      } questions are unanswered. Are you sure you want to submit?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Submit',
-          style: 'destructive',
-          onPress: async () => {
-            setIsSubmitted(true);
-            timer.pause();
-            console.log('[SUBMIT_STEP_1] TestEngineScreen.handleSubmitTest fired');
-            console.log('[SUBMIT_STEP_1] testId:', testId);
-            console.log('[SUBMIT_STEP_1] paperId:', paperId);
-            const answerCount = Object.values(selectedOption).filter((v) => v !== null).length;
-            console.log('[SUBMIT_STEP_1] answers (selected):', answerCount, 'out of', questions.length);
-            console.log('[SUBMIT_STEP_1] answers map:', JSON.stringify(selectedOption));
-            const timeTaken = durationMin * 60 - timer.timeRemaining;
-            console.log('[SUBMIT_STEP_1] timeTakenSeconds:', timeTaken);
-            try {
-              const output = await testService.submitTest({
-                testId,
-                paperId,
-                questions,
-                answers: selectedOption,
-                timeTakenSeconds: timeTaken,
-              });
-              console.log('[SUBMIT_STEP_9] submitTest succeeded:', JSON.stringify(output));
+  const handleExitPress = useCallback(() => {
+    setShowQuitDialog(true);
+  }, []);
 
-              // Check release status and navigate accordingly
-              const statusCheck = await checkResultStatus(output.attemptId);
-              console.log('[SUBMIT_STEP_10] Release status:', statusCheck.status);
+  const handleSubmitPress = useCallback(() => {
+    setShowSubmitDialog(true);
+  }, []);
 
-              if (statusCheck.status === 'released') {
-                // Result is available — go to result screen
-                stackNavigation.reset({
-                  index: 1,
-                  routes: [
-                    { name: 'MainTabs' },
-                    { name: 'TestResult', params: { testId, attemptId: output.attemptId } },
-                  ],
-                });
-              } else {
-                // Result not yet released — go to success screen
-                stackNavigation.reset({
-                  index: 1,
-                  routes: [
-                    { name: 'MainTabs' },
-                    { name: 'TestSubmitted', params: { testId, attemptId: output.attemptId } },
-                  ],
-                });
-              }
-            } catch (err) {
-              console.log('[SUBMIT_STEP_ERROR] Submit failed. Complete error object:');
-              console.log('[SUBMIT_STEP_ERROR] typeof err:', typeof err);
-              if (err instanceof Error) {
-                console.log('[SUBMIT_STEP_ERROR] name:', err.name);
-                console.log('[SUBMIT_STEP_ERROR] message:', err.message);
-                console.log('[SUBMIT_STEP_ERROR] stack:', err.stack);
-                const errObj = err as unknown as Record<string, unknown>;
-                if (errObj.cause) console.log('[SUBMIT_STEP_ERROR] cause:', errObj.cause);
-              } else {
-                console.log('[SUBMIT_STEP_ERROR] raw error:', JSON.stringify(err));
-              }
-              Alert.alert('Error', 'Failed to submit test. Please try again.');
-              setIsSubmitted(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [answeredIndices, questions.length, selectedOption, testId, timer]);
+  const handleConfirmQuit = useCallback(async () => {
+    setShowQuitDialog(false);
+    try {
+      await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+    } catch (e) {
+      console.log('Error cleaning up local storage', e);
+    }
+    navigation.goBack();
+  }, [testId, navigation]);
+
+  const handleConfirmSubmit = useCallback(async () => {
+    setShowSubmitDialog(false);
+    setIsSubmitted(true);
+    timer.pause();
+
+    const timeTaken = durationMin * 60 - timer.timeRemaining;
+    try {
+      const output = await testService.submitTest({
+        testId,
+        paperId,
+        questions,
+        answers: selectedOption,
+        timeTakenSeconds: timeTaken,
+        markedForReviewIndices: Array.from(markedForReview),
+      });
+
+      try {
+        await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+      } catch (e) {
+        console.log('Error cleaning up local storage', e);
+      }
+
+      const statusCheck = await checkResultStatus(output.attemptId);
+      if (statusCheck.status === 'released') {
+        stackNavigation.reset({
+          index: 1,
+          routes: [
+            { name: 'MainTabs' },
+            { name: 'TestResult', params: { testId, attemptId: output.attemptId } },
+          ],
+        });
+      } else {
+        stackNavigation.reset({
+          index: 1,
+          routes: [
+            { name: 'MainTabs' },
+            { name: 'TestSubmitted', params: { testId, attemptId: output.attemptId } },
+          ],
+        });
+      }
+    } catch (err) {
+      console.log('Submit failed', err);
+      Alert.alert('Error', 'Failed to submit test. Please try again.');
+      setIsSubmitted(false);
+    }
+  }, [selectedOption, markedForReview, questions, testId, paperId, timer, stackNavigation, durationMin]);
 
   // Sync the ref so the timer callback always has the latest submit handler.
   useEffect(() => {
-    handleSubmitTestRef.current = handleSubmitTest;
-  }, [handleSubmitTest]);
+    handleSubmitTestRef.current = handleConfirmSubmit;
+  }, [handleConfirmSubmit]);
 
   function markVisited(index: number) {
     setVisitedQuestions((prev) => {
@@ -504,17 +598,17 @@ export default function TestEngineScreen({
 
   // ── Render ─────────────────────────────────────────────────────
 
-  const contentPaddingTop = (insets.top > 0 ? insets.top : spacing[8]) + 56 + 3 + spacing[16];
-  const contentPaddingBottom = isDesktop ? spacing[16] : BOTTOM_BAR_HEIGHT + spacing[8] + (insets.bottom > 0 ? insets.bottom : spacing[8]);
+  const contentPaddingTop = spacing[16];
+  const contentPaddingBottom = isDesktop ? spacing[16] : BOTTOM_BAR_HEIGHT + spacing[24];
 
   return (
     <View style={styles.screen}>
       {/* ═══ Header ═══ */}
       <TestHeader
-        title={title ?? 'Practice Test'}
-        formattedTime={timer.formattedTime}
-        isTimerWarning={timerWarning}
-        isTimerCritical={timerCritical}
+        onExitPress={handleExitPress}
+        onSubmitPress={handleSubmitPress}
+        autoSaveStatus={autoSaveStatus}
+        timeRemainingSeconds={timer.timeRemaining}
       />
 
       {/* ═══ Progress Bar ═══ */}
@@ -541,12 +635,44 @@ export default function TestEngineScreen({
               <Text style={styles.emptyStateText}>Loading questions...</Text>
             </View>
           ) : currentQuestion ? (
-            <QuestionCard
-              question={currentQuestion}
-              selectedOptionId={selectedOption[currentIndex] ?? null}
-              isSubmitted={isSubmitted}
-              onOptionSelect={handleOptionSelect}
-            />
+            <View style={{ gap: spacing[12] }}>
+              {/* Question stem, tags, indices */}
+              <QuestionCard
+                question={currentQuestion}
+                totalQuestions={questions.length}
+                isBookmarked={bookmarks.has(currentIndex)}
+                onToggleBookmark={handleToggleBookmark}
+              />
+
+              {/* MCQ Panel option selector */}
+              {currentQuestion.questionType === 'mcq' && (
+                <MCQPanel
+                  question={currentQuestion}
+                  value={selectedOption[currentIndex] as string | null}
+                  onChange={handleOptionSelect}
+                  disabled={isSubmitted}
+                />
+              )}
+
+              {/* MSQ Panel checkbox option selector */}
+              {currentQuestion.questionType === 'msq' && (
+                <MSQPanel
+                  question={currentQuestion}
+                  value={(selectedOption[currentIndex] as string[]) || []}
+                  onChange={handleOptionSelect}
+                  disabled={isSubmitted}
+                />
+              )}
+
+              {/* Numerical Panel keypad selector */}
+              {currentQuestion.questionType === 'numerical' && (
+                <NumericalPanel
+                  value={(selectedOption[currentIndex] as string) || ''}
+                  onChange={handleOptionSelect}
+                  disabled={isSubmitted}
+                />
+              )}
+            </View>
           ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>No questions available.</Text>
@@ -575,19 +701,19 @@ export default function TestEngineScreen({
           )}
         </ScrollView>
 
-        {/* ── Desktop Palette ── */}
+        {/* ── Desktop Palette sidebar ── */}
         {isDesktop && (
           <View style={styles.paletteDesktop}>
             <QuestionPalette
               questions={questions}
+              selectedOptions={selectedOption}
+              markedForReview={markedForReview}
+              visitedQuestions={visitedQuestions}
               currentIndex={currentIndex}
-              answeredIndices={answeredIndices}
-              markedForReviewIndices={markedForReview}
-              visitedIndices={visitedQuestions}
-              activeSubject={activeSubject}
-              onSubjectChange={handleSubjectChange}
               onQuestionSelect={handleQuestionSelect}
-              onSubmitTest={handleSubmitTest}
+              open={true}
+              onClose={() => {}}
+              isSidebar
             />
           </View>
         )}
@@ -596,41 +722,48 @@ export default function TestEngineScreen({
       {/* ═══ Mobile Bottom Bar ═══ */}
       {!isDesktop && !isSubmitted && (
         <BottomActionBar
-          hasPrevious={currentIndex > 0}
-          isMarkedForReview={markedForReview.has(currentIndex)}
-          isLastQuestion={currentIndex === questions.length - 1}
-          onPrevious={handlePrevious}
-          onToggleReview={handleToggleReview}
+          currentIndex={currentIndex}
+          totalQuestions={questions.length}
+          answeredCount={answeredIndices.size}
+          onPrev={handlePrevious}
+          onNext={handleSaveAndNext}
+          onClear={handleClear}
+          onMarkForReview={handleMarkForReview}
           onSaveAndNext={handleSaveAndNext}
           onOpenPalette={handleOpenPalette}
         />
       )}
 
-      {/* ═══ Mobile Palette Modal ═══ */}
+      {/* ═══ Mobile Palette Drawer sheet ═══ */}
       {!isDesktop && (
-        <Modal
-          visible={isPaletteVisible}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={handleClosePalette}
-        >
-          <View style={styles.modalContainer}>
-            <QuestionPalette
-              questions={questions}
-              currentIndex={currentIndex}
-              answeredIndices={answeredIndices}
-              markedForReviewIndices={markedForReview}
-              visitedIndices={visitedQuestions}
-              activeSubject={activeSubject}
-              onSubjectChange={handleSubjectChange}
-              onQuestionSelect={handleQuestionSelect}
-              onSubmitTest={handleSubmitTest}
-              onClose={handleClosePalette}
-              isModal
-            />
-          </View>
-        </Modal>
+        <QuestionPalette
+          questions={questions}
+          selectedOptions={selectedOption}
+          markedForReview={markedForReview}
+          visitedQuestions={visitedQuestions}
+          currentIndex={currentIndex}
+          onQuestionSelect={handleQuestionSelect}
+          open={isPaletteVisible}
+          onClose={handleClosePalette}
+        />
       )}
+
+      {/* ═══ Modals ═══ */}
+      <QuitDialog
+        visible={showQuitDialog}
+        onClose={() => setShowQuitDialog(false)}
+        onConfirmQuit={handleConfirmQuit}
+      />
+
+      <SubmissionDialog
+        visible={showSubmitDialog}
+        answeredCount={answeredIndices.size}
+        markedCount={markedForReview.size}
+        unansweredCount={questions.length - answeredIndices.size}
+        totalQuestions={questions.length}
+        onClose={() => setShowSubmitDialog(false)}
+        onConfirmSubmit={handleConfirmSubmit}
+      />
     </View>
   );
 }

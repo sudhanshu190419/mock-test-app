@@ -74,10 +74,12 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../config/supabase';
 import { useAppDispatch } from '../store/hooks';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   setSession,
   setLoading,
   setInitialized,
+  setSelectedStreamId,
   logout,
 } from '../store/authSlice';
 import { getSession, consumeSuppressSessionSync } from '../services/authService';
@@ -138,9 +140,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
           // Kick off an async re-fetch of the session + profile.
           getSession()
-            .then((result) => {
+            .then(async (result) => {
               if (result.success && result.data) {
                 dispatch(setSession(result.data));
+                if (result.data.user?.id) {
+                  const storageKey = `selected_exam_stream_id_${result.data.user.id}`;
+                  const storedStreamId = await AsyncStorage.getItem(storageKey);
+                  dispatch(setSelectedStreamId(storedStreamId));
+                }
               }
             })
             // Swallow errors — the next successful event will re-sync.
@@ -170,11 +177,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     dispatch(setLoading(true));
 
     getSession()
-      .then((result) => {
+      .then(async (result) => {
         isInitialisedRef.current = true;
 
         if (result.success && result.data) {
           dispatch(setSession(result.data));
+          if (result.data.user?.id) {
+            const storageKey = `selected_exam_stream_id_${result.data.user.id}`;
+            const storedStreamId = await AsyncStorage.getItem(storageKey);
+            dispatch(setSelectedStreamId(storedStreamId));
+          }
         }
       })
       .catch(() => {

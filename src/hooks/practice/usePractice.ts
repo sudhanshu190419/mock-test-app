@@ -51,11 +51,11 @@ import type {
  *   console.log(data.data);  // PracticePackage[]
  * }
  */
-export function useFeaturedPractice(limit: number = 6) {
+export function useFeaturedPractice(limit: number = 6, streamId?: string | null) {
   return useQuery<PaginatedResponse<PracticePackage>>({
-    queryKey: practiceKeys.featured.list(limit),
+    queryKey: practiceKeys.featured.list(limit, streamId),
     queryFn: async () => {
-      const result = await getFeaturedPractice(limit);
+      const result = await getFeaturedPractice(limit, streamId);
       if (!result.success) {
         throw new Error(result.error ?? 'Failed to fetch featured practice packages.');
       }

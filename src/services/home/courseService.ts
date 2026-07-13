@@ -125,11 +125,12 @@ function mapCourseToTrendingCourse(db: DbTrendingCourseRaw): TrendingCourse {
  */
 export async function getTrendingCourses(
   pagination?: PaginationParams,
+  streamId?: string | null,
 ): Promise<ApiResponse<PaginatedResponse<TrendingCourse>>> {
   try {
     const { page, pageSize, from, to } = buildPagination(pagination);
 
-    const { data, error, count } = await supabase
+    let query = supabase
       .from('courses')
       .select(
         `
@@ -154,10 +155,18 @@ export async function getTrendingCourses(
       )
       .eq('status', 'published')
       .is('deleted_at', null)
-      .eq('trending', true)
+      .eq('trending', true);
+
+    if (streamId) {
+      query = query.eq('stream_id', streamId);
+    }
+
+    query = query
       .order('featured', { ascending: false })
       .order('published_at', { ascending: false })
       .range(from, to);
+
+    const { data, error, count } = await query;
 
     if (error) {
       return { success: false, error: extractErrorMessage(error) };
@@ -385,3 +394,64 @@ export async function getFeaturedCourses(
     return { success: false, error: extractErrorMessage(err) };
   }
 }
+
+/**
+ * Fetch all published courses filtered by stream.
+ *
+ * @param streamId   - The target stream UUID to filter by.
+ * @param pagination - Optional pagination parameters.
+ */
+export async function getCoursesByStream(
+  streamId: string,
+  pagination?: PaginationParams,
+): Promise<ApiResponse<PaginatedResponse<TrendingCourse>>> {
+  try {
+    const { page, pageSize, from, to } = buildPagination(pagination);
+
+    const { data, error, count } = await supabase
+      .from('courses')
+      .select(
+        `
+        course_id,
+        title,
+        short_description,
+        description,
+        thumbnail_bucket,
+        thumbnail_path,
+        language,
+        difficulty_level,
+        duration,
+        original_price,
+        discounted_price,
+        featured,
+        trending,
+        status,
+        published_at,
+        stream:stream_id(name)
+        `,
+        { count: 'exact' },
+      )
+      .eq('status', 'published')
+      .is('deleted_at', null)
+      .eq('stream_id', streamId)
+      .order('featured', { ascending: false })
+      .order('published_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      return { success: false, error: extractErrorMessage(error) };
+    }
+
+    const courses = (data ?? []).map(
+      (item) => mapCourseToTrendingCourse(item as unknown as DbTrendingCourseRaw),
+    );
+
+    return {
+      success: true,
+      data: buildPaginatedResponse(courses, count ?? 0, page, pageSize),
+    };
+  } catch (err) {
+    return { success: false, error: extractErrorMessage(err) };
+  }
+}
+

@@ -19,6 +19,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import MainTabNavigator from './MainTabNavigator';
 import TestDashboardScreen from '../screens/tests/TestDashboardScreen';
 import CourseDetailScreen from '../screens/courses/CourseDetailScreen';
+import MyStreamCoursesScreen from '../screens/courses/MyStreamCoursesScreen';
 import PyqPapersScreen from '../screens/tests/PyqPapersScreen';
 import ExamPackDetailScreen from '../screens/tests/ExamPackDetailScreen';
 import TestInstructionsScreen from '../screens/tests/TestInstructionsScreen';
@@ -61,6 +62,7 @@ export type AppStackParamList = {
   Notification: undefined;
   TestDashboard: undefined;
   CourseDetail: { courseId: string };
+  MyStreamCourses: undefined;
   PyqPapers: PyqPapersScreenParams;
   ExamPackDetail: ExamPackDetailParams;
   TestInstructions: TestInstructionsParams;
@@ -121,6 +123,16 @@ export default function AppNavigator(): React.JSX.Element {
       <Stack.Screen
         name="CourseDetail"
         component={CourseDetailScreen}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: SCREEN_TRANSITION_DURATION,
+        }}
+      />
+
+      <Stack.Screen
+        name="MyStreamCourses"
+        component={MyStreamCoursesScreen}
         options={{
           headerShown: false,
           animation: 'slide_from_right',
