@@ -50,6 +50,16 @@ import PopularExamCard from '../../components/home/PopularExamCard';
 import CTASection from '../../components/home/CTASection';
 import TrendingCoursesSection from '../../components/home/TrendingCoursesSection';
 import PyqPracticeSection from '../../components/home/PyqPracticeSection';
+// ─── Dashboard Components ────────────────────────────────────
+import OverallPerformanceCard from '../../components/dashboard/OverallPerformanceCard';
+import QuickStatsCards from '../../components/dashboard/QuickStatsCards';
+import type { QuickStatItem } from '../../components/dashboard/QuickStatsCards';
+import ContinuePracticeCard from '../../components/dashboard/ContinuePracticeCard';
+import LatestResultCard from '../../components/dashboard/LatestResultCard';
+import UpcomingTestsCard from '../../components/dashboard/UpcomingTestsCard';
+import type { UpcomingTestItem } from '../../components/dashboard/UpcomingTestsCard';
+import PerformanceSnapshotCard from '../../components/dashboard/PerformanceSnapshotCard';
+import type { SubjectPerformance } from '../../components/dashboard/PerformanceSnapshotCard';
 
 import type { QuickActionItem, FeatureItem, PopularExamItem, TrendingCourseItem, PyqItem as PyqItemType } from '../../components/home/types';
 type PyqItem = PyqItemType;
@@ -420,11 +430,100 @@ function mapTrendingCourseToItem(
   };
 }
 
+// ─── Mock Dashboard Data (matches HTML design reference exactly) ──────────
+
+/** Overall performance card data. Replace with API data when available. */
+const MOCK_PERFORMANCE = {
+  accuracy: 82,
+  testsAttempted: 42,
+  averageScore: 612,
+  bestScore: 698,
+  improvementText: '12% improvement\nfrom last month',
+} as const;
+
+/** Quick stats items (4 cards). Replace with API data when available. */
+const MOCK_QUICK_STATS: QuickStatItem[] = [
+  {
+    key: 'tests-attempted',
+    iconName: 'book-open',
+    label: 'Tests\nAttempted',
+    value: '42',
+  },
+  {
+    key: 'best-score',
+    iconName: 'trophy',
+    label: 'Best Score',
+    value: '698',
+  },
+  {
+    key: 'avg-score',
+    iconName: 'bar-chart-2',
+    label: 'Average Score',
+    value: '612',
+  },
+  {
+    key: 'accuracy',
+    iconName: 'badge-check',
+    label: 'Overall Accuracy',
+    value: '82%',
+  },
+];
+
+/** Continue practice session data. Replace with API data when available. */
+const MOCK_CONTINUE_PRACTICE = {
+  testName: 'NEET Biology Mock Test 07',
+  completedCount: 68,
+  totalCount: 180,
+  progress: 0.38,
+  remainingCount: 112,
+} as const;
+
+/** Latest test result data. Replace with API data when available. */
+const MOCK_LATEST_RESULT = {
+  testName: 'NEET Full Syllabus Mock Test 05',
+  date: '28 May 2025',
+  score: 612,
+  maxScore: 720,
+  percentile: 94.56,
+  accuracy: 82,
+} as const;
+
+/** Upcoming tests. Replace with API data when available. */
+const MOCK_UPCOMING_TESTS: UpcomingTestItem[] = [
+  {
+    key: 'upcoming-1',
+    testName: 'NEET Physics Mock Test 08',
+    date: '30 May 2025',
+    time: '10:00 AM',
+    duration: '3 Hours',
+  },
+  {
+    key: 'upcoming-2',
+    testName: 'NEET Chemistry Mock Test 08',
+    date: '31 May 2025',
+    time: '10:00 AM',
+    duration: '3 Hours',
+  },
+];
+
+/** Performance snapshot by subject. Replace with API data when available. */
+const MOCK_PERFORMANCE_SNAPSHOT: SubjectPerformance[] = [
+  { subject: 'Physics', icon: '🔬', accuracy: 88 },
+  { subject: 'Chemistry', icon: '🧪', accuracy: 74 },
+  { subject: 'Biology', icon: '🧬', accuracy: 93 },
+];
+
 // --- Section IDs ---
 
 type SectionId =
   | 'greeting'
   | 'hero'
+  | 'overall-performance'
+  | 'quick-stats'
+  | 'continue-practice'
+  | 'latest-result'
+  | 'upcoming-tests'
+  | 'performance-snapshot'
   | 'trending-courses'
   | 'pyq-practice'
   | 'quick-start'
@@ -439,6 +538,12 @@ interface Section {
 const SECTIONS: Section[] = [
   { id: 'greeting' },
   { id: 'hero' },
+  { id: 'overall-performance' },
+  { id: 'quick-stats' },
+  { id: 'continue-practice' },
+  { id: 'latest-result' },
+  { id: 'upcoming-tests' },
+  { id: 'performance-snapshot' },
   { id: 'trending-courses' },
   { id: 'pyq-practice' },
   { id: 'quick-start' },
@@ -486,6 +591,15 @@ export default function HomeScreen(): React.JSX.Element {
   const handleCoursePress = useCallback((_key: string) => {}, []);
   const handleHeroExplorePress = useCallback((_key: string) => {}, []);
   const handleHeroEnrollPress = useCallback((_key: string) => {}, []);
+
+  // ── Dashboard Navigation ──────────────────────────────────────────
+  const handleContinuePractice = useCallback(() => {}, []);
+  const handleViewAllPractice = useCallback(() => {}, []);
+  const handleViewLatestResult = useCallback(() => {}, []);
+  const handleViewAllResults = useCallback(() => {}, []);
+  const handleViewAllUpcoming = useCallback(() => {}, []);
+  const handleUpcomingTestPress = useCallback((_testName: string) => {}, []);
+  const handleViewDetailedAnalysis = useCallback(() => {}, []);
 
   // ── PYQ Navigation ────────────────────────────────────────────────
   const handleViewAllPyq = useCallback(() => {
@@ -623,6 +737,68 @@ export default function HomeScreen(): React.JSX.Element {
             </View>
           );
 
+        case 'overall-performance':
+          return (
+            <OverallPerformanceCard
+              accuracy={MOCK_PERFORMANCE.accuracy}
+              testsAttempted={MOCK_PERFORMANCE.testsAttempted}
+              averageScore={MOCK_PERFORMANCE.averageScore}
+              bestScore={MOCK_PERFORMANCE.bestScore}
+              improvementText={MOCK_PERFORMANCE.improvementText}
+            />
+          );
+
+        case 'quick-stats':
+          return (
+            <QuickStatsCards items={MOCK_QUICK_STATS} />
+          );
+
+        case 'continue-practice':
+          return (
+            <ContinuePracticeCard
+              testName={MOCK_CONTINUE_PRACTICE.testName}
+              completedCount={MOCK_CONTINUE_PRACTICE.completedCount}
+              totalCount={MOCK_CONTINUE_PRACTICE.totalCount}
+              progress={MOCK_CONTINUE_PRACTICE.progress}
+              remainingCount={MOCK_CONTINUE_PRACTICE.remainingCount}
+              onContinuePress={handleContinuePractice}
+              onViewAllPress={handleViewAllPractice}
+            />
+          );
+
+        case 'latest-result':
+          return (
+            <LatestResultCard
+              testName={MOCK_LATEST_RESULT.testName}
+              date={MOCK_LATEST_RESULT.date}
+              score={MOCK_LATEST_RESULT.score}
+              maxScore={MOCK_LATEST_RESULT.maxScore}
+              percentile={MOCK_LATEST_RESULT.percentile}
+              accuracy={MOCK_LATEST_RESULT.accuracy}
+              onViewResult={handleViewLatestResult}
+              onViewAllPress={handleViewAllResults}
+            />
+          );
+
+        case 'upcoming-tests':
+          return (
+            <UpcomingTestsCard
+              items={MOCK_UPCOMING_TESTS.map((item) => ({
+                ...item,
+                onPress: () => handleUpcomingTestPress(item.testName),
+              }))}
+              onViewAll={handleViewAllUpcoming}
+            />
+          );
+
+        case 'performance-snapshot':
+          return (
+            <PerformanceSnapshotCard
+              subjects={MOCK_PERFORMANCE_SNAPSHOT}
+              onViewDetailedAnalysis={handleViewDetailedAnalysis}
+            />
+          );
+
         case 'trending-courses':
           return (
             <TrendingCoursesSection
@@ -725,6 +901,8 @@ export default function HomeScreen(): React.JSX.Element {
       handleExplorePress, handleNotificationPress, handleProfilePress,
       handleActionPress, handleExamPress, handleStartFreeTest, handleViewAllExams,
       handleViewAllTrending, handleCoursePress, handleHeroExplorePress, handleHeroEnrollPress,
+      handleContinuePractice, handleViewAllPractice, handleViewLatestResult, handleViewAllResults,
+      handleViewAllUpcoming, handleUpcomingTestPress, handleViewDetailedAnalysis,
       handleViewAllPyq, handlePyqItemPress, handlePyqPreviewPress, handlePyqStartPracticePress,
     ],
   );

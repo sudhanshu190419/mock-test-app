@@ -26,6 +26,8 @@ import TestEngineScreen from '../screens/tests/TestEngineScreen';
 import TestResultScreen from '../screens/tests/TestResultScreen';
 import TestSubmittedScreen from '../screens/tests/TestSubmittedScreen';
 import MyResultsScreen from '../screens/tests/MyResultsScreen';
+import AnswerReviewScreen from '../screens/tests/AnswerReviewScreen';
+import AnswerReviewDetailScreen from '../screens/tests/AnswerReviewDetailScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 
 // DEV ONLY - Remove after frontend integration
@@ -52,6 +54,7 @@ import type { TestInstructionsParams } from '../screens/tests/TestInstructionsSc
 import type { TestEngineParams } from '../screens/tests/TestEngineScreen';
 import type { TestResultParams } from '../screens/tests/TestResultScreen';
 import type { TestSubmittedParams } from '../screens/tests/TestSubmittedScreen';
+import type { AnswerReviewParams, AnswerReviewDetailParams } from '../types/review';
 
 export type AppStackParamList = {
   MainTabs: undefined;
@@ -65,6 +68,8 @@ export type AppStackParamList = {
   TestResult: TestResultParams;
   TestSubmitted: TestSubmittedParams;
   MyResults: undefined;
+  AnswerReview: AnswerReviewParams;
+  AnswerReviewDetail: AnswerReviewDetailParams;
   // DEV ONLY - Remove after frontend integration
   DevHub: undefined;
 };
@@ -185,6 +190,26 @@ export default function AppNavigator(): React.JSX.Element {
         options={{
           headerShown: false,
           ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="AnswerReview"
+        component={AnswerReviewScreen}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: SCREEN_TRANSITION_DURATION,
+        }}
+      />
+
+      <Stack.Screen
+        name="AnswerReviewDetail"
+        component={AnswerReviewDetailScreen}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: SCREEN_TRANSITION_DURATION,
         }}
       />
 

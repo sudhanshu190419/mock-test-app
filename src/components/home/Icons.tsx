@@ -23,9 +23,13 @@ export type IconName =
   | 'bar-chart-2'
   | 'bell'
   | 'book'
+  | 'book-fill'
   | 'bookmark'
   | 'book-open'
   | 'calendar'
+  | 'chart-fill'
+  | 'check-circle'
+  | 'chevron-left'
   | 'chevron-right'
   | 'clipboard-list'
   | 'description'
@@ -36,9 +40,11 @@ export type IconName =
   | 'headphones'
   | 'home'
   | 'layers'
+  | 'list'
   | 'log-out'
   | 'menu'
   | 'menu-book'
+  | 'minus-circle'
   | 'monitor'
   | 'more-vertical'
   | 'play-circle'
@@ -48,11 +54,14 @@ export type IconName =
   | 'shield-check'
   | 'star'
   | 'stethoscope'
+  | 'target-fill'
   | 'timer'
   | 'trophy'
+  | 'trophy-fill'
   | 'user'
   | 'users'
-  | 'video';
+  | 'video'
+  | 'x-circle';
 
 export interface IconProps extends Pick<SvgProps, 'color' | 'width' | 'height'> {
   /** The icon to render. */
@@ -116,6 +125,30 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     />
   ),
 
+  'check-circle': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <Path d="m9 11 3 3L22 4" />
+    </G>
+  ),
+
+  'chevron-left': (
+    <Path
+      d="M15 18l-6-6 6-6"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2.5}
+    />
+  ),
+
   'chevron-right': (
     <Path
       d="M9 18l6-6-6-6"
@@ -138,6 +171,13 @@ const PATHS: Record<IconName, React.JSX.Element> = {
       <Rect x={3} y={4} width={18} height={18} rx={2} ry={2} />
       <Path d="M16 2v4M8 2v4M3 10h18" />
     </G>
+  ),
+
+  'chart-fill': (
+    <Path
+      d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 0 1-1.875-1.875V8.625ZM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 19.875v-6.75Z"
+      fill="currentColor"
+    />
   ),
 
   science: (
@@ -201,6 +241,19 @@ const PATHS: Record<IconName, React.JSX.Element> = {
       <Path d="M2 22h20" />
       <Path d="M8 22V14a4 4 0 0 1 8 0v8" />
       <Path d="M8 18h8" />
+    </G>
+  ),
+
+  'minus-circle': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Circle cx={12} cy={12} r={10} />
+      <Path d="M8 12h8" />
     </G>
   ),
 
@@ -384,6 +437,13 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     />
   ),
 
+  'book-fill': (
+    <Path
+      d="M11.25 4.533A9.707 9.707 0 0 0 6 3a9.735 9.735 0 0 0-3.25.555.75.75 0 0 0-.5.707v14.25a.75.75 0 0 0 1 .707A8.237 8.237 0 0 1 6 18.75c1.995 0 3.823.707 5.25 1.886V4.533ZM12.75 20.636A8.214 8.214 0 0 1 18 18.75c.966 0 1.89.166 2.75.47a.75.75 0 0 0 1-.708V4.262a.75.75 0 0 0-.5-.707A9.735 9.735 0 0 0 18 3a9.707 9.707 0 0 0-5.25 1.533v16.103Z"
+      fill="currentColor"
+    />
+  ),
+
   'book-open': (
     <Path
       d="M12 7v14m-9-3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
@@ -474,6 +534,23 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     </G>
   ),
 
+  'list': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M8 6h13" />
+      <Path d="M8 12h13" />
+      <Path d="M8 18h13" />
+      <Path d="M3 6h.01" />
+      <Path d="M3 12h.01" />
+      <Path d="M3 18h.01" />
+    </G>
+  ),
+
   layers: (
     <G
       fill="none"
@@ -528,6 +605,20 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     </G>
   ),
 
+  'x-circle': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Circle cx={12} cy={12} r={10} />
+      <Path d="m15 9-6 6" />
+      <Path d="m9 9 6 6" />
+    </G>
+  ),
+
   'shield-check': (
     <G
       fill="none"
@@ -555,6 +646,13 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     </G>
   ),
 
+  'target-fill': (
+    <Path
+      d="M6 3a3 3 0 0 0-3 3v1.5a.75.75 0 0 0 1.5 0V6A1.5 1.5 0 0 1 6 4.5h1.5a.75.75 0 0 0 0-1.5H6ZM16.5 3a.75.75 0 0 0 0 1.5H18A1.5 1.5 0 0 1 19.5 6v1.5a.75.75 0 0 0 1.5 0V6a3 3 0 0 0-3-3h-1.5ZM12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5ZM4.5 16.5a.75.75 0 0 0-1.5 0V18a3 3 0 0 0 3 3h1.5a.75.75 0 0 0 0-1.5H6A1.5 1.5 0 0 1 4.5 18v-1.5ZM21 16.5a.75.75 0 0 0-1.5 0V18a1.5 1.5 0 0 1-1.5 1.5h-1.5a.75.75 0 0 0 0 1.5H18a3 3 0 0 0 3-3v-1.5Z"
+      fill="currentColor"
+    />
+  ),
+
   trophy: (
     <G
       fill="none"
@@ -566,6 +664,13 @@ const PATHS: Record<IconName, React.JSX.Element> = {
       <Path d="M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978m7-7.318v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978M18 9h1.5a1 1 0 0 0 0-5H18M4 22h16" />
       <Path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1zm0 0H4.5a1 1 0 0 1 0-5H6" />
     </G>
+  ),
+
+  'trophy-fill': (
+    <Path
+      d="M5.166 2.621v.858c-1.035.148-2.059.33-3.071.543a.75.75 0 0 0-.584.859 6.753 6.753 0 0 0 6.138 5.6 6.73 6.73 0 0 0 2.743 1.346A6.707 6.707 0 0 1 9.279 15H8.54c-1.036 0-1.875.84-1.875 1.875V19.5h-.75a2.25 2.25 0 0 0-2.25 2.25c0 .414.336.75.75.75h15a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-2.25-2.25h-.75v-2.625c0-1.036-.84-1.875-1.875-1.875h-.739a6.706 6.706 0 0 1-1.112-3.173 6.73 6.73 0 0 0 2.743-1.347 6.753 6.753 0 0 0 6.139-5.6.75.75 0 0 0-.585-.858 47.077 47.077 0 0 0-3.07-.543V2.62a.75.75 0 0 0-.658-.744 49.22 49.22 0 0 0-6.093-.377c-2.063 0-4.096.128-6.093.377a.75.75 0 0 0-.657.744Zm0 2.629c0 1.196.312 2.32.857 3.294A5.266 5.266 0 0 1 3.16 5.337a45.6 45.6 0 0 1 2.006-.343v.256Zm13.5 0v-.256c.674.1 1.343.214 2.006.343a5.265 5.265 0 0 1-2.863 3.207 6.72 6.72 0 0 0 .857-3.294Z"
+      fill="currentColor"
+    />
   ),
 
   user: (

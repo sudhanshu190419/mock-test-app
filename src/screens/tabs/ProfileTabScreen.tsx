@@ -11,7 +11,7 @@
  * @module screens/tabs/ProfileTabScreen
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -22,12 +22,15 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Icon from '../../components/home/Icons';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
+import type { AppStackParamList } from '../../navigation/AppNavigator';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -282,6 +285,67 @@ const StatsWidget = React.memo(function StatsWidget(): React.JSX.Element {
 
 
 
+// ─── My Results Button ───────────────────────────────────────────────────────
+
+const MyResultsButton = React.memo(function MyResultsButton(): React.JSX.Element {
+  const stackNavigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(12)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        delay: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 400,
+        delay: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim]);
+
+  const handlePress = useCallback(() => {
+    stackNavigation.navigate('MyResults');
+  }, [stackNavigation]);
+
+  return (
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }],
+        marginBottom: spacing[20],
+      }}
+    >
+      <TouchableOpacity
+        style={styles.myResultsCard}
+        onPress={handlePress}
+        activeOpacity={0.7}
+        accessibilityLabel="My Test Results"
+        accessibilityRole="button"
+      >
+        <View style={styles.myResultsLeft}>
+          <View style={styles.myResultsIconContainer}>
+            <Icon name="clipboard-list" color={colors.primary} width={22} height={22} />
+          </View>
+          <View style={styles.myResultsTextGroup}>
+            <Text style={styles.myResultsTitle}>My Test Results</Text>
+            <Text style={styles.myResultsSubtitle}>View all your attempted tests</Text>
+          </View>
+        </View>
+        <View style={styles.myResultsBadge}>
+          <Icon name="chevron-right" color={colors.primary} width={18} height={18} />
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+});
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function ProfileTabScreen(): React.JSX.Element {
@@ -322,9 +386,8 @@ export default function ProfileTabScreen(): React.JSX.Element {
         {/* Quick Stats */}
         <StatsWidget />
 
-       
-
-        
+        {/* My Test Results */}
+        <MyResultsButton />
 
         {/* Settings List */}
         <View style={styles.settingsCard}>
@@ -646,6 +709,60 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     borderRadius: 2,
+  },
+
+  // ── My Results Card ────────────────────────────────────────
+  myResultsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    paddingVertical: spacing[16],
+    paddingHorizontal: spacing[16],
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderLeftWidth: 4,
+    ...shadows.small,
+  },
+  myResultsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[12],
+    flex: 1,
+  },
+  myResultsIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 105, 72, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  myResultsTextGroup: {
+    gap: 2,
+    flex: 1,
+  },
+  myResultsTitle: {
+    ...typography.subtitle,
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text.primary,
+    lineHeight: 20,
+  },
+  myResultsSubtitle: {
+    ...typography.caption,
+    fontSize: 12,
+    color: colors.text.secondary,
+    lineHeight: 16,
+  },
+  myResultsBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 105, 72, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // ── Settings List ─────────────────────────────────────────

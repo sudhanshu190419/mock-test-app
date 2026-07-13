@@ -284,6 +284,24 @@ export default function TestResultScreen({
               skippedCount={result.skippedCount}
               totalQuestions={result.totalQuestions}
             />
+
+            {/* Review Answers Button */}
+            <TouchableOpacity
+              style={styles.reviewAnswersButton}
+              onPress={() =>
+                stackNavigation.navigate('AnswerReview', {
+                  testId,
+                  attemptId,
+                })
+              }
+              activeOpacity={0.85}
+              accessibilityLabel="Review your answers"
+              accessibilityRole="button"
+            >
+              <Icon name="clipboard-list" color="#FFFFFF" width={20} height={20} />
+              <Text style={styles.reviewAnswersButtonText}>Review Answers</Text>
+              <Icon name="chevron-right" color="rgba(255,255,255,0.7)" width={18} height={18} />
+            </TouchableOpacity>
           </>
         ) : (
           <View style={styles.breakdownGrid}>
@@ -304,6 +322,24 @@ export default function TestResultScreen({
             />
           </View>
         )}
+
+        {/* Review Answers Button — shown below cards in both layouts */}
+        <TouchableOpacity
+          style={styles.reviewAnswersButton}
+          onPress={() =>
+            stackNavigation.navigate('AnswerReview', {
+              testId,
+              attemptId,
+            })
+          }
+          activeOpacity={0.85}
+          accessibilityLabel="Review your answers"
+          accessibilityRole="button"
+        >
+          <Icon name="clipboard-list" color="#FFFFFF" width={20} height={20} />
+          <Text style={styles.reviewAnswersButtonText}>Review Answers</Text>
+          <Icon name="chevron-right" color="rgba(255,255,255,0.7)" width={18} height={18} />
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -415,5 +451,37 @@ const styles = StyleSheet.create({
   breakdownGrid: {
     flexDirection: 'row',
     gap: spacing[16],
+  },
+
+  // ── Review Answers Button ──────────────────────────────────
+  reviewAnswersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[12],
+    backgroundColor: colors.primary,
+    paddingVertical: spacing[16],
+    paddingHorizontal: spacing[24],
+    borderRadius: radius.md,
+    marginTop: spacing[20],
+    minHeight: 52,
+    ...Platform.select({
+      ios: {
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  reviewAnswersButtonText: {
+    ...typography.button,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    flex: 0,
   },
 });
