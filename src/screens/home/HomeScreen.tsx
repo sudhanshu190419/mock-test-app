@@ -39,6 +39,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectUser, selectSelectedStreamId, setSelectedStreamId } from '../../store/authSlice';
 import { useHomeDashboard } from '../../hooks/home/useHome';
+import { useStudentDashboardSummary } from '../../hooks/dashboard/useStudentDashboardSummary';
+import {
+  useStudentSubjectAnalytics,
+  useStudentChapterAnalytics,
+  useStudentWeakChapters,
+  useStudentStrongChapters,
+} from '../../hooks/analytics/useAnalytics';
 import { useTrendingCourses } from '../../hooks/home/useCourses';
 import { useFeaturedPractice } from '../../hooks/practice/usePractice';
 import { useStreams } from '../../hooks/academic/useStreams';
@@ -46,6 +53,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
 import type { TrendingCourse } from '../../types/home';
 import Icon from '../../components/home/Icons';
+import SkeletonLoader from '../../components/SkeletonLoader';
 
 import GreetingHeader from '../../components/home/GreetingHeader';
 import HeroBanner from '../../components/home/HeroBanner';
@@ -66,6 +74,8 @@ import UpcomingTestsCard from '../../components/dashboard/UpcomingTestsCard';
 import type { UpcomingTestItem } from '../../components/dashboard/UpcomingTestsCard';
 import PerformanceSnapshotCard from '../../components/dashboard/PerformanceSnapshotCard';
 import type { SubjectPerformance } from '../../components/dashboard/PerformanceSnapshotCard';
+import ChapterAnalyticsCard from '../../components/dashboard/ChapterAnalyticsCard';
+import WeakStrongChaptersCard from '../../components/dashboard/WeakStrongChaptersCard';
 
 import type { QuickActionItem, FeatureItem, PopularExamItem, TrendingCourseItem, PyqItem as PyqItemType } from '../../components/home/types';
 type PyqItem = PyqItemType;
@@ -439,65 +449,7 @@ function mapTrendingCourseToItem(
   };
 }
 
-// ─── Mock Dashboard Data (matches HTML design reference exactly) ──────────
-
-/** Overall performance card data. Replace with API data when available. */
-const MOCK_PERFORMANCE = {
-  accuracy: 82,
-  testsAttempted: 42,
-  averageScore: 612,
-  bestScore: 698,
-  improvementText: '12% improvement\nfrom last month',
-} as const;
-
-/** Quick stats items (4 cards). Replace with API data when available. */
-const MOCK_QUICK_STATS: QuickStatItem[] = [
-  {
-    key: 'tests-attempted',
-    iconName: 'book-open',
-    label: 'Tests\nAttempted',
-    value: '42',
-  },
-  {
-    key: 'best-score',
-    iconName: 'trophy',
-    label: 'Best Score',
-    value: '698',
-  },
-  {
-    key: 'avg-score',
-    iconName: 'bar-chart-2',
-    label: 'Average Score',
-    value: '612',
-  },
-  {
-    key: 'accuracy',
-    iconName: 'badge-check',
-    label: 'Overall Accuracy',
-    value: '82%',
-  },
-];
-
-/** Continue practice session data. Replace with API data when available. */
-const MOCK_CONTINUE_PRACTICE = {
-  testName: 'NEET Biology Mock Test 07',
-  completedCount: 68,
-  totalCount: 180,
-  progress: 0.38,
-  remainingCount: 112,
-} as const;
-
-/** Latest test result data. Replace with API data when available. */
-const MOCK_LATEST_RESULT = {
-  testName: 'NEET Full Syllabus Mock Test 05',
-  date: '28 May 2025',
-  score: 612,
-  maxScore: 720,
-  percentile: 94.56,
-  accuracy: 82,
-} as const;
-
-/** Upcoming tests. Replace with API data when available. */
+// ─── Upcoming tests (mock — not yet in RPC) ────────────────────────────
 const MOCK_UPCOMING_TESTS: UpcomingTestItem[] = [
   {
     key: 'upcoming-1',
@@ -515,12 +467,24 @@ const MOCK_UPCOMING_TESTS: UpcomingTestItem[] = [
   },
 ];
 
-/** Performance snapshot by subject. Replace with API data when available. */
-const MOCK_PERFORMANCE_SNAPSHOT: SubjectPerformance[] = [
-  { subject: 'Physics', icon: '🔬', accuracy: 88 },
-  { subject: 'Chemistry', icon: '🧪', accuracy: 74 },
-  { subject: 'Biology', icon: '🧬', accuracy: 93 },
-];
+/** Empty state cards for analytics sections that have no data yet. */
+const EmptyAnalyticsCard = React.memo(function EmptyAnalyticsCard({
+  emoji,
+  title,
+  message,
+}: {
+  emoji: string;
+  title: string;
+  message: string;
+}): React.JSX.Element {
+  return (
+    <View style={[styles.emptyCard, shadows.small]}>
+      <Text style={styles.emptyEmoji}>{emoji}</Text>
+      <Text style={styles.emptyCardTitle}>{title}</Text>
+      <Text style={styles.emptyCardText}>{message}</Text>
+    </View>
+  );
+});
 
 // --- Section IDs ---
 
@@ -534,6 +498,9 @@ type SectionId =
   | 'latest-result'
   | 'upcoming-tests'
   | 'performance-snapshot'
+  | 'chapter-analytics'
+  | 'weak-chapters'
+  | 'strong-chapters'
   | 'trending-courses'
   | 'pyq-practice'
   | 'quick-start'
@@ -555,6 +522,9 @@ const SECTIONS: Section[] = [
   { id: 'latest-result' },
   { id: 'upcoming-tests' },
   { id: 'performance-snapshot' },
+  { id: 'chapter-analytics' },
+  { id: 'weak-chapters' },
+  { id: 'strong-chapters' },
   { id: 'trending-courses' },
   { id: 'pyq-practice' },
   { id: 'quick-start' },
@@ -710,6 +680,202 @@ export default function HomeScreen(): React.JSX.Element {
 
   const DEFAULT_PYQ_ILLUSTRATIONS = ['📄', '📚', '📝', '📋', '📖', '📑'];
 
+  // ── Student Dashboard Summary: live RPC data ────────────────────────────
+  const {
+    data: dashboardSummary,
+    isLoading: dashboardSummaryLoading,
+    error: dashboardSummaryError,
+  } = useStudentDashboardSummary();
+
+  if (dashboardSummaryError) {
+    console.warn('[HomeScreen] Dashboard summary fetch failed:', dashboardSummaryError);
+  }
+
+  // Determine whether dashboard data is actually being fetched for the first time
+  // (vs. background refetch) so we can show a skeleton while loading.
+  const isDashboardInitialLoading = dashboardSummaryLoading && !dashboardSummary;
+
+  // Derive dashboard card props from RPC response
+  const rpcPerformance = useMemo(() => dashboardSummary ? {
+    accuracy: dashboardSummary.overallAccuracy ?? 0,
+    testsAttempted: dashboardSummary.testsAttempted,
+    averageScore: dashboardSummary.averageScore,
+    bestScore: dashboardSummary.bestScore,
+    improvementText: '12% improvement\nfrom last month',
+  } : null, [dashboardSummary]);
+
+  const rpcQuickStats = useMemo<QuickStatItem[] | null>(() => {
+    if (!dashboardSummary) return null;
+    const acc = dashboardSummary.overallAccuracy;
+    return [
+      {
+        key: 'tests-attempted',
+        iconName: 'book-open',
+        label: 'Tests\nAttempted',
+        value: String(dashboardSummary.testsAttempted),
+      },
+      {
+        key: 'best-score',
+        iconName: 'trophy',
+        label: 'Best Score',
+        value: String(dashboardSummary.bestScore),
+      },
+      {
+        key: 'avg-score',
+        iconName: 'bar-chart-2',
+        label: 'Average Score',
+        value: String(dashboardSummary.averageScore),
+      },
+      {
+        key: 'accuracy',
+        iconName: 'badge-check',
+        label: 'Overall Accuracy',
+        value: acc !== null ? `${Math.round(acc)}%` : 'N/A',
+      },
+    ];
+  }, [dashboardSummary]);
+
+  /** Format an ISO timestamp to a readable date string (e.g. "28 May 2025"). */
+  const formatDate = useCallback((iso: string): string => {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return iso.slice(0, 10);
+    }
+  }, []);
+
+  /** Compute accuracy from correct / (correct + wrong) counts. */
+  const computeAccuracy = useCallback((correct: number, wrong: number): number => {
+    const total = correct + wrong;
+    if (total === 0) return 0;
+    return Math.round((correct / total) * 100);
+  }, []);
+
+  /**
+   * Map a subject name to a consistent emoji icon.
+   * Falls back to a generic book icon for unrecognised subjects.
+   */  /**
+   * Map a subject name to a consistent emoji icon.
+   * Falls back to a generic document icon for unrecognised subjects.
+   */
+  const getSubjectIcon = useCallback((subjectName: string): string => {
+    const name = subjectName.toLowerCase();
+    if (name.includes('physics') || name.includes('phys')) return '🔬';
+    if (name.includes('chemistry') || name.includes('chem')) return '🧪';
+    if (name.includes('biology') || name.includes('bio') || name.includes('botany') || name.includes('zoology')) return '🧬';
+    if (name.includes('mathematics') || name.includes('maths') || name.includes('math')) return '📐';
+    if (name.includes('english') || name.includes('eng')) return '📖';
+    if (name.includes('history') || name.includes('hist')) return '📜';
+    if (name.includes('geography') || name.includes('geo')) return '🌍';
+    if (name.includes('economics') || name.includes('econ')) return '💰';
+    if (name.includes('computer') || name.includes('cs') || name.includes('it')) return '💻';
+    if (name.includes('gk') || name.includes('general') || name.includes('current')) return '🗞️';
+    return '📄';
+  }, []);
+
+  // ── Subject Analytics: live RPC data ──────────────────────────────
+  const {
+    data: subjectAnalytics,
+    isLoading: subjectAnalyticsLoading,
+    error: subjectAnalyticsError,
+  } = useStudentSubjectAnalytics();
+
+  if (subjectAnalyticsError) {
+    console.warn('[HomeScreen] Subject analytics fetch failed:', subjectAnalyticsError);
+  }
+
+  const isSubjectAnalyticsInitialLoading = subjectAnalyticsLoading && !subjectAnalytics;
+
+  // Derive PerformanceSnapshot props from RPC response
+  const rpcSubjectPerformance = useMemo<SubjectPerformance[] | null>(() => {
+    if (!subjectAnalytics) return null;
+    return subjectAnalytics.map((s) => ({
+      subject: s.subjectName,
+      icon: getSubjectIcon(s.subjectName),
+      accuracy: Math.round(s.accuracy),
+    }));
+  }, [subjectAnalytics]);
+
+  // ── Chapter Analytics: live RPC data ──────────────────────────────
+  const {
+    data: chapterAnalytics,
+    isLoading: chapterAnalyticsLoading,
+    error: chapterAnalyticsError,
+  } = useStudentChapterAnalytics();
+
+  if (chapterAnalyticsError) {
+    console.warn('[HomeScreen] Chapter analytics fetch failed:', chapterAnalyticsError);
+  }
+
+  const isChapterAnalyticsInitialLoading = chapterAnalyticsLoading && !chapterAnalytics;
+
+  // ── Weak Chapters: live RPC data ──────────────────────────────────
+  const {
+    data: weakChapters,
+    isLoading: weakChaptersLoading,
+    isFetching: weakChaptersFetching,
+    isSuccess: weakChaptersSuccess,
+    isError: weakChaptersIsError,
+    error: weakChaptersError,
+  } = useStudentWeakChapters();
+
+  // ── DIAGNOSTIC: Weak Chapters query state ────────────────────────
+  console.log('WEAK_CHAPTERS_QUERY', {
+    isLoading: weakChaptersLoading,
+    isFetching: weakChaptersFetching,
+    isSuccess: weakChaptersSuccess,
+    isError: weakChaptersIsError,
+    error: weakChaptersError,
+  });
+
+  console.log('WEAK CHAPTERS RECEIVED', {
+    isUndefined: weakChapters === undefined,
+    isNull: weakChapters === null,
+    arrayLength: Array.isArray(weakChapters) ? weakChapters.length : 'NOT_ARRAY',
+  });
+
+  if (weakChaptersError) {
+    console.warn('[HomeScreen] Weak chapters fetch failed:', weakChaptersError);
+  }
+
+  const isWeakChaptersInitialLoading = weakChaptersLoading && !weakChapters;
+
+  // ── Strong Chapters: live RPC data ────────────────────────────────
+  const {
+    data: strongChapters,
+    isLoading: strongChaptersLoading,
+    isFetching: strongChaptersFetching,
+    isSuccess: strongChaptersSuccess,
+    isError: strongChaptersIsError,
+    error: strongChaptersError,
+  } = useStudentStrongChapters();
+
+  // ── DIAGNOSTIC: Strong Chapters query state ──────────────────────
+  console.log('STRONG_CHAPTERS_QUERY', {
+    isLoading: strongChaptersLoading,
+    isFetching: strongChaptersFetching,
+    isSuccess: strongChaptersSuccess,
+    isError: strongChaptersIsError,
+    error: strongChaptersError,
+  });
+
+  console.log('STRONG CHAPTERS RECEIVED', {
+    isUndefined: strongChapters === undefined,
+    isNull: strongChapters === null,
+    arrayLength: Array.isArray(strongChapters) ? strongChapters.length : 'NOT_ARRAY',
+  });
+
+  if (strongChaptersError) {
+    console.warn('[HomeScreen] Strong chapters fetch failed:', strongChaptersError);
+  }
+
+  const isStrongChaptersInitialLoading = strongChaptersLoading && !strongChapters;
+
   const {
     data: featuredPracticeData,
     isLoading: featuredLoading,
@@ -824,47 +990,104 @@ export default function HomeScreen(): React.JSX.Element {
           );
 
         case 'overall-performance':
+          if (isDashboardInitialLoading) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SkeletonLoader width="100%" height={180} borderRadius={24} />
+              </View>
+            );
+          }
+          if (dashboardSummaryError) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <View style={[styles.emptyCard, shadows.small]}>
+                  <Text style={styles.emptyEmoji}>⚠️</Text>
+                  <Text style={styles.emptyCardTitle}>Unable to Load</Text>
+                  <Text style={styles.emptyCardText}>
+                    Dashboard data could not be loaded. Please try again later.
+                  </Text>
+                </View>
+              </View>
+            );
+          }
           return (
             <OverallPerformanceCard
-              accuracy={MOCK_PERFORMANCE.accuracy}
-              testsAttempted={MOCK_PERFORMANCE.testsAttempted}
-              averageScore={MOCK_PERFORMANCE.averageScore}
-              bestScore={MOCK_PERFORMANCE.bestScore}
-              improvementText={MOCK_PERFORMANCE.improvementText}
+              accuracy={rpcPerformance?.accuracy ?? 0}
+              testsAttempted={rpcPerformance?.testsAttempted ?? 0}
+              averageScore={rpcPerformance?.averageScore ?? 0}
+              bestScore={rpcPerformance?.bestScore ?? 0}
+              improvementText={rpcPerformance?.improvementText ?? '12% improvement\nfrom last month'}
             />
           );
 
         case 'quick-stats':
+          if (isDashboardInitialLoading || dashboardSummaryError) return null;
+          if (!rpcQuickStats) return null;
           return (
-            <QuickStatsCards items={MOCK_QUICK_STATS} />
+            <QuickStatsCards items={rpcQuickStats} />
           );
 
         case 'continue-practice':
-          return (
-            <ContinuePracticeCard
-              testName={MOCK_CONTINUE_PRACTICE.testName}
-              completedCount={MOCK_CONTINUE_PRACTICE.completedCount}
-              totalCount={MOCK_CONTINUE_PRACTICE.totalCount}
-              progress={MOCK_CONTINUE_PRACTICE.progress}
-              remainingCount={MOCK_CONTINUE_PRACTICE.remainingCount}
-              onContinuePress={handleContinuePractice}
-              onViewAllPress={handleViewAllPractice}
-            />
-          );
+          // Hidden when loading, errored, null, or when the RPC doesn't return
+          // question-level progress data (completedCount, totalCount, etc.).
+          // The RPC only returns basic attempt metadata — showing "0 / 0 Questions"
+          // would be misleading. Enhance the RPC or add a dedicated query when
+          // the full Continue Practice flow is implemented.
+          return null;
 
-        case 'latest-result':
+        case 'latest-result': {
+          if (isDashboardInitialLoading) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SkeletonLoader width="100%" height={160} borderRadius={16} />
+              </View>
+            );
+          }
+          if (dashboardSummaryError) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Latest Result" />
+                <View style={[styles.emptyCard, shadows.small]}>
+                  <Text style={styles.emptyEmoji}>⚠️</Text>
+                  <Text style={styles.emptyCardTitle}>Unable to Load</Text>
+                  <Text style={styles.emptyCardText}>
+                    Could not fetch your latest result. Please try again later.
+                  </Text>
+                </View>
+              </View>
+            );
+          }
+          const lr = dashboardSummary?.latestResult;
+          // If latestResult is null, show empty-state UI
+          if (!lr) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Latest Result" />
+                <View style={[styles.emptyCard, shadows.small]}>
+                  <Text style={styles.emptyEmoji}>📊</Text>
+                  <Text style={styles.emptyCardTitle}>No Results Yet</Text>
+                  <Text style={styles.emptyCardText}>
+                    Your latest test results will appear here once you complete a mock test.
+                  </Text>
+                </View>
+              </View>
+            );
+          }
+
+          const lrAccuracy = computeAccuracy(lr.correctCount, lr.wrongCount);
           return (
             <LatestResultCard
-              testName={MOCK_LATEST_RESULT.testName}
-              date={MOCK_LATEST_RESULT.date}
-              score={MOCK_LATEST_RESULT.score}
-              maxScore={MOCK_LATEST_RESULT.maxScore}
-              percentile={MOCK_LATEST_RESULT.percentile}
-              accuracy={MOCK_LATEST_RESULT.accuracy}
+              testName={lr.testTitle ?? 'Test Result'}
+              date={formatDate(lr.generatedAt)}
+              score={lr.totalScore}
+              maxScore={lr.maxScore}
+              percentile={lr.percentile ?? 0}
+              accuracy={lrAccuracy}
               onViewResult={handleViewLatestResult}
               onViewAllPress={handleViewAllResults}
             />
           );
+        }
 
         case 'upcoming-tests':
           return (
@@ -878,10 +1101,171 @@ export default function HomeScreen(): React.JSX.Element {
           );
 
         case 'performance-snapshot':
+          if (isSubjectAnalyticsInitialLoading) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SkeletonLoader width="100%" height={140} borderRadius={16} />
+              </View>
+            );
+          }
+          if (subjectAnalyticsError) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Performance Snapshot" />
+                <View style={[styles.emptyCard, shadows.small]}>
+                  <Text style={styles.emptyEmoji}>⚠️</Text>
+                  <Text style={styles.emptyCardTitle}>Unable to Load</Text>
+                  <Text style={styles.emptyCardText}>
+                    Performance data could not be loaded. Please try again later.
+                  </Text>
+                </View>
+              </View>
+            );
+          }
+          if (!rpcSubjectPerformance || rpcSubjectPerformance.length === 0) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Performance Snapshot" />
+                <EmptyAnalyticsCard
+                  emoji="📊"
+                  title="No Data Yet"
+                  message="Complete your first test to view subject-wise performance."
+                />
+              </View>
+            );
+          }
           return (
             <PerformanceSnapshotCard
-              subjects={MOCK_PERFORMANCE_SNAPSHOT}
+              subjects={rpcSubjectPerformance}
               onViewDetailedAnalysis={handleViewDetailedAnalysis}
+            />
+          );
+
+        case 'chapter-analytics':
+          if (isChapterAnalyticsInitialLoading) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SkeletonLoader width="100%" height={200} borderRadius={16} />
+              </View>
+            );
+          }
+          if (chapterAnalyticsError) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Chapter-wise Performance" />
+                <View style={[styles.emptyCard, shadows.small]}>
+                  <Text style={styles.emptyEmoji}>⚠️</Text>
+                  <Text style={styles.emptyCardTitle}>Unable to Load</Text>
+                  <Text style={styles.emptyCardText}>
+                    Chapter analytics could not be loaded. Please try again later.
+                  </Text>
+                </View>
+              </View>
+            );
+          }
+          if (!chapterAnalytics || chapterAnalytics.length === 0) {
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Chapter-wise Performance" />
+                <EmptyAnalyticsCard
+                  emoji="📚"
+                  title="No Chapter Data Yet"
+                  message="Chapter analytics will appear after you attempt tests."
+                />
+              </View>
+            );
+          }
+          return <ChapterAnalyticsCard chapters={chapterAnalytics} />;
+
+        case 'weak-chapters':
+          if (isWeakChaptersInitialLoading) {
+            console.log('RENDER LOADING: weak-chapters');
+            return (
+              <View style={styles.sectionWrapper}>
+                <SkeletonLoader width="100%" height={180} borderRadius={16} />
+              </View>
+            );
+          }
+          if (weakChaptersError) {
+            console.log('RENDER ERROR STATE: weak-chapters', { reason: weakChaptersError?.message ?? String(weakChaptersError) });
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Weak Chapters" />
+                <View style={[styles.emptyCard, shadows.small]}>
+                  <Text style={styles.emptyEmoji}>⚠️</Text>
+                  <Text style={styles.emptyCardTitle}>Unable to Load</Text>
+                  <Text style={styles.emptyCardText}>
+                    Weak chapters could not be loaded. Please try again later.
+                  </Text>
+                </View>
+              </View>
+            );
+          }
+          if (!weakChapters || weakChapters.length === 0) {
+            console.log('RENDER EMPTY STATE: weak-chapters');
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Weak Chapters" />
+                <EmptyAnalyticsCard
+                  emoji="🎯"
+                  title="No Weak Chapters Yet"
+                  message="You are performing well across all chapters! Weak chapters will appear here if your accuracy drops."
+                />
+              </View>
+            );
+          }
+          console.log('RENDER SUCCESS: weak-chapters', { itemCount: weakChapters.length });
+          return (
+            <WeakStrongChaptersCard
+              title="Weak Chapters"
+              chapters={weakChapters}
+              variant="weak"
+            />
+          );
+
+        case 'strong-chapters':
+          if (isStrongChaptersInitialLoading) {
+            console.log('RENDER LOADING: strong-chapters');
+            return (
+              <View style={styles.sectionWrapper}>
+                <SkeletonLoader width="100%" height={180} borderRadius={16} />
+              </View>
+            );
+          }
+          if (strongChaptersError) {
+            console.log('RENDER ERROR STATE: strong-chapters', { reason: strongChaptersError?.message ?? String(strongChaptersError) });
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Strong Chapters" />
+                <View style={[styles.emptyCard, shadows.small]}>
+                  <Text style={styles.emptyEmoji}>⚠️</Text>
+                  <Text style={styles.emptyCardTitle}>Unable to Load</Text>
+                  <Text style={styles.emptyCardText}>
+                    Strong chapters could not be loaded. Please try again later.
+                  </Text>
+                </View>
+              </View>
+            );
+          }
+          if (!strongChapters || strongChapters.length === 0) {
+            console.log('RENDER EMPTY STATE: strong-chapters');
+            return (
+              <View style={styles.sectionWrapper}>
+                <SectionHeader title="Strong Chapters" />
+                <EmptyAnalyticsCard
+                  emoji="🏆"
+                  title="No Strong Chapters Yet"
+                  message="Strong chapters will appear here once you complete enough tests."
+                />
+              </View>
+            );
+          }
+          console.log('RENDER SUCCESS: strong-chapters', { itemCount: strongChapters.length });
+          return (
+            <WeakStrongChaptersCard
+              title="Strong Chapters"
+              chapters={strongChapters}
+              variant="strong"
             />
           );
 
@@ -1005,13 +1389,21 @@ export default function HomeScreen(): React.JSX.Element {
     [
       greetingUserName, greetingAvatarUrl, hasUnreadNotifications, greetingUnreadCount,
       user, quickActions, features, popularExams, trendingCourses, pyqItems,
-      streams, selectedStreamId, dispatch,
+      streams, selectedStreamId, dispatch, dashboardSummary, dashboardSummaryError,
+      isDashboardInitialLoading, rpcPerformance, rpcQuickStats,
+      formatDate, computeAccuracy,
       handleExplorePress, handleNotificationPress, handleProfilePress,
       handleActionPress, handleExamPress, handleStartFreeTest, handleViewAllExams,
       handleViewAllTrending, handleCoursePress, handleHeroExplorePress, handleHeroEnrollPress,
       handleContinuePractice, handleViewAllPractice, handleViewLatestResult, handleViewAllResults,
       handleViewAllUpcoming, handleUpcomingTestPress, handleViewDetailedAnalysis,
       handleViewAllPyq, handlePyqItemPress, handlePyqPreviewPress, handlePyqStartPracticePress,
+      // Analytics RPC data
+      subjectAnalytics, subjectAnalyticsError, isSubjectAnalyticsInitialLoading, rpcSubjectPerformance,
+      chapterAnalytics, chapterAnalyticsError, isChapterAnalyticsInitialLoading,
+      weakChapters, weakChaptersError, isWeakChaptersInitialLoading,
+      strongChapters, strongChaptersError, isStrongChaptersInitialLoading,
+      getSubjectIcon,
     ],
   );
 

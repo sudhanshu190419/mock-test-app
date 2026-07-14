@@ -11,7 +11,7 @@
  * @module screens/tests/MyResultsScreen
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,9 @@ import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
 import { useMyResults } from '../../hooks/mockTest/useMyResults';
+import { useStudentScoreTrend } from '../../hooks/analytics/useAnalytics';
+import ScoreTrendChart from '../../components/analytics/ScoreTrendChart';
+import ShimmerBlock from '../../components/SkeletonLoader';
 import type { StudentResultItem } from '../../services/resultService';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -177,6 +180,14 @@ export default function MyResultsScreen({
 
   const { data: results, isLoading, isRefetching, refetch, error } = useMyResults();
 
+  // ── Score Trend ────────────────────────────────────────────────────────
+  const {
+    data: trendData,
+    isLoading: trendLoading,
+    error: trendError,
+    refetch: trendRefetch,
+  } = useStudentScoreTrend();
+
   const handleBackPress = useCallback(() => {
     navigation.goBack();
   }, [navigation]);
@@ -205,6 +216,65 @@ export default function MyResultsScreen({
     (item: StudentResultItem) => item.attemptId,
     [],
   );
+
+  // ── Trend Chart Header ────────────────────────────────────────────────
+
+  const trendHeader = useMemo(() => {
+    // ── Loading state ──────────────────────────────────────────────────
+    if (trendLoading && !trendData) {
+      return (
+        <View style={styles.trendLoadingContainer}>
+          <ShimmerBlock width="40%" height={14} borderRadius={4} />
+          <View style={{ height: spacing[12] }} />
+          <ShimmerBlock width="100%" height={180} borderRadius={16} />
+        </View>
+      );
+    }
+
+    // ── Error state with retry ─────────────────────────────────────────
+    if (trendError) {
+      console.log('[MyResultsScreen] Score trend RPC error:', trendError);
+      return (
+        <View style={[styles.trendErrorContainer]}>
+          <Text style={styles.trendErrorTitle}>Score Trend</Text>
+          <View style={styles.trendErrorBody}>
+            <Icon name="bell" color={colors.error} width={24} height={24} />
+            <Text style={styles.trendErrorText}>
+              Could not load performance trend.
+            </Text>
+            <TouchableOpacity
+              style={styles.trendRetryButton}
+              onPress={() => trendRefetch()}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.trendRetryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    // ── Empty state (fewer than 2 released results) ────────────────────
+    if (!trendData || trendData.length < 2) {
+      return (
+        <View style={styles.trendEmptyContainer}>
+          <Text style={styles.trendEmptyTitle}>Score Trend</Text>
+          <View style={styles.trendEmptyBody}>
+            <View style={styles.trendEmptyIconContainer}>
+              <Icon name="bar-chart-2" color={palette.slate300} width={28} height={28} />
+            </View>
+            <Text style={styles.trendEmptyHeading}>Not Enough Data</Text>
+            <Text style={styles.trendEmptyText}>
+              Complete more mock tests to view your performance trend.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    // ── Chart ──────────────────────────────────────────────────────────
+    return <ScoreTrendChart data={trendData} />;
+  }, [trendData, trendLoading, trendError, trendRefetch]);
 
   // ── Loading State ──────────────────────────────────────────────
 
@@ -264,11 +334,15 @@ export default function MyResultsScreen({
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
-            onRefresh={refetch}
+            onRefresh={() => {
+              refetch();
+              trendRefetch();
+            }}
             tintColor={colors.primary}
             colors={[colors.primary]}
           />
         }
+        ListHeaderComponent={trendHeader}
         ListEmptyComponent={<EmptyState />}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
@@ -504,5 +578,91 @@ const styles = StyleSheet.create({
     color: palette.slate500,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  // ── Score Trend ────────────────────────────────────────────────────
+  trendLoadingContainer: {
+    marginBottom: spacing[16],
+    paddingHorizontal: spacing[4],
+  },
+  trendErrorContainer: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: palette.slate200,
+    padding: spacing[16],
+    marginBottom: spacing[16],
+  },
+  trendErrorTitle: {
+    ...typography.subtitle,
+    fontSize: 16,
+    fontWeight: '700',
+    color: palette.slate800,
+    marginBottom: spacing[12],
+  },
+  trendErrorBody: {
+    alignItems: 'center',
+    paddingVertical: spacing[12],
+    gap: spacing[8],
+  },
+  trendErrorText: {
+    ...typography.body,
+    fontSize: 13,
+    color: palette.slate500,
+    textAlign: 'center',
+  },
+  trendRetryButton: {
+    paddingVertical: spacing[8],
+    paddingHorizontal: spacing[16],
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+  },
+  trendRetryText: {
+    ...typography.button,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  trendEmptyContainer: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: palette.slate200,
+    padding: spacing[16],
+    marginBottom: spacing[16],
+  },
+  trendEmptyTitle: {
+    ...typography.subtitle,
+    fontSize: 16,
+    fontWeight: '700',
+    color: palette.slate800,
+    marginBottom: spacing[16],
+  },
+  trendEmptyBody: {
+    alignItems: 'center',
+    paddingVertical: spacing[20],
+    gap: spacing[8],
+  },
+  trendEmptyIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: palette.slate100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[4],
+  },
+  trendEmptyHeading: {
+    ...typography.subtitle,
+    fontSize: 16,
+    fontWeight: '600',
+    color: palette.slate700,
+  },
+  trendEmptyText: {
+    ...typography.body,
+    fontSize: 13,
+    color: palette.slate500,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: spacing[16],
   },
 });
