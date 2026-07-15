@@ -25,6 +25,7 @@ import {
   getRecommendedCourses,
   getFeaturedCourses,
   getCoursesByStream,
+  getPublishedCourses,
 } from '../../services/home/courseService';
 import type { TrendingCourse } from '../../types/home';
 import type { PaginatedResponse, PaginationParams } from '../../types/academic';
@@ -164,6 +165,25 @@ export function useCoursesByStream(streamId: string, pagination?: PaginationPara
       return result.data!;
     },
     enabled: !!streamId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+/**
+ * Fetch all published courses for the Courses listing page.
+ *
+ * @param pagination - Optional pagination parameters.
+ */
+export function usePublishedCourses(pagination?: PaginationParams) {
+  return useQuery<PaginatedResponse<TrendingCourse>>({
+    queryKey: [...homeKeys.courses.all(), 'published', pagination],
+    queryFn: async () => {
+      const result = await getPublishedCourses(pagination);
+      if (!result.success) {
+        throw new Error(result.error ?? 'Failed to fetch published courses.');
+      }
+      return result.data!;
+    },
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }

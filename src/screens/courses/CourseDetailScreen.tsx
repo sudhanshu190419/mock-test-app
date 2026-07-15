@@ -2,13 +2,16 @@
  * CourseDetailScreen
  *
  * Production-optimised course details page — zero animation overhead,
- * instant render, minimal re-renders. Preserves the original visual
- * design exactly.
+ * instant render, minimal re-renders.
+ *
+ * Loads the course from the `courses` table via `useCourse(courseId)` and
+ * populates every UI field from the live database response. The Buy button
+ * passes the real course UUID to `create-payment-order`.
  *
  * @module screens/courses/CourseDetailScreen
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,150 +20,32 @@ import {
   StyleSheet,
   Platform,
   Share,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 
 import Icon from '../../components/home/Icons';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
+import { useCourse } from '../../hooks/course/useCourse';
+import { useCreatePaymentOrder } from '../../hooks/payment/useCreatePaymentOrder';
+import { usePurchaseStatus } from '../../hooks/payment/usePurchaseStatus';
+import { openCheckout } from '../../services/payment/razorpayService';
+import { checkCourseEnrollment } from '../../services/payment/paymentService';
+import { supabase } from '../../config/supabase';
+import { UUID_REGEX } from '../../utils/supabase';
+import type { AppStackParamList } from '../../navigation/AppNavigator';
 import type { CourseDetail, CurriculumSubject, FaqItem, Instructor, CourseMetric } from '../../types/courseDetail';
+import type { PurchaseStateContext } from '../../types/payment';
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Mock Data
-// ═══════════════════════════════════════════════════════════════════════════
+// ─── Navigation Route Type ──────────────────────────────────────────────────
 
-const MOCK_COURSE: CourseDetail = {
-  courseId: 'jee-advanced-2025',
-  category: 'Engineering Entrance',
-  title: 'JEE Advanced 2025: Ultimate Ranker Batch',
-  rating: 4.9,
-  reviewCount: 2400,
-  studentCount: 15000,
-  badgeLabel: 'Best Seller',
-  price: 4999,
-  originalPrice: 9999,
-  discountLabel: '50% OFF',
-  offerMessage: 'Limited time offer. Enroll before the batch starts!',
-  metrics: [
-    { key: 'mock-tests', iconName: 'clipboard-list', value: '180+', label: 'Full-length Mock Tests', accentColor: colors.secondary },
-    { key: 'pyqs', iconName: 'book-open', value: '15 Years', label: 'Previous Year Questions', accentColor: colors.primary },
-    { key: 'hours', iconName: 'video', value: '900+ Hours', label: 'Live & Recorded Content', accentColor: '#F59E0B' },
-    { key: 'notes', iconName: 'description', value: '300+', label: 'Comprehensive PDF Notes', accentColor: '#DC2626' },
-  ],
-  aboutDescription:
-    'Unlock your engineering potential with the most comprehensive JEE Advanced 2025 preparation batch. Our curriculum is meticulously designed by top educators and IIT alumni to provide an edge in one of the world\'s most competitive exams.',
-  aboutFeatures: [
-    'Daily Live Classes: Interactive sessions with real-time doubt clearing.',
-    'Personalized Mentorship: Weekly 1-on-1 strategy sessions with dedicated mentors.',
-    'Complete Syllabus: Deep-dive coverage from Class 11th basics to advanced concepts.',
-    'Mock Test Series: Full-length tests simulating actual JEE Advanced pattern.',
-  ],
-  curriculum: [
-    {
-      key: 'physics',
-      name: 'Physics',
-      iconName: 'atom',
-      accentColor: colors.secondary,
-      chapterCount: '28 Chapters',
-      hours: '250+ Hours',
-      chapters: [
-        { name: 'Kinematics & Mechanics', isLocked: false },
-        { name: 'Laws of Motion', isLocked: true },
-        { name: 'Work, Energy & Power', isLocked: true },
-        { name: 'Rotational Motion', isLocked: true },
-        { name: 'Gravitation', isLocked: true },
-      ],
-    },
-    {
-      key: 'chemistry',
-      name: 'Chemistry',
-      iconName: 'science',
-      accentColor: colors.primary,
-      chapterCount: '32 Chapters',
-      hours: '220+ Hours',
-      chapters: [
-        { name: 'Some Basic Concepts', isLocked: false },
-        { name: 'Atomic Structure', isLocked: true },
-        { name: 'Chemical Bonding', isLocked: true },
-        { name: 'Thermodynamics', isLocked: true },
-        { name: 'Equilibrium', isLocked: true },
-      ],
-    },
-    {
-      key: 'mathematics',
-      name: 'Mathematics',
-      iconName: 'layers',
-      accentColor: '#F59E0B',
-      chapterCount: '25 Chapters',
-      hours: '300+ Hours',
-      chapters: [
-        { name: 'Sets & Functions', isLocked: false },
-        { name: 'Trigonometry', isLocked: true },
-        { name: 'Algebra', isLocked: true },
-        { name: 'Calculus', isLocked: true },
-        { name: 'Coordinate Geometry', isLocked: true },
-      ],
-    },
-  ],
-  instructors: [
-    {
-      key: 'sameer-verma',
-      name: 'Dr. Sameer Verma',
-      credential: 'IIT Delhi Alumni',
-      experience: '15+ Years Experience (Physics)',
-      accentColor: colors.secondary,
-      initials: 'SV',
-      avatarBg: colors.tint.blue,
-    },
-    {
-      key: 'priya-sharma',
-      name: 'Priya Sharma',
-      credential: 'Gold Medalist (Chemistry)',
-      experience: '10+ Years Experience',
-      accentColor: colors.primary,
-      initials: 'PS',
-      avatarBg: colors.tint.green,
-    },
-    {
-      key: 'ankit-kapoor',
-      name: 'Ankit Kapoor',
-      credential: 'Mathematics Wizard',
-      experience: 'AIR 420 in JEE ADV',
-      accentColor: '#F59E0B',
-      initials: 'AK',
-      avatarBg: colors.tint.amber,
-    },
-  ],
-  faqs: [
-    {
-      key: 'beginner',
-      question: 'Is this course for beginners?',
-      answer:
-        'Yes, we start from basic concepts of Class 11th and progress to advanced JEE Advanced problems. No prior JEE preparation is required.',
-    },
-    {
-      key: 'offline',
-      question: 'Can I watch offline?',
-      answer:
-        'Yes, you can download all recorded lectures and PDF notes in our mobile app for offline study. Available on both Android and iOS.',
-    },
-    {
-      key: 'validity',
-      question: 'How long is the course valid?',
-      answer:
-        'The course is valid until JEE Advanced 2025. You get full access to all live sessions, recordings, and materials throughout your preparation journey.',
-    },
-    {
-      key: 'doubt',
-      question: 'How do I get my doubts cleared?',
-      answer:
-        'You can ask doubts during live classes via chat, book 1-on-1 mentorship sessions, or post in the community forum where educators respond within 24 hours.',
-    },
-  ],
-};
+type CourseDetailRouteProp = RouteProp<AppStackParamList, 'CourseDetail'>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Sub-Components
@@ -335,11 +220,101 @@ const FaqItemBlock = React.memo(function FaqItemBlock({
   );
 });
 
-// ─── Module-level constants ──────────────────────────────────────────────────
+// ─── Purchase Flow ──────────────────────────────────────────────────────────
 
-/** Placeholder for future enrollment navigation. */
-function handleEnroll(): void {
-  /* TODO: Navigate to enrollment/payment flow */
+/**
+ * Payment Status Overlay shown during the purchase flow.
+ * Displays different messages for each state of the purchase.
+ */
+function PurchaseOverlay({
+  purchaseState,
+  onDismiss,
+  onRetry,
+}: {
+  purchaseState: PurchaseStateContext;
+  onDismiss: () => void;
+  onRetry: () => void;
+}): React.JSX.Element | null {
+  const { state, errorMessage, courseName, formattedAmount } = purchaseState;
+
+  if (state === 'idle' || state === 'enrolled') {
+    return null;
+  }
+
+  const isProcessing = state === 'creating_order' || state === 'checkout_open' || state === 'payment_received' || state === 'polling_enrollment';
+  const isFailed = state === 'failed';
+
+  const getTitle = () => {
+    switch (state) {
+      case 'creating_order':
+        return 'Setting up payment…';
+      case 'checkout_open':
+        return 'Complete payment in the checkout';
+      case 'payment_received':
+        return 'Payment received';
+      case 'polling_enrollment':
+        return 'Confirming your enrollment…';
+      case 'failed':
+        return 'Payment failed';
+      default:
+        return '';
+    }
+  };
+
+  const getMessage = () => {
+    switch (state) {
+      case 'creating_order':
+        return 'Please wait while we prepare your checkout.';
+      case 'checkout_open':
+        return 'Follow the instructions in the Razorpay checkout to complete your payment.';
+      case 'payment_received':
+        return `We're confirming your payment${courseName ? ` for ${courseName}` : ''}${formattedAmount ? ` of ${formattedAmount}` : ''}. This usually takes a few seconds.`;
+      case 'polling_enrollment':
+        return `Your payment is being verified by our system${courseName ? ` for ${courseName}` : ''}. You'll get access to the course once the confirmation is complete.`;
+      case 'failed':
+        return errorMessage ?? 'An unexpected error occurred. Please try again.';
+      default:
+        return '';
+    }
+  };
+
+  return (
+    <Modal transparent animationType="fade" visible>
+      <View style={styles.overlayBackdrop}>
+        <View style={styles.overlayCard}>
+          {isProcessing && (
+            <ActivityIndicator size="large" color={colors.secondary} style={styles.overlaySpinner} />
+          )}
+          {isFailed && (
+            <View style={styles.overlayIconWrap}>
+              <Icon name="x-circle" color="#DC2626" width={40} height={40} />
+            </View>
+          )}
+          <Text style={styles.overlayTitle}>{getTitle()}</Text>
+          <Text style={styles.overlayMessage}>{getMessage()}</Text>
+
+          {isFailed && (
+            <View style={styles.overlayActions}>
+              <TouchableOpacity
+                onPress={onRetry}
+                style={styles.overlayRetryButton}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.overlayRetryText}>Try Again</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={onDismiss}
+                style={styles.overlayDismissButton}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.overlayDismissText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -349,13 +324,252 @@ function handleEnroll(): void {
 export default function CourseDetailScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const route = useRoute<CourseDetailRouteProp>();
+
+  // ── Get courseId from navigation params ───────────────────────
+  const { courseId } = route.params;
+  console.log('[COURSE_UI] CourseDetailScreen mounted with courseId:', courseId);
+
+  // Validate UUID format
+  const isValidUuid = UUID_REGEX.test(courseId);
+  if (!isValidUuid) {
+    console.warn('[COURSE_UI] WARNING: courseId is not a valid UUID:', courseId);
+  }
+
+  // ── Fetch course from Supabase ─────────────────────────────────
+  const {
+    data: course,
+    isLoading: courseLoading,
+    error: courseError,
+    refetch: refetchCourse,
+  } = useCourse(courseId);
+
+  // ── Stable course values for hooks ─────────────────────────────
+  const courseTitle = course?.title ?? '';
+  const coursePrice = course?.price ?? 0;
+  const dbCourseId = course?.courseId ?? courseId;
+
+  // ── Purchase state ────────────────────────────────────────────
+  const [purchaseState, setPurchaseState] = useState<PurchaseStateContext>({
+    state: 'idle',
+  });
+
+  // ── Check enrollment on screen mount ──────────────────────────
+  // Query `course_enrollments` directly so the button always reflects
+  // the live database state — even after app restart or navigation back.
+  useEffect(() => {
+    console.log('[COURSE_DETAIL] Screen mounted');
+    console.log('[COURSE_DETAIL] courseId:', courseId);
+
+    if (!isValidUuid) {
+      console.log('[COURSE_DETAIL] Skipping enrollment check — invalid UUID');
+      return;
+    }
+
+    const checkInitialEnrollment = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const profileId = sessionData?.session?.user?.id;
+
+        if (!profileId) {
+          console.log('[COURSE_DETAIL] No authenticated session — skipping enrollment check');
+          return;
+        }
+
+        console.log('[COURSE_DETAIL] Checking enrollment for profile:', profileId);
+
+        const enrollment = await checkCourseEnrollment(profileId, courseId);
+        console.log('[COURSE_DETAIL] Enrollment check result:', enrollment);
+
+        if (enrollment) {
+          console.log('[COURSE_DETAIL] User is already enrolled — showing Start Learning');
+          setPurchaseState({ state: 'enrolled' });
+        }
+      } catch (err) {
+        console.log('[COURSE_DETAIL] Enrollment check error:', err);
+      }
+    };
+
+    checkInitialEnrollment();
+  }, [courseId, isValidUuid]);
+
+  // Resolved student ID — stored in state so usePurchaseStatus can
+  // react to it when it changes (useRef would be stale at render time).
+  const [studentId, setStudentId] = useState<string | null>(null);
+
+  // ── Payment hooks ─────────────────────────────────────────────
+  const createOrderMutation = useCreatePaymentOrder();
+
+  const isPolling =
+    purchaseState.state === 'payment_received' ||
+    purchaseState.state === 'polling_enrollment';
+
+  const { pollStatus, reset: resetPoll } = usePurchaseStatus({
+    studentId,
+    courseId: dbCourseId,
+    enabled: isPolling,
+    config: {
+      intervalMs: 2500,
+      timeoutMs: 120000,
+    },
+  });
+
+  // ── React to poll status changes ──────────────────────────────
+  useEffect(() => {
+    if (pollStatus.status === 'enrolled') {
+      console.log('[PAYMENT_FLOW] Enrollment confirmed via polling!');
+      setPurchaseState((prev) => ({ ...prev, state: 'enrolled' }));
+    } else if (pollStatus.status === 'timeout') {
+      console.log('[PAYMENT_FLOW] Polling timed out');
+      setPurchaseState({
+        state: 'failed',
+        errorMessage:
+          'Payment confirmation is taking longer than expected. Your enrollment will be activated shortly. Please check back later or contact support.',
+        courseName: courseTitle,
+        formattedAmount: formatPrice(coursePrice),
+      });
+    } else if (pollStatus.status === 'error') {
+      setPurchaseState({
+        state: 'failed',
+        errorMessage: pollStatus.message,
+      });
+    }
+  }, [pollStatus, courseTitle, coursePrice]);
+
+  // ── Enroll handler ────────────────────────────────────────────
+  const handleEnroll = useCallback(async () => {
+    if (purchaseState.state !== 'idle' && purchaseState.state !== 'failed') {
+      return;
+    }
+
+    try {
+      console.log('[PAYMENT_FLOW] Buy button pressed');
+      console.log('[PAYMENT_FLOW] Course UUID being used:', dbCourseId);
+
+      // Verify course ID is valid before proceeding
+      if (!dbCourseId || !UUID_REGEX.test(dbCourseId)) {
+        console.error('[PAYMENT_FLOW] Invalid course UUID:', dbCourseId);
+        setPurchaseState({
+          state: 'failed',
+          errorMessage: 'The course data is not valid. Please go back and try again.',
+        });
+        return;
+      }
+
+      setPurchaseState({
+        state: 'creating_order',
+        courseName: courseTitle,
+        formattedAmount: formatPrice(coursePrice),
+      });
+
+      // 1. Verify the user is authenticated (no student_details required)
+      console.log('[PAYMENT_FLOW] Checking authentication...');
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      const profileId = sessionData?.session?.user?.id;
+      if (!profileId || sessionError) {
+        console.log('[PAYMENT_FLOW] No authenticated session found');
+        setPurchaseState({
+          state: 'failed',
+          errorMessage: 'Please sign in to enroll in courses.',
+        });
+        return;
+      }
+      console.log('[PAYMENT_FLOW] Authenticated profile_id:', profileId);
+      setStudentId(profileId);
+
+      // 2. Create payment order via Edge Function
+      // The Edge Function receives the profile_id and resolves instituteId
+      // server-side. student_details is created post-purchase by the webhook.
+      console.log('[PAYMENT_FLOW] Creating payment order for course UUID:', dbCourseId);
+      const result = await createOrderMutation.mutateAsync({
+        courseId: dbCourseId,
+        studentId: profileId,
+        instituteId: '', // Resolved server-side by the Edge Function
+      });
+
+      console.log('[PAYMENT_FLOW] Payment order created:', result.razorpayOrderId);
+
+      // 3. Open Razorpay checkout
+      setPurchaseState((prev) => ({
+        ...prev,
+        state: 'checkout_open',
+        razorpayOrderId: result.razorpayOrderId,
+        orderId: result.orderId,
+      }));
+      console.log('[PAYMENT_FLOW] Opening Razorpay checkout...');
+
+      const razorpayResult = await openCheckout(result);
+
+      if (razorpayResult.success) {
+        console.log('[PAYMENT_FLOW] Razorpay payment succeeded:', razorpayResult.data.razorpay_payment_id);
+        // Payment received — start polling for enrollment.
+        // The backend webhook handles verification and enrollment creation.
+        // Do NOT call complete-course-purchase from the mobile app.
+        setPurchaseState((prev) => ({
+          ...prev,
+          state: 'polling_enrollment',
+          razorpayOrderId: result.razorpayOrderId,
+          orderId: result.orderId,
+        }));
+      } else {
+        const errorInfo = razorpayResult.error;
+        if (typeof errorInfo === 'string') {
+          console.log('[PAYMENT_FLOW] Razorpay SDK error:', errorInfo);
+          setPurchaseState({
+            state: 'failed',
+            errorMessage: errorInfo,
+            razorpayOrderId: result.razorpayOrderId,
+          });
+        } else {
+          const code = errorInfo.code;
+          const description = errorInfo.description;
+
+          console.log('[PAYMENT_FLOW] Razorpay error:', code, description);
+
+          if (code === 2) {
+            setPurchaseState({
+              state: 'failed',
+              errorMessage:
+                "Payment was cancelled. You can try again whenever you're ready.",
+              razorpayOrderId: result.razorpayOrderId,
+            });
+          } else {
+            setPurchaseState({
+              state: 'failed',
+              errorMessage: description || 'Payment failed. Please try again.',
+              razorpayOrderId: result.razorpayOrderId,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      // Catch any unhandled error (network failure, mutation reject, etc.)
+      const message =
+        err instanceof Error ? err.message : 'An unexpected error occurred.';
+      console.log('[PAYMENT_FLOW] Unhandled error:', message);
+      setPurchaseState({
+        state: 'failed',
+        errorMessage: message,
+        courseName: courseTitle,
+        formattedAmount: formatPrice(coursePrice),
+      });
+    }
+  }, [purchaseState.state, createOrderMutation, dbCourseId, courseTitle, coursePrice]);
+
+  // ── Reset purchase flow ───────────────────────────────────────
+  const resetPurchase = useCallback(() => {
+    resetPoll();
+    setStudentId(null);
+    setPurchaseState({ state: 'idle' });
+  }, [resetPoll]);
 
   // ── Share handler ─────────────────────────────────────────────
   async function handleShare(): Promise<void> {
+    if (!course) return;
     try {
       await Share.share({
-        title: MOCK_COURSE.title,
-        message: `Check out "${MOCK_COURSE.title}" on MockPrep! 🎓\n\nPrice: ${formatPrice(MOCK_COURSE.price)} (${MOCK_COURSE.discountLabel} OFF)\n\nDownload the app now!`,
+        title: course.title,
+        message: `Check out "${course.title}" on MockPrep! 🎓\n\nPrice: ${formatPrice(course.price)}${course.discountLabel ? ` (${course.discountLabel} OFF)` : ''}\n\nDownload the app now!`,
       });
     } catch {
       // User cancelled share
@@ -368,6 +582,81 @@ export default function CourseDetailScreen(): React.JSX.Element {
     [insets.bottom],
   );
 
+  // ── Determine button state ────────────────────────────────────
+  const isEnrolled = purchaseState.state === 'enrolled';
+  const isPurchasing = purchaseState.state !== 'idle' && purchaseState.state !== 'failed' && purchaseState.state !== 'enrolled';
+  const buyDisabled = !course || isPurchasing || !!courseError || courseLoading;
+
+  // Log current CTA state for debugging
+  console.log('[COURSE_DETAIL] CTA state:', purchaseState.state);
+
+  // ── Loading State ─────────────────────────────────────────────
+  if (courseLoading) {
+    return (
+      <View style={styles.screen}>
+        <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={navigation.goBack}
+              style={styles.headerButton}
+              activeOpacity={0.7}
+              accessibilityLabel="Go back"
+              accessibilityRole="button"
+            >
+              <Icon name="arrow-left" color={colors.text.primary} width={22} height={22} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle} numberOfLines={1}>Course Details</Text>
+            <View style={styles.headerButton} />
+          </View>
+        </SafeAreaView>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.secondary} />
+          <Text style={styles.loadingText}>Loading course details…</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Error State ───────────────────────────────────────────────
+  if (courseError || !course) {
+    return (
+      <View style={styles.screen}>
+        <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={navigation.goBack}
+              style={styles.headerButton}
+              activeOpacity={0.7}
+              accessibilityLabel="Go back"
+              accessibilityRole="button"
+            >
+              <Icon name="arrow-left" color={colors.text.primary} width={22} height={22} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle} numberOfLines={1}>Course Details</Text>
+            <View style={styles.headerButton} />
+          </View>
+        </SafeAreaView>
+        <View style={styles.errorContainer}>
+          <View style={styles.errorIconWrap}>
+            <Icon name="alert-triangle" color="#DC2626" width={48} height={48} />
+          </View>
+          <Text style={styles.errorTitle}>Could not load course</Text>
+          <Text style={styles.errorText}>
+            {courseError instanceof Error ? courseError.message : 'The course you\'re looking for could not be found. It may have been removed or is no longer available.'}
+          </Text>
+          <TouchableOpacity
+            onPress={() => refetchCourse()}
+            style={styles.retryButton}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Render Course Data ────────────────────────────────────────
   return (
     <View style={styles.screen}>
       {/* ═══ Fixed Header ═══ */}
@@ -408,118 +697,180 @@ export default function CourseDetailScreen(): React.JSX.Element {
       >
         {/* ─── Course Info Card ──────────────────────────────────── */}
         <View style={styles.infoCard}>
-          <Text style={styles.categoryBadge}>{MOCK_COURSE.category}</Text>
-          <Text style={styles.courseTitle}>{MOCK_COURSE.title}</Text>
+          <Text style={styles.categoryBadge}>{course.category}</Text>
+          <Text style={styles.courseTitle}>{course.title}</Text>
 
-          {/* Rating & Stats Row */}
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Icon name="star" color="#FBBF24" width={16} height={16} />
-              <Text style={styles.statText}>
-                {MOCK_COURSE.rating} ({formatCount(MOCK_COURSE.reviewCount)} Reviews)
-              </Text>
+          {/* Rating & Stats Row — only show when there's data */}
+          {(course.rating > 0 || course.studentCount > 0) && (
+            <View style={styles.statsRow}>
+              {course.rating > 0 && (
+                <View style={styles.statItem}>
+                  <Icon name="star" color="#FBBF24" width={16} height={16} />
+                  <Text style={styles.statText}>
+                    {course.rating} {course.reviewCount > 0 ? `(${formatCount(course.reviewCount)} Reviews)` : ''}
+                  </Text>
+                </View>
+              )}
+              {course.rating > 0 && course.studentCount > 0 && <View style={styles.statDot} />}
+              {course.studentCount > 0 && (
+                <View style={styles.statItem}>
+                  <Icon name="users" color={colors.text.secondary} width={16} height={16} />
+                  <Text style={styles.statText}>{formatCount(course.studentCount)}+ Students</Text>
+                </View>
+              )}
             </View>
-            <View style={styles.statDot} />
-            <View style={styles.statItem}>
-              <Icon name="users" color={colors.text.secondary} width={16} height={16} />
-              <Text style={styles.statText}>{formatCount(MOCK_COURSE.studentCount)}+ Students</Text>
-            </View>
-          </View>
+          )}
 
-          {/* Best Seller Badge */}
-          <View style={styles.badgeRow}>
-            <View style={styles.bestSellerBadge}>
-              <Icon name="trophy" color="#FBBF24" width={12} height={12} />
-              <Text style={styles.bestSellerText}>{MOCK_COURSE.badgeLabel}</Text>
+          {/* Badge — only show when badgeLabel exists */}
+          {course.badgeLabel && (
+            <View style={styles.badgeRow}>
+              <View style={styles.bestSellerBadge}>
+                <Icon name="trophy" color="#FBBF24" width={12} height={12} />
+                <Text style={styles.bestSellerText}>{course.badgeLabel}</Text>
+              </View>
             </View>
-          </View>
+          )}
 
           {/* Pricing */}
           <View style={styles.pricingDivider} />
           <View style={styles.pricingRow}>
             <View style={styles.pricingLeft}>
-              <Text style={styles.currentPrice}>{formatPrice(MOCK_COURSE.price)}</Text>
-              <Text style={styles.originalPrice}>{formatPrice(MOCK_COURSE.originalPrice)}</Text>
-              <View style={styles.discountBadge}>
-                <Text style={styles.discountText}>{MOCK_COURSE.discountLabel}</Text>
-              </View>
+              <Text style={styles.currentPrice}>{formatPrice(course.price)}</Text>
+              {course.originalPrice > course.price && (
+                <Text style={styles.originalPrice}>{formatPrice(course.originalPrice)}</Text>
+              )}
+              {course.discountLabel && (
+                <View style={styles.discountBadge}>
+                  <Text style={styles.discountText}>{course.discountLabel}</Text>
+                </View>
+              )}
             </View>
           </View>
-          <Text style={styles.offerText}>{MOCK_COURSE.offerMessage}</Text>
+          {course.offerMessage && (
+            <Text style={styles.offerText}>{course.offerMessage}</Text>
+          )}
         </View>
 
-        {/* ─── Metrics Bento Grid ────────────────────────────────── */}
-        <View style={styles.metricsGrid}>
-          {MOCK_COURSE.metrics.map((metric) => (
-            <MetricGridItem key={metric.key} metric={metric} />
-          ))}
-        </View>
+        {/* ─── Metrics Bento Grid — only when data exists ──────────── */}
+        {course.metrics.length > 0 && (
+          <View style={styles.metricsGrid}>
+            {course.metrics.map((metric) => (
+              <MetricGridItem key={metric.key} metric={metric} />
+            ))}
+          </View>
+        )}
 
         {/* ─── About Section ─────────────────────────────────────── */}
-        <SectionCard>
-          <Text style={styles.sectionTitle}>About this Course</Text>
-          <Text style={styles.aboutText}>{MOCK_COURSE.aboutDescription}</Text>
-          <View style={styles.featureList}>
-            {MOCK_COURSE.aboutFeatures.map((feature, idx) => (
-              <View key={idx} style={styles.featureItem}>
-                <View style={styles.featureBullet}>
-                  <Icon name="badge-check" color={colors.primary} width={16} height={16} />
-                </View>
-                <Text style={styles.featureText}>{feature}</Text>
+        {course.aboutDescription && (
+          <SectionCard>
+            <Text style={styles.sectionTitle}>About this Course</Text>
+            <Text style={styles.aboutText}>{course.aboutDescription}</Text>
+            {course.aboutFeatures.length > 0 && (
+              <View style={styles.featureList}>
+                {course.aboutFeatures.map((feature, idx) => (
+                  <View key={idx} style={styles.featureItem}>
+                    <View style={styles.featureBullet}>
+                      <Icon name="badge-check" color={colors.primary} width={16} height={16} />
+                    </View>
+                    <Text style={styles.featureText}>{feature}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
-        </SectionCard>
+            )}
+          </SectionCard>
+        )}
 
-        {/* ─── Curriculum Section ────────────────────────────────── */}
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Course Curriculum</Text>
-          <View style={styles.accordionList}>
-            {MOCK_COURSE.curriculum.map((subject) => (
-              <CurriculumAccordion key={subject.key} subject={subject} />
-            ))}
-          </View>
-        </SectionCard>
+        {/* ─── Curriculum Section — only when data exists ──────────── */}
+        {course.curriculum.length > 0 && (
+          <SectionCard>
+            <Text style={styles.sectionTitle}>Course Curriculum</Text>
+            <View style={styles.accordionList}>
+              {course.curriculum.map((subject) => (
+                <CurriculumAccordion key={subject.key} subject={subject} />
+              ))}
+            </View>
+          </SectionCard>
+        )}
 
-        {/* ─── Instructors Section ───────────────────────────────── */}
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Your Mentors</Text>
-          <View style={styles.instructorsList}>
-            {MOCK_COURSE.instructors.map((instructor) => (
-              <InstructorCard key={instructor.key} instructor={instructor} />
-            ))}
-          </View>
-        </SectionCard>
+        {/* ─── Instructors Section — only when data exists ──────────── */}
+        {course.instructors.length > 0 && (
+          <SectionCard>
+            <Text style={styles.sectionTitle}>Your Mentors</Text>
+            <View style={styles.instructorsList}>
+              {course.instructors.map((instructor) => (
+                <InstructorCard key={instructor.key} instructor={instructor} />
+              ))}
+            </View>
+          </SectionCard>
+        )}
 
-        {/* ─── FAQ Section ───────────────────────────────────────── */}
-        <SectionCard>
-          <Text style={styles.sectionTitle}>Frequently Asked</Text>
-          <View style={styles.faqList}>
-            {MOCK_COURSE.faqs.map((faq, idx) => (
-              <FaqItemBlock key={faq.key} faq={faq} index={idx} />
-            ))}
-          </View>
-        </SectionCard>
+        {/* ─── FAQ Section — only when data exists ───────────────── */}
+        {course.faqs.length > 0 && (
+          <SectionCard>
+            <Text style={styles.sectionTitle}>Frequently Asked</Text>
+            <View style={styles.faqList}>
+              {course.faqs.map((faq, idx) => (
+                <FaqItemBlock key={faq.key} faq={faq} index={idx} />
+              ))}
+            </View>
+          </SectionCard>
+        )}
       </ScrollView>
+
+      {/* ═══ Payment Overlay ═══ */}
+      <PurchaseOverlay
+        purchaseState={purchaseState}
+        onDismiss={resetPurchase}
+        onRetry={handleEnroll}
+      />
 
       {/* ═══ Fixed Bottom Bar ═══ */}
       <SafeAreaView edges={['bottom']} style={styles.bottomSafeArea}>
         <View style={styles.bottomBar}>
           <View style={styles.bottomPriceWrap}>
-            <Text style={styles.bottomPrice}>{formatPrice(MOCK_COURSE.price)}</Text>
-            <Text style={styles.bottomOriginalPrice}>{formatPrice(MOCK_COURSE.originalPrice)}</Text>
+            {isEnrolled ? (
+              <Text style={styles.bottomEnrolledLabel}>Enrolled</Text>
+            ) : (
+              <>
+                <Text style={styles.bottomPrice}>{formatPrice(course.price)}</Text>
+                {course.originalPrice > course.price && (
+                  <Text style={styles.bottomOriginalPrice}>{formatPrice(course.originalPrice)}</Text>
+                )}
+              </>
+            )}
           </View>
           <View style={styles.bottomButtons}>
-            <TouchableOpacity
-              onPress={handleEnroll}
-              style={styles.enrollButton}
-              activeOpacity={0.85}
-              accessibilityLabel="Enroll now"
-              accessibilityRole="button"
-            >
-              <Icon name="badge-check" color={colors.text.inverse} width={16} height={16} />
-              <Text style={styles.enrollButtonText}>Enroll Now</Text>
-            </TouchableOpacity>
+            {isEnrolled ? (
+              <TouchableOpacity
+                style={[styles.enrollButton, styles.enrolledButton]}
+                activeOpacity={0.85}
+                accessibilityLabel="Start learning"
+                accessibilityRole="button"
+              >
+                <Icon name="play-circle" color={colors.text.inverse} width={16} height={16} />
+                <Text style={styles.enrollButtonText}>Start Learning</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={handleEnroll}
+                style={[styles.enrollButton, buyDisabled && styles.enrollButtonDisabled]}
+                activeOpacity={0.85}
+                disabled={buyDisabled}
+                accessibilityLabel={isPurchasing ? 'Processing payment' : 'Enroll now'}
+                accessibilityRole="button"
+              >
+                {isPurchasing ? (
+                  <ActivityIndicator size="small" color={colors.text.inverse} />
+                ) : (
+                  <>
+                    <Icon name="badge-check" color={colors.text.inverse} width={16} height={16} />
+                    <Text style={styles.enrollButtonText}>
+                      {courseLoading ? 'Loading…' : 'Enroll Now'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </SafeAreaView>
@@ -567,6 +918,67 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     marginHorizontal: spacing[8],
+  },
+
+  // ── Loading State ─────────────────────────────────────────────
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing[16],
+  },
+  loadingText: {
+    ...typography.body,
+    fontSize: 14,
+    color: colors.text.secondary,
+  },
+
+  // ── Error State ───────────────────────────────────────────────
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing[32],
+    gap: spacing[12],
+  },
+  errorIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[8],
+  },
+  errorTitle: {
+    ...typography.title,
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  errorText: {
+    ...typography.body,
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing[24],
+    paddingVertical: spacing[12],
+    borderRadius: radius.md,
+    backgroundColor: colors.secondary,
+    marginTop: spacing[8],
+  },
+  retryButtonText: {
+    ...typography.button,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.inverse,
   },
 
   // ── Scroll View ───────────────────────────────────────────────
@@ -1042,5 +1454,101 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: colors.text.inverse,
+  },
+  enrollButtonDisabled: {
+    opacity: 0.7,
+  },
+  enrolledButton: {
+    backgroundColor: colors.primary,
+  },
+  bottomEnrolledLabel: {
+    ...typography.subtitle,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+
+  // ── Purchase Overlay ─────────────────────────────────────────
+  overlayBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing[24],
+  },
+  overlayCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing[24],
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 24,
+      },
+      android: { elevation: 10 },
+    }),
+  },
+  overlaySpinner: {
+    marginBottom: spacing[16],
+  },
+  overlayIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[16],
+  },
+  overlayTitle: {
+    ...typography.title,
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+    marginBottom: spacing[8],
+  },
+  overlayMessage: {
+    ...typography.body,
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing[20],
+  },
+  overlayActions: {
+    flexDirection: 'column',
+    gap: spacing[8],
+    width: '100%',
+  },
+  overlayRetryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[8],
+    paddingVertical: spacing[12],
+    borderRadius: radius.md,
+    backgroundColor: colors.secondary,
+  },
+  overlayRetryText: {
+    ...typography.button,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.inverse,
+  },
+  overlayDismissButton: {
+    alignItems: 'center',
+    paddingVertical: spacing[12],
+  },
+  overlayDismissText: {
+    ...typography.button,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.secondary,
   },
 });

@@ -4,6 +4,10 @@
  * Production-ready type definitions for the Course Detail screen — pricing,
  * curriculum, instructors, metrics, and FAQs.
  *
+ * Sections that depend on data not yet available in the database
+ * (curriculum, instructors, FAQs, metrics, reviews) are marked as optional
+ * so the detail screen gracefully degrades when those features are absent.
+ *
  * @module types/courseDetail
  */
 
@@ -83,38 +87,46 @@ export interface FaqItem {
 // ─── Course Detail (top-level) ──────────────────────────────────────────────
 
 export interface CourseDetail {
-  /** Unique course identifier. */
+  /** Unique course identifier (UUID from the database). */
   courseId: string;
-  /** Category badge (e.g. "Engineering Entrance"). */
+  /** Category badge (stream name, e.g. "Engineering Entrance"). */
   category: string;
   /** Course title. */
   title: string;
-  /** Average rating (0–5). */
+  /** Average rating (0–5). Defaults to 0 when course_reviews table is absent. */
   rating: number;
-  /** Number of reviews. */
+  /** Number of reviews. Defaults to 0 when course_reviews table is absent. */
   reviewCount: number;
-  /** Number of enrolled students. */
+  /** Number of enrolled students. Defaults to 0 when enrollment count query not run. */
   studentCount: number;
-  /** Premium badge label (e.g. "Best Seller"). */
-  badgeLabel: string;
-  /** Current price in ₹. */
+  /** Premium badge label (e.g. "Best Seller", "Featured"). Null when not applicable. */
+  badgeLabel: string | null;
+  /** Current selling price in ₹ (discounted_price if available, else original_price). */
   price: number;
   /** Original price before discount. */
   originalPrice: number;
-  /** Discount percentage string (e.g. "50% OFF"). */
-  discountLabel: string;
-  /** Limited time offer message. */
-  offerMessage: string;
-  /** Metrics grid items. */
+  /** Discount percentage string (e.g. "50% OFF"). Undefined when no discount. */
+  discountLabel?: string;
+  /** Limited time offer message. Undefined when not available from DB. */
+  offerMessage?: string;
+  /** Metrics grid items. Empty array when not available from DB. */
   metrics: CourseMetric[];
   /** About description in paragraphs or bullet items. */
   aboutDescription: string;
-  /** About features list (bullet points). */
+  /** About features list (bullet points). Empty when not available. */
   aboutFeatures: string[];
-  /** Curriculum subjects with chapters. */
+  /** Curriculum subjects with chapters. Empty when curriculum not available. */
   curriculum: CurriculumSubject[];
-  /** Instructor profiles. */
+  /** Instructor profiles. Empty when instructors not available. */
   instructors: Instructor[];
-  /** Frequently asked questions. */
+  /** Frequently asked questions. Empty when FAQs not available. */
   faqs: FaqItem[];
+
+  // ── Optional fields from the database ──────────────────────────
+  /** Language of instruction (e.g. "Hindi", "English"). */
+  language?: string;
+  /** Difficulty level (e.g. "beginner", "intermediate", "advanced"). */
+  difficultyLevel?: string;
+  /** Course duration in days. */
+  duration?: number | null;
 }

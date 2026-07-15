@@ -33,6 +33,7 @@ import type {
 import type {
   TrendingCourse,
 } from '../../types/home';
+import type { CourseDetail } from '../../types/courseDetail';
 
 // ─── Database Row Shape ────────────────────────────────────────────────────
 
@@ -454,4 +455,212 @@ export async function getCoursesByStream(
     return { success: false, error: extractErrorMessage(err) };
   }
 }
+
+// ─── Course Detail ──────────────────────────────────────────────────────────
+
+/**
+ * Raw snake_case shape of a row from the `courses` table for the detail screen,
+ * with stream name joined.
+ */
+interface DbCourseDetailRaw {
+  course_id: string;
+  title: string;
+  short_description: string | null;
+  description: string | null;
+  thumbnail_bucket: string | null;
+  thumbnail_path: string | null;
+  language: string | null;
+  difficulty_level: string | null;
+  duration: number | null;
+  original_price: number;
+  discounted_price: number | null;
+  featured: boolean;
+  trending: boolean;
+  status: string;
+  published_at: string | null;
+  /** Nested join result from `streams` table. */
+  stream: { name: string } | null;
+}
+
+/**
+ * Fetch a single course by its UUID for the Course Detail screen.
+ *
+ * Returns the full course details including stream name and pricing.
+ * The Edge Function will be called separately for payment order creation.
+ *
+ * @param courseId - The course UUID.
+ *
+ * @example
+ * const result = await getCourseById('uuid-here');
+ * if (result.success) {
+ *   console.log(result.data.title);
+ * }
+ */
+/**
+ * Fetch all published courses for the Courses listing page.
+ *
+ * Returns published, non-deleted courses sorted by publish date descending.
+ * Supports pagination via `PaginationParams`.
+ *
+ * @param pagination - Optional pagination parameters (defaults to 50 per page).
+ *
+ * @example
+ * const result = await getPublishedCourses({ page: 1, pageSize: 50 });
+ * if (result.success) {
+ *   console.log(result.data.data);  // TrendingCourse[]
+ * }
+ */
+export async function getPublishedCourses(
+  pagination?: PaginationParams,
+): Promise<ApiResponse<PaginatedResponse<TrendingCourse>>> {
+  console.log('[COURSE_SERVICE] Fetching published courses...');
+
+  try {
+    const { page, pageSize, from, to } = buildPagination({
+      page: pagination?.page ?? 1,
+      pageSize: pagination?.pageSize ?? 50,
+    });
+
+    const { data, error, count } = await supabase
+      .from('courses')
+      .select(
+        `
+        course_id,
+        title,
+        short_description,
+        description,
+        thumbnail_bucket,
+        thumbnail_path,
+        language,
+        difficulty_level,
+        duration,
+        original_price,
+        discounted_price,
+        featured,
+        trending,
+        status,
+        published_at,
+        stream:stream_id(name)
+        `,
+        { count: 'exact' },
+      )
+      .eq('status', 'published')
+      .is('deleted_at', null)
+      .order('published_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.log('[COURSE_SERVICE] Query error:', error.message);
+      return { success: false, error: extractErrorMessage(error) };
+    }
+
+    const courses = (data ?? []).map(
+      (item) => mapCourseToTrendingCourse(item as unknown as DbTrendingCourseRaw),
+    );
+
+    console.log('[COURSE_SERVICE] Published courses loaded:', courses.length);
+    return {
+      success: true,
+      data: buildPaginatedResponse(courses, count ?? 0, page, pageSize),
+    };
+  } catch (err) {
+    console.log('[COURSE_SERVICE] Unexpected error:', err);
+    return { success: false, error: extractErrorMessage(err) };
+  }
+}
+
+/**
+ * Fetch a single course by its UUID for the Course Detail screen.
+ *
+ * Returns the full course details including stream name and pricing.
+ * The Edge Function will be called separately for payment order creation.
+ *
+ * @param courseId - The course UUID.
+ *
+ * @example
+ * const result = await getCourseById('uuid-here');
+ * if (result.success) {
+ *   console.log(result.data.title);
+ * }
+ */
+export async function getCourseById(
+  courseId: string,
+): Promise<ApiResponse<CourseDetail>> {
+  console.log('[COURSE_SERVICE] Fetching course by ID:', courseId);
+
+  try {
+    const { data, error } = await supabase
+      .from('courses')
+      .select(
+        `
+        course_id,
+        title,
+        short_description,
+        description,
+        thumbnail_bucket,
+        thumbnail_path,
+        language,
+        difficulty_level,
+        duration,
+        original_price,
+        discounted_price,
+        featured,
+        trending,
+        status,
+        published_at,
+        stream:stream_id(name)
+        `,
+      )
+      .eq('course_id', courseId)
+      .eq('status', 'published')
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (error) {
+      console.log('[COURSE_SERVICE] Query error:', error.message);
+      return { success: false, error: extractErrorMessage(error) };
+    }
+
+    if (!data) {
+      console.log('[COURSE_SERVICE] Course not found:', courseId);
+      return { success: false, error: 'Course not found.' };
+    }
+
+    const raw = data as unknown as DbCourseDetailRaw;
+    const hasDiscount = raw.discounted_price != null && raw.discounted_price < raw.original_price;
+    const currentPrice = hasDiscount ? Number(raw.discounted_price) : Number(raw.original_price);
+
+    const course: CourseDetail = {
+      courseId: raw.course_id,
+      category: raw.stream?.name ?? 'Course',
+      title: raw.title,
+      rating: 0,
+      reviewCount: 0,
+      studentCount: 0,
+      badgeLabel: raw.featured ? 'Featured' : null,
+      price: currentPrice,
+      originalPrice: Number(raw.original_price),
+      discountLabel: hasDiscount
+        ? `${Math.round((1 - currentPrice / Number(raw.original_price)) * 100)}% OFF`
+        : undefined,
+      offerMessage: undefined,
+      metrics: [],
+      aboutDescription: raw.description ?? raw.short_description ?? '',
+      aboutFeatures: [],
+      curriculum: [],
+      instructors: [],
+      faqs: [],
+      language: raw.language ?? undefined,
+      difficultyLevel: raw.difficulty_level ?? undefined,
+      duration: raw.duration ?? undefined,
+    };
+
+    console.log('[COURSE_SERVICE] Course loaded:', course.courseId, course.title);
+    return { success: true, data: course };
+  } catch (err) {
+    console.log('[COURSE_SERVICE] Unexpected error:', err);
+    return { success: false, error: extractErrorMessage(err) };
+  }
+}
+
 

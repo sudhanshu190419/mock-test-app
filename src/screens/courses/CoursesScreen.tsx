@@ -1,8 +1,10 @@
 /**
  * CoursesScreen
  *
- * Production-optimised Courses page — instant navigation, zero
- * animation overhead, minimal re-renders.
+ * Production-optimised Courses page — loads all published courses from
+ * Supabase via the `usePublishedCourses` hook.
+ *
+ * Search and category filtering are applied client-side on the loaded data.
  *
  * @module screens/courses/CoursesScreen
  */
@@ -16,13 +18,16 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 
 import CourseCard from '../../components/courses/CourseCard';
 import Icon from '../../components/home/Icons';
-import type { CourseItem, CourseCategory } from '../../components/home/types';
+import { usePublishedCourses } from '../../hooks/home/useCourses';
+import type { CourseItem, CourseCategory, CourseBadgeType, CourseStats } from '../../components/home/types';
+import type { TrendingCourse } from '../../types/home';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../../theme/colors';
@@ -46,60 +51,43 @@ const CATEGORIES: CategoryChip[] = [
   { key: 'law-others', label: 'Law & Others', filterCategory: 'CLAT' },
 ];
 
-// ─── Sample Course Data ─────────────────────────────────────────────────────
+// ─── Mapping Helper ─────────────────────────────────────────────────────────
 
-const ALL_COURSES: CourseItem[] = [
-  {
-    key: 'jee-main-2026',
-    title: 'JEE Main 2026 Complete Batch',
-    subtitle: 'Class 12 | IIT-JEE Aspirants',
-    description: 'Master Physics, Chemistry & Maths with IITian faculty. Includes live doubt sessions, weekly mock tests, and personalised performance reports.',
-    category: 'JEE',
-    badgeLabel: 'Best Seller',
-    badgeType: 'Best Seller',
-    stats: { duration: '8 Months', hasLiveClasses: true, hasRecorded: true },
-    price: 5999,
-    originalPrice: 24999,
-  },
-  {
-    key: 'neet-ug-2026',
-    title: 'NEET UG 2026 Crash Course',
-    subtitle: 'Class 12 | Medical Aspirants',
-    description: 'Complete NEET syllabus in 5 months with expert faculty. Daily live classes, chapter tests, and full-length mock exams with AI analytics.',
-    category: 'NEET',
-    badgeLabel: 'Popular',
-    badgeType: 'Popular',
-    stats: { duration: '5 Months', hasLiveClasses: true, hasRecorded: true },
-    price: 4999,
-    originalPrice: 19999,
-  },
-  {
-    key: 'class-12-boards-2026',
-    title: 'Class 12 Boards Mastery',
-    subtitle: 'Class 12 | CBSE & State Boards',
-    description: 'Score 95%+ with chapter-wise recorded lectures, PYQ practice, revision notes, and live doubt-clearing sessions every weekend.',
-    category: 'Class 12',
-    badgeLabel: 'Best Seller',
-    badgeType: 'Best Seller',
-    stats: { duration: '6 Months', hasLiveClasses: false, hasRecorded: true },
-    price: 2999,
-    originalPrice: 12999,
-  },
-  {
-    key: 'jee-advanced-2026',
-    title: 'JEE Advanced 2026 Rank Booster',
-    subtitle: 'Class 12 | JEE Advanced Aspirants',
-    description: 'Advanced problem-solving sessions, IOQM-level practice, and exclusive mentorship from top IIT rankers. Limited seats available.',
-    category: 'JEE',
-    badgeLabel: 'New Launch',
-    badgeType: 'New Launch',
-    stats: { duration: '10 Months', hasLiveClasses: true, hasRecorded: true },
-    price: 8999,
-    originalPrice: 34999,
-  },
-];
+/**
+ * Map a backend `TrendingCourse` to the UI-facing `CourseItem`.
+ */
+function mapTrendingCourseToCourseItem(course: TrendingCourse): CourseItem {
+  const hasDiscount = course.originalPrice > course.price;
+  const discountPercent = hasDiscount
+    ? Math.round((1 - course.price / course.originalPrice) * 100)
+    : 0;
 
-// ─── Reusable hitSlop objects (defined once, never re-allocated) ────────────
+  const stats: CourseStats = {
+    duration: course.duration ? `${course.duration} Days` : 'Self-paced',
+    hasLiveClasses: false,
+    hasRecorded: false,
+  };
+
+  const badgeType: CourseBadgeType = course.isBestSeller
+    ? 'Best Seller'
+    : 'Popular';
+
+  return {
+    key: course.courseId,
+    title: course.title,
+    subtitle: course.category,
+    description: course.description,
+    category: course.category as CourseCategory,
+    badgeLabel: course.isBestSeller ? 'Best Seller' : 'Featured',
+    badgeType,
+    stats,
+    price: course.price,
+    originalPrice: course.originalPrice > course.price ? course.originalPrice : undefined,
+    discountLabel: hasDiscount ? `${discountPercent}% Off` : undefined,
+  };
+}
+
+// ─── Reusable hitSlop objects ───────────────────────────────────────────────
 
 const CLEAR_BUTTON_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 } as const;
 
@@ -113,9 +101,25 @@ export default function CoursesScreen(): React.JSX.Element {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
 
+  // ── Fetch courses from Supabase ───────────────────────────────
+  const {
+    data: coursesData,
+    isLoading,
+    error,
+    refetch,
+  } = usePublishedCourses({ page: 1, pageSize: 50 });
+
+  console.log('[COURSES_SCREEN] Courses loaded:', coursesData?.data?.length ?? 0);
+
+  // ── Map to CourseItem[] once ──────────────────────────────────
+  const allCourses = useMemo<CourseItem[]>(() => {
+    const backendData = coursesData?.data ?? [];
+    return backendData.map((course) => mapTrendingCourseToCourseItem(course));
+  }, [coursesData]);
+
   // ── Derived data ─────────────────────────────────────────────
   const filteredCourses = useMemo(() => {
-    let list = ALL_COURSES;
+    let list = allCourses;
 
     if (activeCategory) {
       list = list.filter((c) => c.category === activeCategory);
@@ -133,11 +137,14 @@ export default function CoursesScreen(): React.JSX.Element {
     }
 
     return list;
-  }, [activeCategory, searchText]);
+  }, [allCourses, activeCategory, searchText]);
 
-  // ── Navigation helper (stable reference) ─────────────────────
+  // ── Navigation helper ────────────────────────────────────────
   const navigateToDetail = useCallback(
-    (courseKey: string) => navigation.navigate('CourseDetail', { courseId: courseKey }),
+    (courseId: string) => {
+      console.log('[COURSES_SCREEN] Navigating to course detail:', courseId);
+      navigation.navigate('CourseDetail', { courseId });
+    },
     [navigation],
   );
 
@@ -156,7 +163,7 @@ export default function CoursesScreen(): React.JSX.Element {
     [],
   );
 
-  // ── Stable content container style (avoids object re-allocation) ─
+  // ── Stable content container style ───────────────────────────
   const contentContainerStyle = useMemo(
     () => ({
       paddingBottom: insets.bottom + spacing[24],
@@ -276,8 +283,30 @@ export default function CoursesScreen(): React.JSX.Element {
           </View>
         </View>
 
-        {/* ═══ Index 2+: Course Cards or Empty State ═══ */}
-        {filteredCourses.length > 0 ? (
+        {/* ═══ Index 2+: Loading / Error / Course Cards ═══ */}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.secondary} />
+            <Text style={styles.loadingText}>Loading courses…</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <View style={styles.errorIconWrap}>
+              <Icon name="alert-triangle" color="#DC2626" width={40} height={40} />
+            </View>
+            <Text style={styles.errorTitle}>Could not load courses</Text>
+            <Text style={styles.errorText}>
+              {error instanceof Error ? error.message : 'An error occurred while loading courses.'}
+            </Text>
+            <TouchableOpacity
+              onPress={() => refetch()}
+              style={styles.retryButton}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : filteredCourses.length > 0 ? (
           filteredCourses.map((item) => {
             const { key, ...courseProps } = item;
             return (
@@ -368,6 +397,67 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.secondary,
     fontWeight: '600',
+  },
+
+  // ── Loading ──────────────────────────────────────────────────
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing[48],
+    gap: spacing[12],
+  },
+  loadingText: {
+    ...typography.body,
+    fontSize: 14,
+    color: colors.text.secondary,
+  },
+
+  // ── Error ────────────────────────────────────────────────────
+  errorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing[48],
+    paddingHorizontal: spacing[32],
+    gap: spacing[8],
+  },
+  errorIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[8],
+  },
+  errorTitle: {
+    ...typography.title,
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  errorText: {
+    ...typography.body,
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing[24],
+    paddingVertical: spacing[12],
+    borderRadius: radius.md,
+    backgroundColor: colors.secondary,
+    marginTop: spacing[8],
+  },
+  retryButtonText: {
+    ...typography.button,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.inverse,
   },
 
   // ── Sticky Header Wrapper ────────────────────────────────────
