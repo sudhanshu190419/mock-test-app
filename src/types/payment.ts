@@ -9,10 +9,15 @@
 
 /**
  * Input sent to the `create-payment-order` Edge Function.
+ *
+ * Supports both course purchases (`courseId`) and PYQ package purchases
+ * (`packageId`). Only one of `courseId` or `packageId` should be set.
  */
 export interface CreatePaymentOrderInput {
-  /** The course UUID the student wants to purchase. */
-  courseId: string;
+  /** The course UUID the student wants to purchase (omit when buying a PYQ package). */
+  courseId?: string;
+  /** The PYQ package UUID the student wants to purchase (omit when buying a course). */
+  packageId?: string;
   /** The authenticated user's profile UUID (profile_id from auth.users).
    *  The backend resolves this to student_details after payment via the webhook. */
   studentId: string;

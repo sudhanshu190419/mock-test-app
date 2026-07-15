@@ -126,6 +126,48 @@ const QUICK_ACTIONS: QuickActionItem[] = [
   },
 ];
 
+/**
+ * Quick actions for role='user' (replace "Take a Mock Test" with "Browse Courses").
+ */
+const USER_QUICK_ACTIONS: QuickActionItem[] = [
+  {
+    key: 'courses',
+    iconName: 'book-open',
+    iconBg: '#E3F2FD',
+    iconColor: '#3B82F6',
+    title: 'Browse Courses',
+    subtitle: 'Find the right course for you',
+    accessibilityLabel: 'Browse Courses',
+  },
+  {
+    key: 'pyq-practice',
+    iconName: 'clipboard-list',
+    iconBg: '#E8F5E9',
+    iconColor: '#22C55E',
+    title: 'Practice PYQs',
+    subtitle: 'Solve previous year papers',
+    accessibilityLabel: 'Practice PYQs',
+  },
+  {
+    key: 'live-classes',
+    iconName: 'play-circle',
+    iconBg: '#FFF3E0',
+    iconColor: '#F97316',
+    title: 'Join Live Classes',
+    subtitle: 'Learn from expert teachers',
+    accessibilityLabel: 'Join Live Classes',
+  },
+  {
+    key: 'plans',
+    iconName: 'bar-chart-2',
+    iconBg: '#EDE9FF',
+    iconColor: '#7C3AED',
+    title: 'View Plans',
+    subtitle: 'Choose the best plan for you',
+    accessibilityLabel: 'View Plans',
+  },
+];
+
 const FEATURES: FeatureItem[] = [
   {
     key: 'quality',
@@ -533,6 +575,23 @@ const SECTIONS: Section[] = [
   { id: 'cta' },
 ];
 
+/**
+ * Sections displayed for role='user'.
+ * Only shows widgets that work without student_details.
+ * Analytics, performance, and results widgets are intentionally excluded.
+ */
+const USER_SECTIONS: Section[] = [
+  { id: 'greeting' },
+  { id: 'stream-selector' },
+  { id: 'hero' },
+  { id: 'trending-courses' },
+  { id: 'pyq-practice' },
+  { id: 'quick-start' },
+  { id: 'why-choose' },
+  { id: 'popular-exams' },
+  { id: 'cta' },
+];
+
 // --- Screen ---
 
 export default function HomeScreen(): React.JSX.Element {
@@ -638,7 +697,12 @@ export default function HomeScreen(): React.JSX.Element {
     [navigation],
   );
 
-  const quickActions = useMemo(() => QUICK_ACTIONS, []);
+  // ── Role-aware section and action selection ──────────────────────
+  const userRole = user?.role;
+  const isUser = userRole === 'user';
+  const activeSections = useMemo(() => (isUser ? USER_SECTIONS : SECTIONS), [isUser]);
+
+  const quickActions = useMemo(() => (isUser ? USER_QUICK_ACTIONS : QUICK_ACTIONS), [isUser]);
   const features = useMemo(() => FEATURES, []);
   const popularExams = useMemo(() => POPULAR_EXAMS, []);
   // ── Trending Courses: live backend data ────────────────────────────────
@@ -685,7 +749,7 @@ export default function HomeScreen(): React.JSX.Element {
     data: dashboardSummary,
     isLoading: dashboardSummaryLoading,
     error: dashboardSummaryError,
-  } = useStudentDashboardSummary();
+  } = useStudentDashboardSummary(!isUser);
 
   if (dashboardSummaryError) {
     console.warn('[HomeScreen] Dashboard summary fetch failed:', dashboardSummaryError);
@@ -783,7 +847,7 @@ export default function HomeScreen(): React.JSX.Element {
     data: subjectAnalytics,
     isLoading: subjectAnalyticsLoading,
     error: subjectAnalyticsError,
-  } = useStudentSubjectAnalytics();
+  } = useStudentSubjectAnalytics(!isUser);
 
   if (subjectAnalyticsError) {
     console.warn('[HomeScreen] Subject analytics fetch failed:', subjectAnalyticsError);
@@ -806,7 +870,7 @@ export default function HomeScreen(): React.JSX.Element {
     data: chapterAnalytics,
     isLoading: chapterAnalyticsLoading,
     error: chapterAnalyticsError,
-  } = useStudentChapterAnalytics();
+  } = useStudentChapterAnalytics(!isUser);
 
   if (chapterAnalyticsError) {
     console.warn('[HomeScreen] Chapter analytics fetch failed:', chapterAnalyticsError);
@@ -822,7 +886,7 @@ export default function HomeScreen(): React.JSX.Element {
     isSuccess: weakChaptersSuccess,
     isError: weakChaptersIsError,
     error: weakChaptersError,
-  } = useStudentWeakChapters();
+  } = useStudentWeakChapters(!isUser);
 
   // ── DIAGNOSTIC: Weak Chapters query state ────────────────────────
   console.log('WEAK_CHAPTERS_QUERY', {
@@ -853,7 +917,7 @@ export default function HomeScreen(): React.JSX.Element {
     isSuccess: strongChaptersSuccess,
     isError: strongChaptersIsError,
     error: strongChaptersError,
-  } = useStudentStrongChapters();
+  } = useStudentStrongChapters(!isUser);
 
   // ── DIAGNOSTIC: Strong Chapters query state ──────────────────────
   console.log('STRONG_CHAPTERS_QUERY', {
@@ -1412,7 +1476,7 @@ export default function HomeScreen(): React.JSX.Element {
   return (
     <View style={styles.screen}>
       <FlatList
-        data={SECTIONS}
+        data={activeSections}
         renderItem={renderSection}
         keyExtractor={keyExtractor}
         showsVerticalScrollIndicator={false}

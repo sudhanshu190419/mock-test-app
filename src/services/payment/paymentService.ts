@@ -34,8 +34,16 @@ import type {
  * @returns The Razorpay order details needed to open the checkout.
  *
  * @example
+ * // Purchase a course
  * const result = await createPaymentOrder({
  *   courseId: 'uuid',
+ *   studentId: 'uuid',
+ *   instituteId: 'uuid',
+ * });
+ *
+ * // Purchase a PYQ package
+ * const result = await createPaymentOrder({
+ *   packageId: 'uuid',
  *   studentId: 'uuid',
  *   instituteId: 'uuid',
  * });
@@ -51,7 +59,9 @@ export async function createPaymentOrder(
   error?: string;
 }> {
   try {
-    console.log('[PAYMENT] Creating payment order for course:', input.courseId);
+    const purchaseType = input.packageId ? 'PYQ package' : 'course';
+    const purchaseId = input.packageId ?? input.courseId;
+    console.log('[PAYMENT] Creating payment order for', purchaseType, ':', purchaseId);
 
     const { data, error } = await supabase.functions.invoke(
       'create-payment-order',
@@ -79,7 +89,7 @@ export async function createPaymentOrder(
       };
     }
 
-    console.log('[PAYMENT] Order created successfully. Razorpay ID:', response.razorpayOrderId);
+    console.log('[PAYMENT] Order created successfully for', purchaseType, '. Razorpay ID:', response.razorpayOrderId);
     console.log('[PAYMENT] razorpayKey present:', response.razorpayKey ? 'YES' : 'NO');
     if (!response.razorpayKey) {
       // The key might be under a different property name (e.g. snake_case)
@@ -173,6 +183,59 @@ export async function checkCourseEnrollment(
     return isEnrolled;
   } catch (err) {
     console.log('[PAYMENT_POLL] Unexpected error:', err);
+    return false;
+  }
+}
+
+/**
+ * Poll the `student_pyq_purchases` table to check if the student has been
+ * granted access to the purchased PYQ package.
+ *
+ * The backend webhook creates the purchase record after verifying the payment.
+ * This function is used by the PYQ polling hook to detect when access is granted.
+ *
+ * Row-Level Security (RLS) automatically scopes the query to the current
+ * authenticated user — no explicit `student_id` filter is needed.
+ * The passed `_studentId` parameter is unused in the SQL query; it is kept
+ * in the signature to be interchangeable with `checkCourseEnrollment`.
+ *
+ * @param _studentId - Unused (RLS handles scoping).
+ * @param packageId  - The purchased PYQ package UUID.
+ *
+ * @returns `true` when an active purchase exists, `false` otherwise.
+ */
+export async function checkPyqPurchase(
+  _studentId: string,
+  packageId: string,
+): Promise<boolean> {
+  try {
+    console.log('[PYQ_POLL] Checking purchase for package:', packageId);
+
+    // Build the query — same pattern as checkCourseEnrollment
+    const { error, count } = await supabase
+      .from('student_pyq_purchases')
+      .select('purchase_id', { count: 'exact', head: true })
+      .eq('package_id', packageId)
+      .eq('is_active', true);
+
+    if (error) {
+      console.log('[PYQ_POLL] Query error:', error.message);
+      console.log('[PYQ_POLL] Error code:', error.code);
+      console.log('[PYQ_POLL] Error details:', error.details);
+      return false;
+    }
+
+    const isPurchased = (count ?? 0) > 0;
+
+    if (isPurchased) {
+      console.log('[PYQ_POLL] Purchase detected for package:', packageId, '(count =', count, ')');
+    } else {
+      console.log('[PYQ_POLL] Purchase NOT detected for package:', packageId);
+    }
+
+    return isPurchased;
+  } catch (err) {
+    console.log('[PYQ_POLL] Unexpected error:', err);
     return false;
   }
 }

@@ -47,8 +47,12 @@ export interface AuthResponse<T = unknown> {
  * @note The **source of truth** for the role is the `profiles.role` column
  *       in PostgreSQL, NOT `auth.users.raw_user_meta_data`. The service
  *       layer always queries the `profiles` table after authentication.
+ *
+ *       The `'user'` value was added in preparation for a backend default
+ *       change from `'student'` → `'user'` for new sign-ups. Existing
+ *       students retain `'student'` until their profile is migrated.
  */
-export type UserRole = 'student' | 'teacher' | 'admin';
+export type UserRole = 'user' | 'student' | 'teacher' | 'admin';
 
 // ─── Database Profile Shape ─────────────────────────────────────────────────
 
@@ -105,7 +109,7 @@ export interface UserProfile {
   /**
    * Role from `profiles.role`.
    *
-   * @default 'student'
+   * @default 'student' (will become 'user' once the backend default changes)
    */
   role: UserRole;
 
@@ -152,7 +156,7 @@ export interface SessionData {
  *
  * Role is NOT sent from the frontend — the database trigger
  * (handle_new_user()) defaults to 'student' when not provided
- * in raw_user_meta_data.
+ * in raw_user_meta_data (and will default to 'user' in the future).
  */
 export interface SignUpInput {
   phone: string;

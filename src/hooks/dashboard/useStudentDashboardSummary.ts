@@ -35,7 +35,7 @@ import type { StudentDashboardSummary } from '../../types/dashboard';
  *   console.log(data.overallAccuracy); // 82.5
  * }
  */
-export function useStudentDashboardSummary() {
+export function useStudentDashboardSummary(enabled: boolean = true) {
   return useQuery<StudentDashboardSummary>({
     queryKey: dashboardKeys.summary.dashboard(),
     queryFn: async () => {
@@ -45,6 +45,7 @@ export function useStudentDashboardSummary() {
       }
       return result.data!;
     },
+    enabled,
     staleTime: 30_000, // 30 seconds — dashboard data is near-real-time
     retry: 1,
   });

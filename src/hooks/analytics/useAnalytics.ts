@@ -47,7 +47,7 @@ import type {
  *   data.forEach(s => console.log(s.subjectName, s.accuracy));
  * }
  */
-export function useStudentSubjectAnalytics() {
+export function useStudentSubjectAnalytics(enabled: boolean = true) {
   return useQuery<SubjectAnalyticsItem[]>({
     queryKey: analyticsKeys.subject.list(),
     queryFn: async () => {
@@ -57,6 +57,7 @@ export function useStudentSubjectAnalytics() {
       }
       return result.data!;
     },
+    enabled,
     staleTime: 60_000, // 1 minute — analytics change less frequently than dashboard
     retry: 1,
   });
@@ -82,7 +83,7 @@ export function useStudentSubjectAnalytics() {
  *   data.forEach(c => console.log(c.chapterName, c.accuracy));
  * }
  */
-export function useStudentChapterAnalytics() {
+export function useStudentChapterAnalytics(enabled: boolean = true) {
   return useQuery<ChapterAnalyticsItem[]>({
     queryKey: analyticsKeys.chapter.list(),
     queryFn: async () => {
@@ -92,6 +93,7 @@ export function useStudentChapterAnalytics() {
       }
       return result.data!;
     },
+    enabled,
     staleTime: 60_000,
     retry: 1,
   });
@@ -118,13 +120,12 @@ export function useStudentChapterAnalytics() {
  *   data.forEach(c => console.log(c.chapterName, c.accuracy));
  * }
  */
-export function useStudentWeakChapters() {
+export function useStudentWeakChapters(enabled: boolean = true) {
   const query = useQuery<ChapterWeakStrongItem[]>({
     queryKey: analyticsKeys.weak.list(),
     queryFn: async () => {
       const result = await getStudentWeakChapters();
       console.group('WEAK_CHAPTERS_HOOK');
-      console.log('query enabled:', true);
       console.log('fetched data:', result.data);
       console.log('success:', result.success);
       console.log('error:', result.error);
@@ -134,11 +135,13 @@ export function useStudentWeakChapters() {
       }
       return result.data!;
     },
+    enabled,
     staleTime: 60_000,
     retry: 1,
   });
 
   console.log('WEAK_CHAPTERS_HOOK', {
+    enabled,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isSuccess: query.isSuccess,
@@ -170,13 +173,12 @@ export function useStudentWeakChapters() {
  *   data.forEach(c => console.log(c.chapterName, c.accuracy));
  * }
  */
-export function useStudentStrongChapters() {
+export function useStudentStrongChapters(enabled: boolean = true) {
   const query = useQuery<ChapterWeakStrongItem[]>({
     queryKey: analyticsKeys.strong.list(),
     queryFn: async () => {
       const result = await getStudentStrongChapters();
       console.group('STRONG_CHAPTERS_HOOK');
-      console.log('query enabled:', true);
       console.log('fetched data:', result.data);
       console.log('success:', result.success);
       console.log('error:', result.error);
@@ -186,11 +188,13 @@ export function useStudentStrongChapters() {
       }
       return result.data!;
     },
+    enabled,
     staleTime: 60_000,
     retry: 1,
   });
 
   console.log('STRONG_CHAPTERS_HOOK', {
+    enabled,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isSuccess: query.isSuccess,

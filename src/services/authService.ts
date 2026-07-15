@@ -156,8 +156,9 @@ async function fetchProfile(userId: string): Promise<DbProfile | null> {
  * only as a fallback when the profile has not yet been created by the
  * database trigger (e.g. immediately after sign-up).
  *
- * The `role` defaults to `'student'`, `instituteId` to `null`, when no
- * profile row exists yet. For phone-based auth, `email` may be empty.
+ * The `role` defaults to `'student'` (will be `'user'` once the backend
+ * default changes), `instituteId` to `null`, when no profile row exists
+ * yet. For phone-based auth, `email` may be empty.
  */
 function buildUserProfile(
   authUser: {
@@ -173,6 +174,8 @@ function buildUserProfile(
   },
   profile?: DbProfile | null,
 ): UserProfile {
+  // TODO: When the backend trigger default changes from 'student' to 'user',
+  //       change the fallback below from 'student' to 'user'.
   return {
     id: authUser.id,
     email: authUser.email ?? '',
@@ -282,7 +285,8 @@ export async function signUp(
     // 2. Create auth user --------------------------------------------------
     // The database trigger (on_auth_user_created → handle_new_user())
     // automatically creates the profile row after this succeeds.
-    // Role is NOT sent from the frontend — the trigger defaults to 'student'.
+    // Role is NOT sent from the frontend — the trigger defaults to 'student'
+    // (and will default to 'user' in the future).
 
     console.log('PHONE BEING SENT:', phone);
     const { data: authData, error: authError } = await supabase.auth.signUp({

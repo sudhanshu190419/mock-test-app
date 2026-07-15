@@ -13,7 +13,7 @@
  * @module screens/tests/ExamPackDetailScreen
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import {
   StyleSheet,
   Platform,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -31,11 +32,18 @@ import Icon from '../../components/home/Icons';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
 import { usePracticeDetail } from '../../hooks/practice/usePractice';
 import { getPaperMockMapping } from '../../services/practice/practiceService';
+import { useCreatePaymentOrder } from '../../hooks/payment/useCreatePaymentOrder';
+import { usePurchaseStatus } from '../../hooks/payment/usePurchaseStatus';
+import { openCheckout } from '../../services/payment/razorpayService';
+import { supabase } from '../../config/supabase';
+import { UUID_REGEX } from '../../utils/supabase';
+import { checkPyqPurchase } from '../../services/payment/paymentService';
 import { colors, palette } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import type { PracticePaper } from '../../types/practice';
+import type { PurchaseStateContext } from '../../types/payment';
 import { Alert } from 'react-native';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -331,17 +339,62 @@ const ErrorState = React.memo(function ErrorState({
 interface BottomBarProps {
   price: number;
   safeAreaBottom: number;
+  purchaseState: PurchaseStateContext;
+  onBuyNow: () => void;
+  isPurchasing: boolean;
+  buyDisabled: boolean;
 }
 
 const BottomBar = React.memo(function BottomBar({
   price,
   safeAreaBottom,
+  purchaseState,
+  onBuyNow,
+  isPurchasing,
+  buyDisabled,
 }: BottomBarProps): React.JSX.Element {
+  const isEnrolled = purchaseState.state === 'enrolled';
+
   return (
     <View style={[styles.bottomBar, { paddingBottom: safeAreaBottom + spacing[12] }]}>
       <View style={styles.bottomBarInner}>
         <View style={styles.bottomPriceGroup}>
-          <Text style={styles.bottomPrice}>₹{price}</Text>
+          {isEnrolled ? (
+            <Text style={styles.bottomEnrolledLabel}>Purchased</Text>
+          ) : (
+            <Text style={styles.bottomPrice}>₹{price}</Text>
+          )}
+        </View>
+        <View style={styles.bottomButtons}>
+          {isEnrolled ? (
+            <TouchableOpacity
+              style={[styles.buyNowButton, styles.enrolledButton]}
+              activeOpacity={0.85}
+              accessibilityLabel="Start practicing"
+              accessibilityRole="button"
+            >
+              <Icon name="play-circle" color={colors.text.inverse} width={16} height={16} />
+              <Text style={styles.buyNowButtonText}>Start Practicing</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={onBuyNow}
+              style={[styles.buyNowButton, buyDisabled && styles.buyNowButtonDisabled]}
+              activeOpacity={0.85}
+              disabled={buyDisabled}
+              accessibilityLabel={isPurchasing ? 'Processing payment' : 'Buy Now'}
+              accessibilityRole="button"
+            >
+              {isPurchasing ? (
+                <ActivityIndicator size="small" color={colors.text.inverse} />
+              ) : (
+                <>
+                  <Icon name="badge-check" color={colors.text.inverse} width={16} height={16} />
+                  <Text style={styles.buyNowButtonText}>Buy Now</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </View>
@@ -353,6 +406,113 @@ const BottomBar = React.memo(function BottomBar({
 const BottomSpacer = React.memo(function BottomSpacer(): React.JSX.Element {
   return <View style={styles.scrollBottomSpacer} />;
 });
+
+// ── Format Helper ───────────────────────────────────────────────────
+
+function formatPrice(amount: number): string {
+  return `₹${amount.toLocaleString('en-IN')}`;
+}
+
+// ── Purchase Overlay ────────────────────────────────────────────────
+
+/**
+ * Payment Status Overlay shown during the PYQ purchase flow.
+ * Mirrors the same states as the Course purchase overlay.
+ */
+function PurchaseOverlay({
+  purchaseState,
+  onDismiss,
+  onRetry,
+}: {
+  purchaseState: PurchaseStateContext;
+  onDismiss: () => void;
+  onRetry: () => void;
+}): React.JSX.Element | null {
+  const { state, errorMessage, courseName, formattedAmount } = purchaseState;
+
+  if (state === 'idle' || state === 'enrolled') {
+    return null;
+  }
+
+  const isProcessing =
+    state === 'creating_order' ||
+    state === 'checkout_open' ||
+    state === 'payment_received' ||
+    state === 'polling_enrollment';
+  const isFailed = state === 'failed';
+
+  const getTitle = () => {
+    switch (state) {
+      case 'creating_order':
+        return 'Setting up payment…';
+      case 'checkout_open':
+        return 'Complete payment in the checkout';
+      case 'payment_received':
+        return 'Payment received';
+      case 'polling_enrollment':
+        return 'Confirming your purchase…';
+      case 'failed':
+        return 'Payment failed';
+      default:
+        return '';
+    }
+  };
+
+  const getMessage = () => {
+    switch (state) {
+      case 'creating_order':
+        return 'Please wait while we prepare your checkout.';
+      case 'checkout_open':
+        return 'Follow the instructions in the Razorpay checkout to complete your payment.';
+      case 'payment_received':
+        return `We're confirming your purchase${courseName ? ` of ${courseName}` : ''}${formattedAmount ? ` for ${formattedAmount}` : ''}. This usually takes a few seconds.`;
+      case 'polling_enrollment':
+        return `Your payment is being verified by our system${courseName ? ` for ${courseName}` : ''}. You'll get access once the confirmation is complete.`;
+      case 'failed':
+        return errorMessage ?? 'An unexpected error occurred. Please try again.';
+      default:
+        return '';
+    }
+  };
+
+  return (
+    <Modal transparent animationType="fade" visible>
+      <View style={styles.overlayBackdrop}>
+        <View style={styles.overlayCard}>
+          {isProcessing && (
+            <ActivityIndicator size="large" color={colors.secondary} style={styles.overlaySpinner} />
+          )}
+          {isFailed && (
+            <View style={styles.overlayIconWrap}>
+              <Icon name="x-circle" color="#DC2626" width={40} height={40} />
+            </View>
+          )}
+          <Text style={styles.overlayTitle}>{getTitle()}</Text>
+          <Text style={styles.overlayMessage}>{getMessage()}</Text>
+
+          {isFailed && (
+            <View style={styles.overlayActions}>
+              <TouchableOpacity
+                onPress={onRetry}
+                style={styles.overlayRetryButton}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.overlayRetryText}>Try Again</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={onDismiss}
+                style={styles.overlayDismissButton}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.overlayDismissText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  Main Screen
@@ -378,6 +538,188 @@ export default function ExamPackDetailScreen({
     isLoading,
     error,
   } = usePracticeDetail(packageId);
+
+  // ── Purchase state ────────────────────────────────────────────
+  const [purchaseState, setPurchaseState] = useState<PurchaseStateContext>({
+    state: 'idle',
+  });
+
+  // Resolved student ID — stored in state so usePurchaseStatus can
+  // react to it when it changes.
+  const [studentId, setStudentId] = useState<string | null>(null);
+
+  // ── Payment hooks ─────────────────────────────────────────────
+  const createOrderMutation = useCreatePaymentOrder();
+
+  const isPolling =
+    purchaseState.state === 'payment_received' ||
+    purchaseState.state === 'polling_enrollment';
+
+  const { pollStatus, reset: resetPoll } = usePurchaseStatus({
+    studentId,
+    courseId: packageId,
+    enabled: isPolling,
+    checkFn: checkPyqPurchase,
+    config: {
+      intervalMs: 2500,
+      timeoutMs: 120000,
+    },
+  });
+
+  // ── React to poll status changes ──────────────────────────────
+  useEffect(() => {
+    if (pollStatus.status === 'enrolled') {
+      console.log('[PYQ_POLL] Purchase detected');
+      setPurchaseState((prev) => ({ ...prev, state: 'enrolled' }));
+    } else if (pollStatus.status === 'timeout') {
+      console.log('[PYQ_POLL] Timeout');
+      setPurchaseState({
+        state: 'failed',
+        errorMessage:
+          'Payment confirmation is taking longer than expected. Your purchase will be activated shortly. Please check back later or contact support.',
+        courseName: detail?.package.name,
+        formattedAmount: detail ? formatPrice(detail.package.price) : undefined,
+      });
+    } else if (pollStatus.status === 'error') {
+      setPurchaseState({
+        state: 'failed',
+        errorMessage: pollStatus.message,
+      });
+    }
+  }, [pollStatus, detail]);
+
+  // ── Buy Now handler ───────────────────────────────────────────
+  const handleBuyNow = useCallback(async () => {
+    if (purchaseState.state !== 'idle' && purchaseState.state !== 'failed') {
+      return;
+    }
+
+    if (!detail) {
+      console.log('[PYQ_PAYMENT] No package detail available');
+      return;
+    }
+
+    const pkg = detail.package;
+
+    try {
+      console.log('[PYQ_PAYMENT] Starting purchase');
+      console.log('[PYQ_PAYMENT] Package UUID:', packageId);
+
+      // Verify package ID is valid before proceeding
+      if (!packageId || !UUID_REGEX.test(packageId)) {
+        console.error('[PYQ_PAYMENT] Invalid package UUID:', packageId);
+        setPurchaseState({
+          state: 'failed',
+          errorMessage: 'The package data is not valid. Please go back and try again.',
+        });
+        return;
+      }
+
+      setPurchaseState({
+        state: 'creating_order',
+        courseName: pkg.name,
+        formattedAmount: formatPrice(pkg.price),
+      });
+
+      // 1. Verify the user is authenticated
+      console.log('[PYQ_PAYMENT] Checking authentication...');
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      const profileId = sessionData?.session?.user?.id;
+      if (!profileId || sessionError) {
+        console.log('[PYQ_PAYMENT] No authenticated session found');
+        setPurchaseState({
+          state: 'failed',
+          errorMessage: 'Please sign in to purchase PYQ packages.',
+        });
+        return;
+      }
+      console.log('[PYQ_PAYMENT] Authenticated profile_id:', profileId);
+      setStudentId(profileId);
+
+      // 2. Create payment order via Edge Function
+      console.log('[PYQ_PAYMENT] Calling create-payment-order');
+      const result = await createOrderMutation.mutateAsync({
+        packageId,
+        studentId: profileId,
+        instituteId: '', // Resolved server-side by the Edge Function
+      });
+
+      console.log('[PYQ_PAYMENT] Order created');
+      console.log('[PYQ_PAYMENT] Razorpay Order ID:', result.razorpayOrderId);
+
+      // 3. Open Razorpay checkout
+      setPurchaseState((prev) => ({
+        ...prev,
+        state: 'checkout_open',
+        razorpayOrderId: result.razorpayOrderId,
+        orderId: result.orderId,
+      }));
+      console.log('[PYQ_PAYMENT] Opening Razorpay');
+
+      const razorpayResult = await openCheckout(result);
+
+      if (razorpayResult.success) {
+        console.log('[PYQ_PAYMENT] Razorpay success');
+        console.log('[PYQ_POLL] Starting polling');
+        // Payment received — start polling for purchase record.
+        // The backend webhook handles verification and creates the
+        // student_pyq_purchases row.
+        setPurchaseState((prev) => ({
+          ...prev,
+          state: 'polling_enrollment',
+          razorpayOrderId: result.razorpayOrderId,
+          orderId: result.orderId,
+        }));
+      } else {
+        const errorInfo = razorpayResult.error;
+        if (typeof errorInfo === 'string') {
+          console.log('[PYQ_PAYMENT] Razorpay SDK error:', errorInfo);
+          setPurchaseState({
+            state: 'failed',
+            errorMessage: errorInfo,
+            razorpayOrderId: result.razorpayOrderId,
+          });
+        } else {
+          const code = errorInfo.code;
+          const description = errorInfo.description;
+
+          console.log('[PYQ_PAYMENT] Razorpay error:', code, description);
+
+          if (code === 2) {
+            setPurchaseState({
+              state: 'failed',
+              errorMessage:
+                "Payment was cancelled. You can try again whenever you're ready.",
+              razorpayOrderId: result.razorpayOrderId,
+            });
+          } else {
+            setPurchaseState({
+              state: 'failed',
+              errorMessage: description || 'Payment failed. Please try again.',
+              razorpayOrderId: result.razorpayOrderId,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'An unexpected error occurred.';
+      console.log('[PYQ_PAYMENT] Unhandled error:', message);
+      setPurchaseState({
+        state: 'failed',
+        errorMessage: message,
+        courseName: detail?.package.name,
+        formattedAmount: detail ? formatPrice(detail.package.price) : undefined,
+      });
+    }
+  }, [purchaseState.state, createOrderMutation, packageId, detail]);
+
+  // ── Reset purchase flow ───────────────────────────────────────
+  const resetPurchase = useCallback(() => {
+    resetPoll();
+    setStudentId(null);
+    setPurchaseState({ state: 'idle' });
+  }, [resetPoll]);
 
   const handleBackPress = useCallback(() => {
     navigation.goBack();
@@ -440,6 +782,14 @@ export default function ExamPackDetailScreen({
   // Bottom bar height: spacing[16] (paddingTop) + 24 (price height)
   //                    + spacing[12] (padding) + safeAreaBottom
   const bottomBarHeight = spacing[16] + 24 + spacing[12] + insets.bottom;
+
+  // ── Determine button state ────────────────────────────────────
+  const isEnrolled = purchaseState.state === 'enrolled';
+  const isPurchasing =
+    purchaseState.state !== 'idle' &&
+    purchaseState.state !== 'failed' &&
+    purchaseState.state !== 'enrolled';
+  const buyDisabled = !detail || isPurchasing || !!error;
 
   // ── Loading / Error / Empty ──────────────────────────────────────
 
@@ -517,10 +867,21 @@ export default function ExamPackDetailScreen({
         <BottomSpacer />
       </ScrollView>
 
+      {/* Payment Overlay */}
+      <PurchaseOverlay
+        purchaseState={purchaseState}
+        onDismiss={resetPurchase}
+        onRetry={handleBuyNow}
+      />
+
       {/* Sticky bottom bar */}
       <BottomBar
         price={pkg.price}
         safeAreaBottom={insets.bottom}
+        purchaseState={purchaseState}
+        onBuyNow={handleBuyNow}
+        isPurchasing={isPurchasing}
+        buyDisabled={buyDisabled}
       />
     </View>
   );
@@ -917,6 +1278,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing[12],
   },
   bottomPriceGroup: {
     flexDirection: 'column',
@@ -928,9 +1290,128 @@ const styles = StyleSheet.create({
     color: '#111827',
     lineHeight: 30,
   },
+  bottomEnrolledLabel: {
+    ...typography.subtitle,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  bottomButtons: {
+    flexDirection: 'row',
+    gap: spacing[8],
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  buyNowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[4],
+    paddingHorizontal: spacing[16],
+    paddingVertical: spacing[12],
+    borderRadius: radius.md,
+    backgroundColor: colors.secondary,
+    minWidth: 120,
+  },
+  buyNowButtonDisabled: {
+    opacity: 0.7,
+  },
+  buyNowButtonText: {
+    ...typography.buttonSmall,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.inverse,
+  },
+  enrolledButton: {
+    backgroundColor: colors.primary,
+  },
 
   // ── Scroll Bottom Spacer ────────────────────────────────────────
   scrollBottomSpacer: {
     height: spacing[24],
+  },
+
+  // ── Purchase Overlay ─────────────────────────────────────────
+  overlayBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing[24],
+  },
+  overlayCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing[24],
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 24,
+      },
+      android: { elevation: 10 },
+    }),
+  },
+  overlaySpinner: {
+    marginBottom: spacing[16],
+  },
+  overlayIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[16],
+  },
+  overlayTitle: {
+    ...typography.title,
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+    textAlign: 'center',
+    marginBottom: spacing[8],
+  },
+  overlayMessage: {
+    ...typography.body,
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing[20],
+  },
+  overlayActions: {
+    flexDirection: 'column',
+    gap: spacing[8],
+    width: '100%',
+  },
+  overlayRetryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[8],
+    paddingVertical: spacing[12],
+    borderRadius: radius.md,
+    backgroundColor: colors.secondary,
+  },
+  overlayRetryText: {
+    ...typography.button,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.inverse,
+  },
+  overlayDismissButton: {
+    alignItems: 'center',
+    paddingVertical: spacing[12],
+  },
+  overlayDismissText: {
+    ...typography.button,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.secondary,
   },
 });
