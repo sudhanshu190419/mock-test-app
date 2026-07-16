@@ -28,6 +28,7 @@
 
 import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './authSlice';
+import purchaseReducer from './purchaseSlice';
 
 // ─── Store ──────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,7 @@ import authReducer from './authSlice';
  * | Key    | Reducer       | Slice             |
  * |--------|---------------|-------------------|
  * | `auth` | `authReducer` | `src/store/authSlice.ts` |
+ * | `purchase` | `purchaseReducer` | `src/store/purchaseSlice.ts` |
  *
  * ### Middleware
  *
@@ -65,6 +67,7 @@ import authReducer from './authSlice';
 export const store = configureStore({
   reducer: {
     auth: authReducer,
+    purchase: purchaseReducer,
   },
   // DevTools are enabled by default in non-production builds.
   // No additional middleware configuration is needed.

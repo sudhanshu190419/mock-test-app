@@ -17,12 +17,12 @@
  * Subscribes to `supabase.auth.onAuthStateChange` and reacts to every
  * event by syncing Redux:
  *
- * | Event             | Action                                      |
- * |-------------------|---------------------------------------------|
- * | `SIGNED_IN`       | Re-fetches session + profile from DB        |
- * | `TOKEN_REFRESHED` | Re-fetches session + profile from DB        |
- * | `USER_UPDATED`    | Re-fetches session + profile from DB        |
- * | `SIGNED_OUT`      | Dispatches `logout()` (resets auth state)   |
+ * | Event             | Action                                                      |
+ * |-------------------|-------------------------------------------------------------|
+ * | `SIGNED_IN`       | Re-fetches session + profile from DB; registers FCM token   |
+ * | `TOKEN_REFRESHED` | Re-fetches session + profile from DB                        |
+ * | `USER_UPDATED`    | Re-fetches session + profile from DB                        |
+ * | `SIGNED_OUT`      | Deactivates FCM token; dispatches `logout()` (resets state)  |
  *
  * ### 3. Automatic lifecycle management
  *
@@ -83,6 +83,11 @@ import {
   logout,
 } from '../store/authSlice';
 import { getSession, consumeSuppressSessionSync } from '../services/authService';
+import {
+  registerDeviceToken,
+  deactivateDeviceToken,
+  setupTokenRefresh,
+} from '../services/fcm/deviceTokenService';
 import type { AuthChangeEvent } from '@supabase/supabase-js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -111,6 +116,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // subscription setup).
   const isInitialisedRef = useRef(false);
 
+  // Tracks the current user's profile_id for device token operations.
+  // Used in the SIGNED_OUT handler to deactivate the token before Redux
+  // state is cleared.
+  const userIdRef = useRef<string | null>(null);
+
+  // Stores the unsubscribe function returned by setupTokenRefresh() so
+  // it can be cleaned up on logout or component unmount.
+  const stopTokenRefreshRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     // ── 1. Subscribe to auth state changes ───────────────────────────────
     //
@@ -128,9 +142,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       switch (event) {
-        case 'SIGNED_IN':
-        case 'TOKEN_REFRESHED':
-        case 'USER_UPDATED': {
+        case 'SIGNED_IN': {
           // Check if the forgot-password flow is in progress — skip the
           // automatic session sync so the user stays on the OTP screen
           // to set a new password.
@@ -143,10 +155,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
             .then(async (result) => {
               if (result.success && result.data) {
                 dispatch(setSession(result.data));
+
                 if (result.data.user?.id) {
-                  const storageKey = `selected_exam_stream_id_${result.data.user.id}`;
+                  const userId = result.data.user.id;
+                  userIdRef.current = userId;
+
+                  // Restore the selected exam stream from local storage
+                  const storageKey = `selected_exam_stream_id_${userId}`;
                   const storedStreamId = await AsyncStorage.getItem(storageKey);
                   dispatch(setSelectedStreamId(storedStreamId));
+
+                  // Register this device's FCM token in Supabase
+                  registerDeviceToken(userId);
+
+                  // Start watching for token refreshes (clean up previous listener first)
+                  if (stopTokenRefreshRef.current) {
+                    stopTokenRefreshRef.current();
+                  }
+                  stopTokenRefreshRef.current = setupTokenRefresh(userId);
                 }
               }
             })
@@ -155,7 +181,41 @@ export function AuthProvider({ children }: AuthProviderProps) {
           break;
         }
 
+        case 'TOKEN_REFRESHED':
+        case 'USER_UPDATED': {
+          if (consumeSuppressSessionSync()) {
+            break;
+          }
+
+          getSession()
+            .then(async (result) => {
+              if (result.success && result.data) {
+                dispatch(setSession(result.data));
+                if (result.data.user?.id) {
+                  const storageKey = `selected_exam_stream_id_${result.data.user.id}`;
+                  const storedStreamId = await AsyncStorage.getItem(storageKey);
+                  dispatch(setSelectedStreamId(storedStreamId));
+                }
+              }
+            })
+            .catch(() => {});
+          break;
+        }
+
         case 'SIGNED_OUT': {
+          // Deactivate the device token before clearing auth state
+          const currentUserId = userIdRef.current;
+          if (currentUserId) {
+            deactivateDeviceToken(currentUserId);
+          }
+
+          // Clean up the token refresh listener
+          if (stopTokenRefreshRef.current) {
+            stopTokenRefreshRef.current();
+            stopTokenRefreshRef.current = null;
+          }
+
+          userIdRef.current = null;
           dispatch(logout());
           break;
         }
@@ -182,10 +242,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         if (result.success && result.data) {
           dispatch(setSession(result.data));
+
           if (result.data.user?.id) {
-            const storageKey = `selected_exam_stream_id_${result.data.user.id}`;
+            const userId = result.data.user.id;
+            userIdRef.current = userId;
+
+            const storageKey = `selected_exam_stream_id_${userId}`;
             const storedStreamId = await AsyncStorage.getItem(storageKey);
             dispatch(setSelectedStreamId(storedStreamId));
+
+            // Register this device's FCM token and watch for refreshes
+            registerDeviceToken(userId);
+            if (stopTokenRefreshRef.current) {
+              stopTokenRefreshRef.current();
+            }
+            stopTokenRefreshRef.current = setupTokenRefresh(userId);
           }
         }
       })
@@ -202,6 +273,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // ── 3. Cleanup ───────────────────────────────────────────────────────
     return () => {
       authListener.subscription.unsubscribe();
+
+      // Clean up the token refresh listener
+      if (stopTokenRefreshRef.current) {
+        stopTokenRefreshRef.current();
+        stopTokenRefreshRef.current = null;
+      }
     };
     // `dispatch` is stable for the lifetime of the store and is safe to
     // exclude from the dependency array.

@@ -3,20 +3,29 @@
  *
  * Central hook for the notification system.
  *
- * Manages:
- * - Fetching notifications from the service layer
- * - Filtering by type
- * - Grouping into Today / Yesterday / Earlier sections
- * - Mark as read / delete operations
- * - Loading, empty, and error states
+ * Uses React Query (useQuery + useMutation) instead of raw useState/useEffect.
  *
- * No UI code — completely replaceable with a real API later.
+ * ─── Architecture ───────────────────────────────────────────────────────────
+ *
+ *   NotificationScreen / NotificationBell (any consumer)
+ *     → useNotifications() hook
+ *       → useQuery / useMutation
+ *         → notificationService (Supabase-backed)
+ *
+ * After every successful mutation, both the notification list query AND the
+ * home screen badge queries are invalidated so that:
+ *   • NotificationScreen refreshes its list automatically
+ *   • Home screen (GreetingHeader → NotificationBell) refreshes its badge
  *
  * @module hooks/useNotifications
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { supabase } from '../config/supabase';
 import * as notificationService from '../services/notificationService';
+import { homeKeys } from './home/queryKeys';
 import type {
   Notification,
   NotificationFilter,
@@ -58,7 +67,21 @@ export const FILTER_LABELS: Record<NotificationType | 'all' | 'unread', string> 
 };
 
 // ═════════════════════════════════════════════════════════════════
-//  Grouping Helper
+//  React Query Keys
+// ═════════════════════════════════════════════════════════════════
+//
+// 'notifications' root prefix is deliberately distinct from homeKeys
+// ('home.notifications') so that invalidation can target one or both.
+
+const notificationKeys = {
+  /** Root for all NotificationScreen queries. */
+  all: ['notifications'] as const,
+  /** Keyed by the service-level type param ('all' | NotificationType). */
+  list: (serviceType: string) => ['notifications', 'list', serviceType] as const,
+};
+
+// ═════════════════════════════════════════════════════════════════
+//  Grouping Helpers
 // ═════════════════════════════════════════════════════════════════
 
 /**
@@ -112,6 +135,119 @@ function groupBySection(notifications: Notification[]): NotificationGroup[] {
 }
 
 // ═════════════════════════════════════════════════════════════════
+//  Supabase Realtime Subscription
+// ═════════════════════════════════════════════════════════════════
+//
+// Subscribes to changes on `notification_recipients` for the
+// currently authenticated user. On INSERT / UPDATE / DELETE,
+// invalidates both the NotificationScreen list and the Home
+// badge caches so that both screens update automatically.
+//
+// This is safe to call from multiple components — each hook
+// instance gets its own channel subscription and cleans up on
+// unmount. Supabase's client handles duplicate channels at the
+// WebSocket level.
+
+const NOTIFICATION_REALTIME_CHANNEL = 'notifications-realtime';
+
+/**
+ * Subscribe to realtime changes on `notification_recipients`.
+ *
+ * When a relevant event arrives:
+ *   1. Invalidate `notificationKeys.all` → refreshes NotificationScreen
+ *   2. Invalidate `homeKeys.notifications.all()` → refreshes Home badge
+ *
+ * @example
+ * // Inside any component or hook that needs live notification updates:
+ * useNotificationRealtime();
+ */
+export function useNotificationRealtime(): void {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    // Guard against async session resolution completing after unmount
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    // Resolve the current user's ID — needed for the Realtime filter
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      // If the component unmounted while we were resolving the session,
+      // bail out to prevent creating an orphaned subscription.
+      if (cancelled) {
+        console.warn(
+          '[NOTIFICATION_REALTIME] Session resolved after unmount — skipping',
+        );
+        return;
+      }
+
+      const userId = session?.user?.id;
+      if (!userId) {
+        console.warn(
+          '[NOTIFICATION_REALTIME] No authenticated user — skipping subscription',
+        );
+        return;
+      }
+
+      console.log('[NOTIFICATION_REALTIME_CONNECTED]', {
+        channel: NOTIFICATION_REALTIME_CHANNEL,
+        userId,
+        table: 'notification_recipients',
+        events: 'INSERT, UPDATE, DELETE',
+      });
+
+      channel = supabase
+        .channel(NOTIFICATION_REALTIME_CHANNEL)
+        .on<Record<string, unknown>>(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'notification_recipients',
+            filter: `profile_id=eq.${userId}`,
+          },
+          (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+            console.log('[NOTIFICATION_REALTIME_EVENT]', {
+              eventType: payload.eventType,
+              schema: payload.schema,
+              table: payload.table,
+              new: payload.new,
+              old: payload.old,
+              timestamp: new Date().toISOString(),
+            });
+
+            console.log('[NOTIFICATION_REALTIME_INVALIDATE]', {
+              invalidatedKeys: [
+                notificationKeys.all,
+                homeKeys.notifications.all(),
+              ],
+              timestamp: new Date().toISOString(),
+            });
+
+            // Invalidate both caches so NotificationScreen + Home badge refresh
+            queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+            queryClient.invalidateQueries({
+              queryKey: homeKeys.notifications.all(),
+            });
+          },
+        )
+        .subscribe();
+    });
+
+    return () => {
+      cancelled = true;
+      if (channel) {
+        console.log('[NOTIFICATION_REALTIME_DISCONNECTED]', {
+          channel: NOTIFICATION_REALTIME_CHANNEL,
+          timestamp: new Date().toISOString(),
+        });
+        supabase.removeChannel(channel);
+        channel = null;
+      }
+    };
+  }, [queryClient]);
+}
+
+// ═════════════════════════════════════════════════════════════════
 //  Hook
 // ═════════════════════════════════════════════════════════════════
 
@@ -145,149 +281,185 @@ export interface UseNotificationsReturn {
 }
 
 export function useNotifications(): UseNotificationsReturn {
-  const [response, setResponse] = useState<FetchNotificationsResponse | null>(null);
-  const [filter, setFilter] = useState<NotificationFilter>({ activeType: 'all' });
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const mountedRef = useRef(true);
+  const queryClient = useQueryClient();
+  const [filter, setFilterState] = useState<NotificationFilter>({
+    activeType: 'all',
+  });
 
-  // ── Fetch ────────────────────────────────────────────────────
+  // ── Realtime subscription (live updates) ───────────────────────
+  useNotificationRealtime();
 
-  const fetchNotifications = useCallback(async (type: NotificationType | 'all' | 'unread') => {
-    try {
-      setError(null);
-      const serviceType = type === 'unread' ? 'all' : type;
-      const result = await notificationService.getNotifications({ type: serviceType });
-      if (!mountedRef.current) return;
+  // ══════════════════════════════════════════════════════════════
+  //  Query — Fetch notifications
+  // ══════════════════════════════════════════════════════════════
+  //
+  // When the filter is 'unread', we fetch ALL types and filter
+  // client-side (the service layer has no 'unread' param).
 
-      // If filtering by 'unread', filter client-side
-      if (type === 'unread') {
-        result.data = result.data.filter((n) => !n.isRead);
-      }
+  const serviceType: NotificationType | 'all' =
+    filter.activeType === 'unread' ? 'all' : filter.activeType;
 
-      setResponse(result);
-    } catch (err) {
-      if (!mountedRef.current) return;
-      setError('Failed to load notifications. Pull down to retry.');
-    }
-  }, []);
+  const {
+    data: response,
+    isLoading,
+    isRefetching,
+    error: queryError,
+    refetch,
+  } = useQuery<FetchNotificationsResponse>({
+    queryKey: notificationKeys.list(serviceType),
+    queryFn: () => notificationService.getNotifications({ type: serviceType }),
+    staleTime: 60 * 1000, // 1 minute — notifications change frequently
+    placeholderData: { data: [], totalCount: 0, unreadCount: 0, hasMore: false },
+  });
 
-  // ── Initial load ─────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  //  Mutations
+  // ══════════════════════════════════════════════════════════════
+  //
+  // After every mutation, invalidate both:
+  //   1. notificationKeys.all  → refreshes the NotificationScreen list
+  //   2. homeKeys.notifications.all() → refreshes the Home badge
 
-  useEffect(() => {
-    mountedRef.current = true;
-    setIsLoading(true);
-    fetchNotifications('all').finally(() => {
-      if (mountedRef.current) {
-        setIsLoading(false);
-      }
-    });
-    return () => {
-      mountedRef.current = false;
-    };
-  }, [fetchNotifications]);
-
-  // ── Refresh ──────────────────────────────────────────────────
-
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-    await fetchNotifications(filter.activeType);
-    if (mountedRef.current) {
-      setIsRefreshing(false);
-    }
-  }, [fetchNotifications, filter.activeType]);
-
-  // ── Set filter type ──────────────────────────────────────────
-
-  const setFilterType = useCallback(
-    (type: NotificationType | 'all' | 'unread') => {
-      setFilter({ activeType: type });
-      fetchNotifications(type);
-    },
-    [fetchNotifications],
-  );
+  /** Invalidate both notification screen + home badge queries. */
+  const invalidateNotificationCaches = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+    queryClient.invalidateQueries({ queryKey: homeKeys.notifications.all() });
+  }, [queryClient]);
 
   // ── Mark as read ─────────────────────────────────────────────
 
-  const markAsRead = useCallback(async (notificationId: string) => {
-    await notificationService.markAsRead({ notificationId });
-    // Optimistically update local state
-    setResponse((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        data: prev.data.map((n) =>
-          n.id === notificationId ? { ...n, isRead: true } : n,
-        ),
-        unreadCount: Math.max(0, prev.unreadCount - 1),
-      };
-    });
-  }, []);
+  const markAsReadMutation = useMutation({
+    mutationFn: (notificationId: string) =>
+      notificationService.markAsRead({ notificationId }),
+    onSuccess: () => {
+      invalidateNotificationCaches();
+    },
+  });
 
   // ── Mark all as read ─────────────────────────────────────────
 
-  const markAllAsRead = useCallback(async () => {
-    const type = filter.activeType === 'unread' ? undefined
-      : filter.activeType === 'all' ? undefined
-      : filter.activeType;
-    await notificationService.markAllAsRead(
-      type ? { type: type as NotificationType } : {},
-    );
-    // Optimistically update
-    setResponse((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        data: prev.data.map((n) => ({ ...n, isRead: true })),
-        unreadCount: 0,
-      };
-    });
-  }, [filter.activeType]);
+  const markAllAsReadMutation = useMutation({
+    mutationFn: () => {
+      const type =
+        filter.activeType === 'unread'
+          ? undefined
+          : filter.activeType === 'all'
+            ? undefined
+            : filter.activeType;
+      return notificationService.markAllAsRead(
+        type ? { type: type as NotificationType } : {},
+      );
+    },
+    onSuccess: () => {
+      invalidateNotificationCaches();
+    },
+  });
 
   // ── Delete single ────────────────────────────────────────────
 
-  const deleteSingle = useCallback(async (notificationId: string) => {
-    await notificationService.deleteNotification({ notificationId });
-    setResponse((prev) => {
-      if (!prev) return prev;
-      const filtered = prev.data.filter((n) => n.id !== notificationId);
-      return {
-        ...prev,
-        data: filtered,
-        totalCount: Math.max(0, prev.totalCount - 1),
-        unreadCount: prev.unreadCount - (prev.data.find((n) => n.id === notificationId)?.isRead ? 0 : 1),
-      };
-    });
-  }, []);
+  const deleteNotificationMutation = useMutation({
+    mutationFn: (notificationId: string) =>
+      notificationService.deleteNotification({ notificationId }),
+    onSuccess: () => {
+      invalidateNotificationCaches();
+    },
+  });
 
   // ── Delete all read ──────────────────────────────────────────
 
-  const deleteAllRead = useCallback(async () => {
-    await notificationService.deleteAllRead();
-    setResponse((prev) => {
-      if (!prev) return prev;
+  const deleteAllReadMutation = useMutation({
+    mutationFn: () => notificationService.deleteAllRead(),
+    onSuccess: () => {
+      invalidateNotificationCaches();
+    },
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  //  Process data
+  // ══════════════════════════════════════════════════════════════
+  //
+  // Client-side filtering for the 'unread' chip.
+
+  const processedResponse = useMemo((): FetchNotificationsResponse => {
+    const safe = response ?? {
+      data: [],
+      totalCount: 0,
+      unreadCount: 0,
+      hasMore: false,
+    };
+    if (filter.activeType === 'unread') {
       return {
-        ...prev,
-        data: prev.data.filter((n) => !n.isRead),
+        ...safe,
+        data: safe.data.filter((n) => !n.isRead),
       };
-    });
-  }, []);
+    }
+    return safe;
+  }, [response, filter.activeType]);
 
-  // ── Derived values ───────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  //  Callbacks
+  // ══════════════════════════════════════════════════════════════
 
-  const allNotifications = useMemo(() => response?.data ?? [], [response]);
-  const unreadCount = useMemo(
-    () => response?.unreadCount ?? 0,
-    [response],
+  const setFilterType = useCallback(
+    (type: NotificationType | 'all' | 'unread') => {
+      setFilterState({ activeType: type });
+    },
+    [],
   );
 
-  const groups = useMemo(() => {
-    if (filter.activeType === 'unread') {
-      return groupBySection(allNotifications);
-    }
-    return groupBySection(allNotifications);
-  }, [allNotifications, filter.activeType]);
+  const markAsRead = useCallback(
+    async (notificationId: string) => {
+      await markAsReadMutation.mutateAsync(notificationId);
+    },
+    [markAsReadMutation],
+  );
+
+  const markAllAsRead = useCallback(async () => {
+    await markAllAsReadMutation.mutateAsync();
+  }, [markAllAsReadMutation]);
+
+  const deleteSingle = useCallback(
+    async (notificationId: string) => {
+      await deleteNotificationMutation.mutateAsync(notificationId);
+    },
+    [deleteNotificationMutation],
+  );
+
+  const deleteAllReadFn = useCallback(async () => {
+    await deleteAllReadMutation.mutateAsync();
+  }, [deleteAllReadMutation]);
+
+  /** Refetch the notification list (pull-to-refresh). */
+  const refresh = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
+
+  // ══════════════════════════════════════════════════════════════
+  //  Derived values
+  // ══════════════════════════════════════════════════════════════
+
+  const allNotifications = useMemo(
+    () => processedResponse.data,
+    [processedResponse],
+  );
+
+  const unreadCount = useMemo(
+    () => processedResponse.unreadCount,
+    [processedResponse],
+  );
+
+  const error = useMemo(
+    () =>
+      queryError
+        ? 'Failed to load notifications. Pull down to retry.'
+        : null,
+    [queryError],
+  );
+
+  const groups = useMemo(
+    () => groupBySection(allNotifications),
+    [allNotifications],
+  );
 
   return {
     groups,
@@ -297,11 +469,11 @@ export function useNotifications(): UseNotificationsReturn {
     markAsRead,
     markAllAsRead,
     deleteNotification: deleteSingle,
-    deleteAllRead,
+    deleteAllRead: deleteAllReadFn,
     refresh,
     unreadCount,
     isLoading,
-    isRefreshing,
+    isRefreshing: isRefetching,
     error,
   };
 }

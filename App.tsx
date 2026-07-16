@@ -12,7 +12,7 @@
  * @module App
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Provider } from 'react-redux';
@@ -23,10 +23,15 @@ import { AuthProvider } from './src/providers/AuthProvider';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import { ToastProvider } from './src/components/Toast';
 import { colors } from './src/theme/colors';
+import { initializeFCM } from './src/services/fcm/fcmService';
 
 const queryClient = new QueryClient();
 
 export default function App(): React.JSX.Element {
+  useEffect(() => {
+    initializeFCM();
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
     <Provider store={store}>

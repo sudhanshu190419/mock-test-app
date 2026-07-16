@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "45846353163",
+    "project_id": "mocktestapp-67385",
+    "storage_bucket": "mocktestapp-67385.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:45846353163:android:b3cd62f0e6880ca1c4fe0e",
+        "android_client_info": {
+          "package_name": "com.mocktestapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCkQvWR7okaJ3UAK3ZcFnkqDO9z93-LIdQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

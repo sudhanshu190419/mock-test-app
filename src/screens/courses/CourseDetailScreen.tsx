@@ -32,6 +32,8 @@ import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
+import { useAppDispatch } from '../../store/hooks';
+import { setPurchaseInProgress } from '../../store/purchaseSlice';
 import { useCourse } from '../../hooks/course/useCourse';
 import { useCreatePaymentOrder } from '../../hooks/payment/useCreatePaymentOrder';
 import { usePurchaseStatus } from '../../hooks/payment/usePurchaseStatus';
@@ -325,6 +327,7 @@ export default function CourseDetailScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const route = useRoute<CourseDetailRouteProp>();
+  const dispatch = useAppDispatch();
 
   // ── Get courseId from navigation params ───────────────────────
   const { courseId } = route.params;
@@ -418,9 +421,11 @@ export default function CourseDetailScreen(): React.JSX.Element {
   useEffect(() => {
     if (pollStatus.status === 'enrolled') {
       console.log('[PAYMENT_FLOW] Enrollment confirmed via polling!');
+      dispatch(setPurchaseInProgress(false));
       setPurchaseState((prev) => ({ ...prev, state: 'enrolled' }));
     } else if (pollStatus.status === 'timeout') {
       console.log('[PAYMENT_FLOW] Polling timed out');
+      dispatch(setPurchaseInProgress(false));
       setPurchaseState({
         state: 'failed',
         errorMessage:
@@ -429,6 +434,7 @@ export default function CourseDetailScreen(): React.JSX.Element {
         formattedAmount: formatPrice(coursePrice),
       });
     } else if (pollStatus.status === 'error') {
+      dispatch(setPurchaseInProgress(false));
       setPurchaseState({
         state: 'failed',
         errorMessage: pollStatus.message,
@@ -455,6 +461,8 @@ export default function CourseDetailScreen(): React.JSX.Element {
         });
         return;
       }
+
+      dispatch(setPurchaseInProgress(true));
 
       setPurchaseState({
         state: 'creating_order',
@@ -515,6 +523,7 @@ export default function CourseDetailScreen(): React.JSX.Element {
         const errorInfo = razorpayResult.error;
         if (typeof errorInfo === 'string') {
           console.log('[PAYMENT_FLOW] Razorpay SDK error:', errorInfo);
+          dispatch(setPurchaseInProgress(false));
           setPurchaseState({
             state: 'failed',
             errorMessage: errorInfo,
@@ -527,6 +536,7 @@ export default function CourseDetailScreen(): React.JSX.Element {
           console.log('[PAYMENT_FLOW] Razorpay error:', code, description);
 
           if (code === 2) {
+            dispatch(setPurchaseInProgress(false));
             setPurchaseState({
               state: 'failed',
               errorMessage:
@@ -534,6 +544,7 @@ export default function CourseDetailScreen(): React.JSX.Element {
               razorpayOrderId: result.razorpayOrderId,
             });
           } else {
+            dispatch(setPurchaseInProgress(false));
             setPurchaseState({
               state: 'failed',
               errorMessage: description || 'Payment failed. Please try again.',
@@ -543,6 +554,7 @@ export default function CourseDetailScreen(): React.JSX.Element {
         }
       }
     } catch (err) {
+      dispatch(setPurchaseInProgress(false));
       // Catch any unhandled error (network failure, mutation reject, etc.)
       const message =
         err instanceof Error ? err.message : 'An unexpected error occurred.';
@@ -558,10 +570,11 @@ export default function CourseDetailScreen(): React.JSX.Element {
 
   // ── Reset purchase flow ───────────────────────────────────────
   const resetPurchase = useCallback(() => {
+    dispatch(setPurchaseInProgress(false));
     resetPoll();
     setStudentId(null);
     setPurchaseState({ state: 'idle' });
-  }, [resetPoll]);
+  }, [resetPoll, dispatch]);
 
   // ── Share handler ─────────────────────────────────────────────
   async function handleShare(): Promise<void> {

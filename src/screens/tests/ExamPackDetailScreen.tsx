@@ -30,6 +30,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import Icon from '../../components/home/Icons';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
+import { useAppDispatch } from '../../store/hooks';
+import { setPurchaseInProgress } from '../../store/purchaseSlice';
 import { usePracticeDetail } from '../../hooks/practice/usePractice';
 import { getPaperMockMapping } from '../../services/practice/practiceService';
 import { useCreatePaymentOrder } from '../../hooks/payment/useCreatePaymentOrder';
@@ -532,6 +534,7 @@ export default function ExamPackDetailScreen({
   const { packageId } = route.params;
   const insets = useSafeAreaInsets();
   const stackNavigation = useNavigation<NavigationProp>();
+  const dispatch = useAppDispatch();
 
   const {
     data: detail,
@@ -570,9 +573,11 @@ export default function ExamPackDetailScreen({
   useEffect(() => {
     if (pollStatus.status === 'enrolled') {
       console.log('[PYQ_POLL] Purchase detected');
+      dispatch(setPurchaseInProgress(false));
       setPurchaseState((prev) => ({ ...prev, state: 'enrolled' }));
     } else if (pollStatus.status === 'timeout') {
       console.log('[PYQ_POLL] Timeout');
+      dispatch(setPurchaseInProgress(false));
       setPurchaseState({
         state: 'failed',
         errorMessage:
@@ -581,12 +586,13 @@ export default function ExamPackDetailScreen({
         formattedAmount: detail ? formatPrice(detail.package.price) : undefined,
       });
     } else if (pollStatus.status === 'error') {
+      dispatch(setPurchaseInProgress(false));
       setPurchaseState({
         state: 'failed',
         errorMessage: pollStatus.message,
       });
     }
-  }, [pollStatus, detail]);
+  }, [pollStatus, detail, dispatch]);
 
   // ── Buy Now handler ───────────────────────────────────────────
   const handleBuyNow = useCallback(async () => {
@@ -614,6 +620,8 @@ export default function ExamPackDetailScreen({
         });
         return;
       }
+
+      dispatch(setPurchaseInProgress(true));
 
       setPurchaseState({
         state: 'creating_order',
@@ -674,6 +682,7 @@ export default function ExamPackDetailScreen({
         const errorInfo = razorpayResult.error;
         if (typeof errorInfo === 'string') {
           console.log('[PYQ_PAYMENT] Razorpay SDK error:', errorInfo);
+          dispatch(setPurchaseInProgress(false));
           setPurchaseState({
             state: 'failed',
             errorMessage: errorInfo,
@@ -686,6 +695,7 @@ export default function ExamPackDetailScreen({
           console.log('[PYQ_PAYMENT] Razorpay error:', code, description);
 
           if (code === 2) {
+            dispatch(setPurchaseInProgress(false));
             setPurchaseState({
               state: 'failed',
               errorMessage:
@@ -693,6 +703,7 @@ export default function ExamPackDetailScreen({
               razorpayOrderId: result.razorpayOrderId,
             });
           } else {
+            dispatch(setPurchaseInProgress(false));
             setPurchaseState({
               state: 'failed',
               errorMessage: description || 'Payment failed. Please try again.',
@@ -702,6 +713,7 @@ export default function ExamPackDetailScreen({
         }
       }
     } catch (err) {
+      dispatch(setPurchaseInProgress(false));
       const message =
         err instanceof Error ? err.message : 'An unexpected error occurred.';
       console.log('[PYQ_PAYMENT] Unhandled error:', message);
@@ -716,10 +728,11 @@ export default function ExamPackDetailScreen({
 
   // ── Reset purchase flow ───────────────────────────────────────
   const resetPurchase = useCallback(() => {
+    dispatch(setPurchaseInProgress(false));
     resetPoll();
     setStudentId(null);
     setPurchaseState({ state: 'idle' });
-  }, [resetPoll]);
+  }, [resetPoll, dispatch]);
 
   const handleBackPress = useCallback(() => {
     navigation.goBack();
