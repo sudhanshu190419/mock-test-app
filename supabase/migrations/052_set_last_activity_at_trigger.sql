@@ -48,10 +48,13 @@ $$;
 -- updates (status, submitted_at, last_question_id) will not modify
 -- last_activity_at unnecessarily.
 
-create trigger trg_mock_attempts_set_last_activity_at
-  before update on public.mock_attempts
-  for each row
-  execute function public.set_last_activity_at();
+DROP TRIGGER IF EXISTS trg_mock_attempts_set_last_activity_at
+ON public.mock_attempts;
+
+CREATE TRIGGER trg_mock_attempts_set_last_activity_at
+BEFORE UPDATE ON public.mock_attempts
+FOR EACH ROW
+EXECUTE FUNCTION public.set_last_activity_at();
 
 -- ═════════════════════════════════════════════════════════════════════
 --  COMMENTS

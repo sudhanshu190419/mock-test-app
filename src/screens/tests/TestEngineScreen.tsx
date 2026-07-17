@@ -175,6 +175,10 @@ export default function TestEngineScreen({
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
   const [isExpired, setIsExpired] = useState(false);
+  const [remainingAttempts, setRemainingAttempts] = useState<number | undefined>(undefined);
+  const [isRetaking, setIsRetaking] = useState(false);
+  const [retakeError, setRetakeError] = useState<string | null>(null);
+  const [expiredAttemptId, setExpiredAttemptId] = useState<string | null>(null);
 
   // ── State ──────────────────────────────────────────────────────
   const [questions, setQuestions] = useState<QuestionDisplay[]>([]);
@@ -192,6 +196,9 @@ export default function TestEngineScreen({
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'local'>('saved');
   const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [submitFailed, setSubmitFailed] = useState(false);
+  const [isRetryingSubmission, setIsRetryingSubmission] = useState(false);
 
   // ── Refs for live persistence (always hold the latest value) ────
   const attemptIdRef = useRef(attemptId);
@@ -273,8 +280,12 @@ export default function TestEngineScreen({
 
         // Phase 4.5: If the server says the timer expired during the crash,
         // show the expired screen instead of letting the student enter.
+        // Save remainingAttempts so the UI can offer "Start Another Attempt"
+        // or show "No attempts remaining".
         if (expired) {
           setIsExpired(true);
+          setRemainingAttempts(result.data.remainingAttempts);
+          setExpiredAttemptId(newAttemptId);
           setIsInitializing(false);
           return;
         }
@@ -1003,9 +1014,18 @@ export default function TestEngineScreen({
     }
   }, [selectedOption, markedForReview, questions, testId, paperId, timer, stackNavigation, durationMin, attemptId]);
 
-  // ── Auto-Submit Handler (Phase 5) ───────────────────────────────
+  // ── Auto-Submit Handler (Phase 5 — with Retry) ──────────────────
   // Called by useTestTimer's onTimeUp when the countdown reaches zero.
-  // Drains the persistence queue, syncs the final timer, and submits.
+  // Drains the persistence queue, flushes final timing, then submits
+  // with up to 3 retries using exponential backoff (1s, 2s, 4s).
+  //
+  // If all retries fail, verifies server-side submission status.
+  //   - If confirmed submitted → navigates to result screen.
+  //   - If not confirmed → shows recovery screen explaining answers
+  //     are safely stored and the app will recover when reopened.
+  //
+  // Retries are safe because submitTest() is idempotent — duplicate
+  // calls return the existing result without re-evaluation.
   const handleAutoSubmit = useCallback(async () => {
     if (!attemptId || isSubmitted) {
       console.log('[AUTO_SUBMIT] Skipping — already submitted or no attemptId');
@@ -1017,11 +1037,10 @@ export default function TestEngineScreen({
     setIsSubmitted(true);
     setShowSubmitDialog(false);
     setShowQuitDialog(false);
+    setRetryAttempt(0);
+    setSubmitFailed(false);
 
     // ── 1. Drain the persistence queue ──────────────────────────
-    // Wait for ALL in-flight and pending answer persistence operations
-    // to complete before finalising.  After isSubmitted=true, no new
-    // tasks are enqueued (all handlers check isSubmitted).
     console.log('[AUTO_SUBMIT] Draining persistence queue...');
     try {
       await drainAllPersistQueues();
@@ -1033,12 +1052,139 @@ export default function TestEngineScreen({
     // ── 2. Final timing flush ───────────────────────────────────
     flushAllQuestionTimes();
     stopTimerSync();
-    // Sync timer = 0 to the server (timer has already expired)
     syncTimerOnce(attemptId, 0);
     timer.pause();
 
-    // ── 3. Submit via existing pipeline ─────────────────────────
-    const timeTaken = durationMin * 60; // Full duration used
+    // ── 3. Submit with retry loop ───────────────────────────────
+    const MAX_RETRIES = 4;
+    const RETRY_DELAYS = [1_000, 2_000, 4_000]; // Exponential backoff: 1s, 2s, 4s
+    const timeTaken = durationMin * 60;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      setRetryAttempt(attempt);
+
+      // Wait before retrying (skip delay for the first attempt)
+      if (attempt > 1) {
+        const delayMs = RETRY_DELAYS[attempt - 2] ?? 4_000;
+        console.log('[AUTO_SUBMIT] Retry', attempt, 'of', MAX_RETRIES, 'in', delayMs, 'ms...');
+        await new Promise<void>((r) => { setTimeout(() => r(), delayMs); });
+      }
+
+      try {
+        console.log('[AUTO_SUBMIT] Submit attempt', attempt, 'of', MAX_RETRIES);
+        const output = await testService.submitTest({
+          attemptId,
+          testId,
+          paperId,
+          questions,
+          answers: selectedOption,
+          timeTakenSeconds: timeTaken,
+          markedForReviewIndices: Array.from(markedForReview),
+        });
+
+        console.log('[AUTO_SUBMIT] Submit succeeded on attempt', attempt, ':', output);
+
+        try {
+          await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+        } catch (e) {
+          console.log('Error cleaning up local storage', e);
+        }
+
+        const statusCheck = await checkResultStatus(output.attemptId);
+        if (statusCheck.status === 'released') {
+          stackNavigation.reset({
+            index: 1,
+            routes: [
+              { name: 'MainTabs' },
+              { name: 'TestResult', params: { testId, attemptId: output.attemptId } },
+            ],
+          });
+        } else {
+          stackNavigation.reset({
+            index: 1,
+            routes: [
+              { name: 'MainTabs' },
+              { name: 'TestSubmitted', params: { testId, attemptId: output.attemptId } },
+            ],
+          });
+        }
+        return; // Exit handler — retry loop succeeded
+      } catch (err) {
+        lastError = err;
+        console.log('[AUTO_SUBMIT] Submit attempt', attempt, 'failed:', err);
+        // Fall through to retry or exhaustion
+      }
+    }
+
+    // ── 4. All retries exhausted — verify server state ──────────
+    console.log('[AUTO_SUBMIT] All', MAX_RETRIES, 'retries exhausted. Verifying server state...');
+    console.log('[AUTO_SUBMIT] Last error:', lastError);
+
+    try {
+      const verifyResult = await getMockAttemptById(attemptId);
+      if (
+        verifyResult.success &&
+        verifyResult.data &&
+        (verifyResult.data.status === 'submitted' || verifyResult.data.status === 'timed_out')
+      ) {
+        console.log('[AUTO_SUBMIT] Server-side submission confirmed — navigating to result.');
+        try {
+          await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+        } catch (e) {
+          console.log('Error cleaning up local storage', e);
+        }
+        const statusCheck = await checkResultStatus(attemptId);
+        if (statusCheck.status === 'released') {
+          stackNavigation.reset({
+            index: 1,
+            routes: [
+              { name: 'MainTabs' },
+              { name: 'TestResult', params: { testId, attemptId } },
+            ],
+          });
+        } else {
+          stackNavigation.reset({
+            index: 1,
+            routes: [
+              { name: 'MainTabs' },
+              { name: 'TestSubmitted', params: { testId, attemptId } },
+            ],
+          });
+        }
+        return; // Exit — student is now on the result screen
+      }
+    } catch (verifyErr) {
+      console.log('[AUTO_SUBMIT] Verification also failed:', verifyErr);
+    }
+
+    // ── 5. Server-side submission did NOT complete ──────────────
+    // Answers are safely stored in the database. The attempt remains
+    // in_progress. The student can close the app and the auto-close
+    // RPC will finalize the attempt on the next resume.
+    console.log('[AUTO_SUBMIT] Submission could not be confirmed — showing recovery screen.');
+    setIsAutoSubmitting(false);
+    setSubmitFailed(true);
+  }, [
+    attemptId, isSubmitted, testId, paperId, questions,
+    selectedOption, markedForReview, timer, stackNavigation, durationMin,
+  ]);
+
+  // ── Manual Retry Submission Handler ──────────────────────────────
+  // Called when the student taps "Retry Submission" on the recovery
+  // screen after all automatic retries have been exhausted.
+  //
+  // Reuses the same submission pipeline: submitTest() → verify → navigate.
+  // Safe to call multiple times because submitTest() is idempotent.
+  const handleRetrySubmission = useCallback(async () => {
+    if (!attemptId) {
+      console.log('[RETRY_SUBMIT] No attemptId — cannot retry.');
+      return;
+    }
+
+    console.log('[RETRY_SUBMIT] Manual retry requested for attempt:', attemptId);
+    setIsRetryingSubmission(true);
+
     try {
       const output = await testService.submitTest({
         attemptId,
@@ -1046,11 +1192,11 @@ export default function TestEngineScreen({
         paperId,
         questions,
         answers: selectedOption,
-        timeTakenSeconds: timeTaken,
+        timeTakenSeconds: durationMin * 60,
         markedForReviewIndices: Array.from(markedForReview),
       });
 
-      console.log('[AUTO_SUBMIT] Submit successful:', output);
+      console.log('[RETRY_SUBMIT] Submit succeeded:', output);
 
       try {
         await AsyncStorage.removeItem(`attempt_answers_${testId}`);
@@ -1076,63 +1222,56 @@ export default function TestEngineScreen({
           ],
         });
       }
+      return; // Exit — student is now on the result screen
     } catch (err) {
-      console.log('[AUTO_SUBMIT] Submit failed (network error):', err);
-
-      // ── Recovery: verify server-side completion ─────────────
-      // The submitTest call may have succeeded on the server even
-      // though the client timed out waiting for the response.
-      // Check the attempt's actual status in the database.
-      try {
-        const verifyResult = await getMockAttemptById(attemptId);
-        if (
-          verifyResult.success &&
-          verifyResult.data &&
-          (verifyResult.data.status === 'submitted' || verifyResult.data.status === 'timed_out')
-        ) {
-          console.log('[AUTO_SUBMIT] Server-side submission confirmed — navigating to result.');
-          // The server already processed the submission. Navigate
-          // to the existing result screen using the same flow as
-          // a successful submission.
-          try {
-            await AsyncStorage.removeItem(`attempt_answers_${testId}`);
-          } catch (e) {
-            console.log('Error cleaning up local storage', e);
-          }
-          const statusCheck = await checkResultStatus(attemptId);
-          if (statusCheck.status === 'released') {
-            stackNavigation.reset({
-              index: 1,
-              routes: [
-                { name: 'MainTabs' },
-                { name: 'TestResult', params: { testId, attemptId } },
-              ],
-            });
-          } else {
-            stackNavigation.reset({
-              index: 1,
-              routes: [
-                { name: 'MainTabs' },
-                { name: 'TestSubmitted', params: { testId, attemptId } },
-              ],
-            });
-          }
-          return; // Exit — student is now on the result screen
-        }
-      } catch (verifyErr) {
-        console.log('[AUTO_SUBMIT] Verification also failed:', verifyErr);
-      }
-
-      // ── Server-side submission did NOT complete ──────────────
-      // The attempt remains in_progress in the DB.
-      // isSubmitted stays true to keep the UI locked.
-      // The student can close the app and resume later.
-      console.log('[AUTO_SUBMIT] Server-side submission NOT confirmed — keeping UI locked.');
-      setIsAutoSubmitting(false);
+      console.log('[RETRY_SUBMIT] Manual retry failed:', err);
     }
+
+    // ── Retry failed — verify server state ─────────────────────
+    console.log('[RETRY_SUBMIT] Manual retry failed. Verifying server state...');
+    try {
+      const verifyResult = await getMockAttemptById(attemptId);
+      if (
+        verifyResult.success &&
+        verifyResult.data &&
+        (verifyResult.data.status === 'submitted' || verifyResult.data.status === 'timed_out')
+      ) {
+        console.log('[RETRY_SUBMIT] Server-side submission confirmed — navigating to result.');
+        try {
+          await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+        } catch (e) {
+          console.log('Error cleaning up local storage', e);
+        }
+        const statusCheck = await checkResultStatus(attemptId);
+        if (statusCheck.status === 'released') {
+          stackNavigation.reset({
+            index: 1,
+            routes: [
+              { name: 'MainTabs' },
+              { name: 'TestResult', params: { testId, attemptId } },
+            ],
+          });
+        } else {
+          stackNavigation.reset({
+            index: 1,
+            routes: [
+              { name: 'MainTabs' },
+              { name: 'TestSubmitted', params: { testId, attemptId } },
+            ],
+          });
+        }
+        return;
+      }
+    } catch (verifyErr) {
+      console.log('[RETRY_SUBMIT] Verification also failed:', verifyErr);
+    }
+
+    // Still not confirmed — remain on recovery screen
+    console.log('[RETRY_SUBMIT] Still could not confirm submission — staying on recovery screen.');
+    setIsRetryingSubmission(false);
   }, [
-    attemptId, isSubmitted, testId, paperId, questions,
-    selectedOption, markedForReview, timer, stackNavigation, durationMin,
+    attemptId, testId, paperId, questions,
+    selectedOption, markedForReview, stackNavigation, durationMin,
   ]);
 
   // Sync refs so callbacks always have the latest handler.
@@ -1143,6 +1282,56 @@ export default function TestEngineScreen({
   useEffect(() => {
     handleAutoSubmitRef.current = handleAutoSubmit;
   }, [handleAutoSubmit]);
+
+  // ── Start Another Attempt Handler ───────────────────────────────
+  // Called when the student taps "Start Another Attempt" on the expired
+  // screen.  Calls initializeAttempt() again — the RPC will find no
+  // in_progress attempt (the expired one was already closed) and create
+  // a fresh attempt (or return ATTEMPT_LIMIT_REACHED if exhausted).
+  const handleStartAnotherAttempt = useCallback(async () => {
+    setIsRetaking(true);
+    setRetakeError(null);
+
+    // Flush any pending persist operations for the expired attempt.
+    // New answers will use a different attemptId, so old queue entries
+    // would only generate unnecessary DB traffic against the timed_out attempt.
+    clearAllPersistQueues();
+
+    try {
+      const result = await testService.initializeAttempt(testId);
+
+      if (result.success) {
+        // Reset all state to enter the test fresh
+        setIsExpired(false);
+        setRemainingAttempts(undefined);
+        setRetakeError(null);
+        setIsRetaking(false);
+
+        // Reset timer to full duration
+        timerRef.current.reset(durationMin * 60);
+
+        // Set the new attemptId — the questions loading effect will fire
+        setAttemptId(result.data.attemptId);
+        setIsInitializing(false);
+
+        // Reset answer state
+        setSelectedOption({});
+        setMarkedForReview(new Set());
+        setVisitedQuestions(new Set([0]));
+        setBookmarks(new Set());
+        setCurrentIndex(0);
+        setIsSubmitted(false);
+        setIsQuestionsLoading(true);
+      } else {
+        setRetakeError(result.error ?? 'Failed to start a new attempt. Please try again.');
+        setIsRetaking(false);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'An unexpected error occurred.';
+      setRetakeError(msg);
+      setIsRetaking(false);
+    }
+  }, [testId, durationMin]);
 
   function markVisited(index: number) {
     setVisitedQuestions((prev) => {
@@ -1180,29 +1369,114 @@ export default function TestEngineScreen({
     );
   }
 
-  // ── Expired Test Screen (Phase 4.5) ──────────────────────────
+  // ── Expired Test Screen (Phase 4.5 + retake support) ──────────
   // The server detected that the timer expired while the student was
-  // away (crash / app close). Show a clear message and redirect back.
+  // away (crash / app close) and auto-closed the attempt to 'timed_out'.
+  // Show context-sensitive actions based on remaining attempts.
+  //
+  // remainingAttempts:
+  //   - undefined → not yet computed (shouldn't happen)
+  //   - -1        → unlimited retakes available
+  //   - 0         → no retakes remaining
+  //   - > 0       → student can retake this many more times
   if (isExpired) {
+    const canRetake = remainingAttempts === -1 || (remainingAttempts !== undefined && remainingAttempts > 0);
+
     return (
       <View style={styles.centerContainer}>
+        {/* Loading overlay while retaking */}
+        {isRetaking && (
+          <View style={StyleSheet.absoluteFill}>
+            <View style={styles.retakingOverlay}>
+              <ActivityIndicator size="large" color="#FFFFFF" />
+              <Text style={styles.retakingText}>Starting new attempt...</Text>
+            </View>
+          </View>
+        )}
+
         <View style={[styles.errorIconContainer, { backgroundColor: '#FFF7ED' }]}>
           <Text style={[styles.errorIconText, { color: '#EA580C' }]}>⏰</Text>
         </View>
         <Text style={styles.errorTitle}>Test Time Expired</Text>
-        <Text style={styles.errorMessage}>
-          Your time for this test has expired while you were away.{'\n\n'}
-          You can start a new attempt if retakes are allowed for this test.
-        </Text>
-        <TouchableOpacity
-          style={styles.goBackButton}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.85}
-          accessibilityLabel="Go back"
-          accessibilityRole="button"
-        >
-          <Text style={styles.goBackButtonText}>Go Back</Text>
-        </TouchableOpacity>
+
+        {canRetake ? (
+          <Text style={styles.errorMessage}>
+            Your time for this test has expired while you were away.{'\n\n'}
+            {remainingAttempts === -1
+              ? 'You can start a new attempt.'
+              : `You have ${remainingAttempts} attempt(s) remaining.`}
+          </Text>
+        ) : (
+          <Text style={styles.errorMessage}>
+            Your time for this test has expired while you were away.{'\n\n'}
+            You have used all allowed attempts for this test.
+          </Text>
+        )}
+
+        {retakeError && (
+          <Text style={styles.retakeErrorText}>{retakeError}</Text>
+        )}
+
+        <View style={styles.expiredButtonContainer}>
+          {canRetake && (
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={handleStartAnotherAttempt}
+              activeOpacity={0.85}
+              disabled={isRetaking}
+              accessibilityLabel="Start another attempt"
+              accessibilityRole="button"
+            >
+              <Text style={styles.primaryButtonText}>Start Another Attempt</Text>
+            </TouchableOpacity>
+          )}
+
+          {!canRetake && expiredAttemptId && (
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={async () => {
+                const statusCheck = await checkResultStatus(expiredAttemptId);
+                if (statusCheck.status === 'released') {
+                  stackNavigation.reset({
+                    index: 1,
+                    routes: [
+                      { name: 'MainTabs' },
+                      { name: 'TestResult', params: { testId, attemptId: expiredAttemptId } },
+                    ],
+                  });
+                } else if (statusCheck.status !== 'not_found') {
+                  stackNavigation.reset({
+                    index: 1,
+                    routes: [
+                      { name: 'MainTabs' },
+                      { name: 'TestSubmitted', params: { testId, attemptId: expiredAttemptId } },
+                    ],
+                  });
+                } else {
+                  // No result found — navigate to dashboard instead
+                  navigation.goBack();
+                }
+              }}
+              activeOpacity={0.85}
+              accessibilityLabel="View result"
+              accessibilityRole="button"
+            >
+              <Text style={styles.secondaryButtonText}>View Result</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={canRetake ? styles.secondaryButton : styles.primaryButton}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.85}
+            accessibilityLabel="Back to dashboard"
+            accessibilityRole="button"
+          >
+            <Text style={canRetake ? styles.secondaryButtonText : styles.primaryButtonText}>
+              Back to Dashboard
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -1369,13 +1643,67 @@ export default function TestEngineScreen({
         />
       )}
 
-      {/* ═══ Auto-Submit Overlay (Phase 5) ═══ */}
+      {/* ═══ Auto-Submit Overlay (Phase 5) with retry progress ═══ */}
       {isAutoSubmitting && (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <View style={styles.autoSubmitOverlay}>
             <ActivityIndicator size="large" color="#FFFFFF" />
             <Text style={styles.autoSubmitText}>Time is up</Text>
-            <Text style={styles.autoSubmitSubText}>Submitting your test...</Text>
+            <Text style={styles.autoSubmitSubText}>
+              {retryAttempt > 0
+                ? `Submitting your test... Attempt ${retryAttempt} of 3`
+                : 'Submitting your test...'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* ═══ Submission Failed Recovery Screen ═══ */}
+      {submitFailed && (
+        <View style={StyleSheet.absoluteFill}>
+          {/* Loading overlay while retrying submission */}
+          {isRetryingSubmission && (
+            <View style={StyleSheet.absoluteFill}>
+              <View style={styles.autoSubmitOverlay}>
+                <ActivityIndicator size="large" color="#FFFFFF" />
+                <Text style={styles.autoSubmitText}>Retrying Submission</Text>
+                <Text style={styles.autoSubmitSubText}>
+                  Attempting to submit your test...
+                </Text>
+              </View>
+            </View>
+          )}
+          <View style={styles.recoveryOverlay}>
+            <View style={[styles.errorIconContainer, { backgroundColor: '#FFF7ED' }]}>
+              <Text style={[styles.errorIconText, { color: '#EA580C' }]}>⚠️</Text>
+            </View>
+            <Text style={styles.errorTitle}>Submission Could Not Be Confirmed</Text>
+            <Text style={styles.errorMessage}>
+              Your answers have been saved successfully.{'\n\n'}
+              We couldn't confirm the final submission because of a temporary
+              network issue.{'\n\n'}
+              Please reconnect to the internet and tap Retry Submission.
+            </Text>
+            <TouchableOpacity
+              style={[styles.primaryButton, isRetryingSubmission && { opacity: 0.5 }]}
+              onPress={handleRetrySubmission}
+              activeOpacity={0.85}
+              disabled={isRetryingSubmission}
+              accessibilityLabel="Retry submission"
+              accessibilityRole="button"
+            >
+              <Text style={styles.primaryButtonText}>Retry Submission</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.secondaryButton, isRetryingSubmission && { opacity: 0.5 }]}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.85}
+              disabled={isRetryingSubmission}
+              accessibilityLabel="Back to dashboard"
+              accessibilityRole="button"
+            >
+              <Text style={styles.secondaryButtonText}>Back to Dashboard</Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -1535,5 +1863,75 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: spacing[8],
     textAlign: 'center',
+  },
+  // ── Expired Screen Buttons ────────────────────────────────────
+  expiredButtonContainer: {
+    width: '100%',
+    gap: spacing[12],
+    alignItems: 'center',
+  },
+  primaryButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing[16],
+    paddingHorizontal: spacing[32],
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    maxWidth: 320,
+  },
+  primaryButtonText: {
+    ...typography.button,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  secondaryButton: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: spacing[16],
+    paddingHorizontal: spacing[32],
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    maxWidth: 320,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  secondaryButtonText: {
+    ...typography.button,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  retakingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing[32],
+    zIndex: 10,
+  },
+  retakingText: {
+    ...typography.body,
+    fontSize: 15,
+    color: '#FFFFFF',
+    marginTop: spacing[16],
+  },
+  retakeErrorText: {
+    ...typography.body,
+    fontSize: 13,
+    color: '#DC2626',
+    textAlign: 'center',
+    marginBottom: spacing[8],
+    paddingHorizontal: spacing[16],
+  },
+  // ── Submission Failed Recovery Screen ────────────────────────
+  recoveryOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.97)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing[32],
   },
 });

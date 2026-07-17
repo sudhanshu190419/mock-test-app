@@ -10,7 +10,7 @@
 
 import { MOCK_QUESTIONS, MOCK_TEST_CONFIG, MOCK_DURATION_SECONDS } from '../data/mockTestEngine';
 import { resolveCurrentStudentId } from './mockTest/studentResolver';
-import { updateMockAttempt, updateMockAnswer, createMockAnswerOption, deleteMockAnswerOptionsByAnswerId, getMockAnswers, getMockAnswerOptions, getMockAttemptById, initializeMockAttemptRpc } from './mockTest/mockAttemptService';
+import { updateMockAttempt, updateMockAnswer, createMockAnswerOption, deleteMockAnswerOptionsByAnswerId, getMockAnswers, getMockAnswerOptions, getMockAttemptById, getMockResultByAttemptId, initializeMockAttemptRpc } from './mockTest/mockAttemptService';
 import { evaluateAttempt } from './mockTest/mockEvaluationService';
 import { getMockTestById } from './mockTest/mockTestService';
 import { getMockTestQuestions } from './mockTest/mockTestQuestionService';
@@ -204,6 +204,39 @@ export async function submitTest(input: SubmitTestInput): Promise<SubmitTestOutp
   console.log('[SUBMIT] input.answers keys:', Object.keys(input.answers));
   console.log('[SUBMIT] input.timeTakenSeconds:', input.timeTakenSeconds);
 
+  // ── 0. Idempotency guard ─────────────────────────────────────────
+  // If the attempt is already in a terminal state (submitted or
+  // timed_out), return the existing result without reprocessing.
+  // This prevents duplicate evaluation and duplicate result generation
+  // from retries, duplicate API calls, or app restarts.
+  console.log('[SUBMIT] Step 0 — Checking idempotency guard...');
+  const existingAttemptResult = await getMockAttemptById(attemptId);
+  if (existingAttemptResult.success && existingAttemptResult.data) {
+    const status = existingAttemptResult.data.status;
+    if (status === 'submitted' || status === 'timed_out') {
+      // Attempt is already finalised — check for existing result
+      const existingResult = await getMockResultByAttemptId(attemptId);
+      if (existingResult.success && existingResult.data) {
+        console.log('[SUBMIT_IDEMPOTENT] Attempt already submitted. Returning existing result:', existingResult.data.resultId);
+        return { attemptId, resultId: existingResult.data.resultId };
+      }
+      // Edge case: attempt is terminal but no result exists.
+      // This can happen if a previous submitTest() call died after
+      // updating the status but before evaluation completed.
+      // Call evaluateAttempt() directly — answers are already in the DB
+      // from the previous call's flushRemainingAnswers(), and
+      // evaluateAttempt() is itself idempotent (checks for existing
+      // result before creating).
+      console.log('[SUBMIT_IDEMPOTENT] Terminal attempt without result — evaluating directly.');
+      const directResult = await evaluateAttempt(attemptId);
+      if (directResult.success && directResult.data) {
+        console.log('[SUBMIT_IDEMPOTENT] Direct evaluation succeeded. resultId:', directResult.data.resultId);
+        return { attemptId, resultId: directResult.data.resultId };
+      }
+      console.log('[SUBMIT_IDEMPOTENT] Direct evaluation failed — falling through to full pipeline:', directResult.error);
+    }
+  }
+
   // ── 1. Fetch mock test for duration, etc. ───────────────────────────
   console.log('[SUBMIT] Fetching mock test...');
   const testResult = await getMockTestById(input.testId);
@@ -322,7 +355,7 @@ export async function resumeTest(attemptId: string): Promise<{ success: boolean 
  */
 export async function initializeAttempt(
   testId: string,
-): Promise<{ success: true; data: { attemptId: string; reused: boolean; effectiveRemainingSeconds?: number; isExpired?: boolean } } | { success: false; error: string }> {
+): Promise<{ success: true; data: { attemptId: string; reused: boolean; effectiveRemainingSeconds?: number; isExpired?: boolean; remainingAttempts?: number } } | { success: false; error: string }> {
   console.log('[INIT_ATTEMPT] Starting initialization for testId:', testId);
 
   // ── 1. Resolve current student ───────────────────────────────────────
@@ -366,12 +399,13 @@ export async function initializeAttempt(
     return { success: false, error: rpcResult.error ?? 'Failed to initialize test. Please try again.' };
   }
 
-  const { attemptId, reused, effectiveRemainingSeconds, isExpired } = rpcResult.data;
+  const { attemptId, reused, effectiveRemainingSeconds, isExpired, remainingAttempts } = rpcResult.data;
 
   if (reused) {
     console.log('[INIT_ATTEMPT] Reused existing attempt, attemptId:', attemptId,
       'effectiveRemainingSeconds:', effectiveRemainingSeconds,
-      'isExpired:', isExpired);
+      'isExpired:', isExpired,
+      'remainingAttempts:', remainingAttempts);
   } else {
     console.log('[INIT_ATTEMPT] New attempt created, attemptId:', attemptId);
   }
@@ -383,6 +417,7 @@ export async function initializeAttempt(
       reused,
       effectiveRemainingSeconds,
       isExpired,
+      remainingAttempts,
     },
   };
 }

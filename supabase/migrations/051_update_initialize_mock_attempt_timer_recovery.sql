@@ -41,6 +41,8 @@ declare
   v_last_activity_at           timestamptz;
   v_effective_remaining        integer;
   v_is_expired                 boolean;
+  v_remaining_attempts         integer;
+  v_total_attempts             bigint;
   v_result                     jsonb;
 begin
   -- ════════════════════════════════════════════════════════════════════════
@@ -156,6 +158,51 @@ begin
       v_is_expired := false;
     end if;
 
+    -- ════════════════════════════════════════════════════════════════════
+    --  STEP 1g — Auto-close expired attempts
+    -- ════════════════════════════════════════════════════════════════════
+    -- If the timer has expired while the student was away, transition the
+    -- attempt to 'timed_out' atomically within this transaction.  This
+    -- eliminates the infinite "Test Time Expired" loop where the student
+    -- can never start a new attempt because the expired attempt remains
+    -- in_progress forever.
+    --
+    -- This is safe under the advisory lock acquired in Step 0 — no
+    -- concurrent session can create a new attempt while we finalize this
+    -- one.  On the next RPC call, this attempt will no longer match
+    -- WHERE status = 'in_progress', so a new attempt will be created
+    -- (or ATTEMPT_LIMIT_REACHED returned if the limit is exhausted).
+    --
+    -- The status 'timed_out' requires submitted_at IS NOT NULL
+    -- (enforced by ck_mock_attempts_status_submitted).
+    if v_is_expired then
+      update public.mock_attempts
+         set status               = 'timed_out',
+             submitted_at         = now(),
+             time_remaining_seconds = 0
+       where attempt_id = v_existing_attempt_id;
+
+      -- ════════════════════════════════════════════════════════════════════
+      --  STEP 1h — Compute remaining attempts for the expired UI
+      -- ════════════════════════════════════════════════════════════════════
+      -- The client needs to know whether the student can start another
+      -- attempt.  Compute remaining (including the one just closed, which
+      -- still counts toward the limit).
+      --   - NULL attempt_limit → unlimited (v_remaining_attempts = -1)
+      --   - Otherwise          → max(0, limit - total_attempts)
+      select count(*)
+        into v_total_attempts
+        from public.mock_attempts ma
+       where ma.test_id    = p_test_id
+         and ma.student_id = p_student_id;
+
+      if p_attempt_limit is not null then
+        v_remaining_attempts := greatest(0, p_attempt_limit - v_total_attempts::integer);
+      else
+        v_remaining_attempts := -1;  -- unlimited
+      end if;
+    end if;
+
     -- ── Return existing attempt with server-corrected timer ─────────────
     v_result := jsonb_build_object(
       'success',                   true,
@@ -164,6 +211,11 @@ begin
       'effective_remaining_seconds', v_effective_remaining,
       'is_expired',                v_is_expired
     );
+
+    -- Add remaining_attempts only when expired (UI needs it)
+    if v_is_expired then
+      v_result := v_result || jsonb_build_object('remaining_attempts', v_remaining_attempts);
+    end if;
     return v_result;
   end if;
 

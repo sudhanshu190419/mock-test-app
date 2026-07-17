@@ -942,6 +942,12 @@ export interface InitializeMockAttemptRpcResult {
    * expired — the student should not be allowed to resume the test.
    */
   is_expired?: boolean;
+  /**
+   * Remaining attempts the student can still use.  -1 = unlimited.
+   * Only set when is_expired = true. Used by the UI to decide whether
+   * to show "Start Another Attempt" or "No attempts remaining".
+   */
+  remaining_attempts?: number;
   /** Human-readable error message (on failure). */
   error?: string;
   /** Machine-readable error code (on failure). */
@@ -964,13 +970,13 @@ export interface InitializeMockAttemptRpcResult {
  * @param studentId   - UUID of the student (from student_details)
  * @param instituteId - UUID of the institute
  * @param attemptLimit - Optional max attempts allowed (from mock_tests.attemptLimit)
- * * @returns ApiResponse with { attemptId: string; reused: boolean; effectiveRemainingSeconds?: number; isExpired?: boolean } */
+ * * @returns ApiResponse with { attemptId: string; reused: boolean; effectiveRemainingSeconds?: number; isExpired?: boolean; remainingAttempts?: number } */
 export async function initializeMockAttemptRpc(
   testId: string,
   studentId: string,
   instituteId: string,
   attemptLimit: number | null,
-): Promise<ApiResponse<{ attemptId: string; reused: boolean; effectiveRemainingSeconds?: number; isExpired?: boolean }>> {
+): Promise<ApiResponse<{ attemptId: string; reused: boolean; effectiveRemainingSeconds?: number; isExpired?: boolean; remainingAttempts?: number }>> {
   try {
     validateUUID(testId, 'testId');
     validateUUID(studentId, 'studentId');
@@ -1014,7 +1020,7 @@ export async function initializeMockAttemptRpc(
       return { success: false, error: 'Initialization succeeded but no attempt ID was returned.' };
     }
 
-    console.log('[RPC] Initialization complete:', result.reused ? 'REUSED' : 'NEW', 'attemptId:', result.attempt_id, 'effectiveRemainingSeconds:', result.effective_remaining_seconds, 'isExpired:', result.is_expired);
+    console.log('[RPC] Initialization complete:', result.reused ? 'REUSED' : 'NEW', 'attemptId:', result.attempt_id, 'effectiveRemainingSeconds:', result.effective_remaining_seconds, 'isExpired:', result.is_expired, 'remainingAttempts:', result.remaining_attempts);
     return {
       success: true,
       data: {
@@ -1022,6 +1028,7 @@ export async function initializeMockAttemptRpc(
         reused: result.reused ?? false,
         effectiveRemainingSeconds: result.effective_remaining_seconds,
         isExpired: result.is_expired,
+        remainingAttempts: result.remaining_attempts,
       },
     };
   } catch (err) {
