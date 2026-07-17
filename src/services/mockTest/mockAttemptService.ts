@@ -69,6 +69,8 @@ interface DbMockAttempt {
   started_at: string;
   submitted_at: string | null;
   time_remaining_seconds: number | null;
+  last_question_id: string | null;
+  last_activity_at: string | null;
   ip_address: string | null;
   device_fingerprint: string | null;
   created_at: string;
@@ -134,6 +136,8 @@ function mapMockAttempt(db: DbMockAttempt): MockAttempt {
     startedAt: db.started_at,
     submittedAt: db.submitted_at,
     timeRemainingSeconds: db.time_remaining_seconds,
+    lastQuestionId: db.last_question_id,
+    lastActivityAt: db.last_activity_at,
     ipAddress: db.ip_address,
     deviceFingerprint: db.device_fingerprint,
     createdAt: db.created_at,
@@ -445,6 +449,12 @@ export async function updateMockAttempt(
     }
     if (input.submittedAt !== undefined) {
       dbRecord.submitted_at = input.submittedAt;
+    }
+    if (input.lastQuestionId !== undefined) {
+      dbRecord.last_question_id = input.lastQuestionId;
+    }
+    if (input.lastActivityAt !== undefined) {
+      dbRecord.last_activity_at = input.lastActivityAt;
     }
 
     console.log('[DB] mock_attempts UPDATE payload:', JSON.stringify(dbRecord), 'WHERE attempt_id:', attemptId);
@@ -902,6 +912,120 @@ export async function getMockResultById(resultId: string): Promise<ApiResponse<M
 
     return { success: true, data: mapMockResult(data) };
   } catch (err) {
+    return { success: false, error: extractErrorMessage(err) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Atomic Initialization (RPC-backed)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Response shape from the `initialize_mock_attempt` RPC.
+ */
+export interface InitializeMockAttemptRpcResult {
+  /** Whether the operation succeeded. */
+  success: boolean;
+  /** The attempt ID (new or existing). */
+  attempt_id?: string;
+  /** True if an existing in_progress attempt was reused. */
+  reused?: boolean;
+  /**
+   * Server-corrected remaining time in seconds. Only set when reused=true.
+   * Computed as: stored_remaining - (NOW() - last_activity_at).
+   * The client MUST use this value (not the raw stored time_remaining_seconds)
+   * to restore the timer on resume, eliminating the crash-recovery vulnerability.
+   */
+  effective_remaining_seconds?: number;
+  /**
+   * True when effective_remaining_seconds <= 0. The attempt's timer has
+   * expired — the student should not be allowed to resume the test.
+   */
+  is_expired?: boolean;
+  /** Human-readable error message (on failure). */
+  error?: string;
+  /** Machine-readable error code (on failure). */
+  code?: string;
+}
+
+/**
+ * Initialize a mock attempt atomically via the backend RPC.
+ *
+ * This replaces the old client-side pattern of:
+ *   createMockAttempt() → N × createMockAnswer()
+ *
+ * with a single database transaction that:
+ *   1. Detects existing in_progress attempts and reuses them
+ *   2. Recovers partially-initialised attempts (missing mock_answers)
+ *   3. Creates new attempts with bulk-inserted mock_answers
+ *   4. Serialises concurrent requests via pg_advisory_xact_lock
+ *
+ * @param testId      - UUID of the mock test
+ * @param studentId   - UUID of the student (from student_details)
+ * @param instituteId - UUID of the institute
+ * @param attemptLimit - Optional max attempts allowed (from mock_tests.attemptLimit)
+ * * @returns ApiResponse with { attemptId: string; reused: boolean; effectiveRemainingSeconds?: number; isExpired?: boolean } */
+export async function initializeMockAttemptRpc(
+  testId: string,
+  studentId: string,
+  instituteId: string,
+  attemptLimit: number | null,
+): Promise<ApiResponse<{ attemptId: string; reused: boolean; effectiveRemainingSeconds?: number; isExpired?: boolean }>> {
+  try {
+    validateUUID(testId, 'testId');
+    validateUUID(studentId, 'studentId');
+    validateUUID(instituteId, 'instituteId');
+
+    console.log('[RPC] Calling initialize_mock_attempt...');
+    console.log('[RPC]   testId:', testId);
+    console.log('[RPC]   studentId:', studentId);
+    console.log('[RPC]   instituteId:', instituteId);
+    console.log('[RPC]   attemptLimit:', attemptLimit);
+
+    const { data, error } = await supabase.rpc(
+      'initialize_mock_attempt',
+      {
+        p_test_id: testId,
+        p_student_id: studentId,
+        p_institute_id: instituteId,
+        p_attempt_limit: attemptLimit,
+      },
+    );
+
+    if (error) {
+      console.log('[RPC_ERROR] Supabase RPC error:', error);
+      return { success: false, error: extractErrorMessage(error) };
+    }
+
+    const result = data as InitializeMockAttemptRpcResult;
+    console.log('[RPC] RPC result:', JSON.stringify(result));
+
+    if (!result.success) {
+      console.log('[RPC_ERROR] RPC returned failure:', result.error);
+      // Map specific error codes to user-friendly messages
+      if (result.code === 'ATTEMPT_LIMIT_REACHED') {
+        return { success: false, error: result.error ?? 'Maximum attempt limit reached.' };
+      }
+      return { success: false, error: result.error ?? 'Failed to initialize test attempt.' };
+    }
+
+    if (!result.attempt_id) {
+      console.log('[RPC_ERROR] RPC succeeded but no attempt_id returned');
+      return { success: false, error: 'Initialization succeeded but no attempt ID was returned.' };
+    }
+
+    console.log('[RPC] Initialization complete:', result.reused ? 'REUSED' : 'NEW', 'attemptId:', result.attempt_id, 'effectiveRemainingSeconds:', result.effective_remaining_seconds, 'isExpired:', result.is_expired);
+    return {
+      success: true,
+      data: {
+        attemptId: result.attempt_id,
+        reused: result.reused ?? false,
+        effectiveRemainingSeconds: result.effective_remaining_seconds,
+        isExpired: result.is_expired,
+      },
+    };
+  } catch (err) {
+    console.log('[RPC_CATCH] initializeMockAttemptRpc unexpected error:', err);
     return { success: false, error: extractErrorMessage(err) };
   }
 }

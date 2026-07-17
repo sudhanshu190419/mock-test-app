@@ -1094,10 +1094,23 @@ export interface MockAttempt {
    */
   timeRemainingSeconds: number | null;
   /**
+   * The last question the student was viewing during an active attempt.
+   * Updated on every navigation event. Used by the resume flow to restore
+   * the student's position after crash or app close. NULL for new attempts
+   * with no navigation yet.
+   */
+  lastQuestionId: string | null;
+  /**
    * Client IP address at attempt start. Used for exam integrity monitoring
    * (same IP across accounts) and geo-analytics. PII — handle with care.
    */
   ipAddress: string | null;
+  /**
+   * UTC timestamp of the last client timer sync. Used by the resume flow
+   * to compute the effective remaining time after a crash. NULL for legacy
+   * attempts created before migration 050.
+   */
+  lastActivityAt: string | null;
   /**
    * Hashed device fingerprint at attempt start. Used for exam integrity
    * monitoring. Hashed at the Edge Function layer — always store hashed,
@@ -1143,6 +1156,10 @@ export interface UpdateMockAttemptInput {
   status?: AttemptStatus;
   /** Set by the submission/auto-timeout Edge Function. */
   submittedAt?: string | null;
+  /** The last question the student was viewing. Set on every navigation. */
+  lastQuestionId?: string | null;
+  /** UTC timestamp of the last client activity. Updated on every timer sync. */
+  lastActivityAt?: string | null;
 }
 
 /**

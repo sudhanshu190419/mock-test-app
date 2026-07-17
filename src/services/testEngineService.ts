@@ -10,7 +10,7 @@
 
 import { MOCK_QUESTIONS, MOCK_TEST_CONFIG, MOCK_DURATION_SECONDS } from '../data/mockTestEngine';
 import { resolveCurrentStudentId } from './mockTest/studentResolver';
-import { createMockAttempt, updateMockAttempt, updateMockAnswer, createMockAnswer, createMockAnswerOption } from './mockTest/mockAttemptService';
+import { updateMockAttempt, updateMockAnswer, createMockAnswerOption, deleteMockAnswerOptionsByAnswerId, getMockAnswers, getMockAnswerOptions, getMockAttemptById, initializeMockAttemptRpc } from './mockTest/mockAttemptService';
 import { evaluateAttempt } from './mockTest/mockEvaluationService';
 import { getMockTestById } from './mockTest/mockTestService';
 import { getMockTestQuestions } from './mockTest/mockTestQuestionService';
@@ -20,8 +20,9 @@ import type {
   SaveAnswerInput,
   SubmitTestInput,
   SubmitTestOutput,
+  ResumeData,
 } from '../types/testEngine';
-import type { MockTest } from '../types/mockTest';
+import type { MockTest, MockAnswer } from '../types/mockTest';
 
 // ─── Test Data ──────────────────────────────────────────────────────
 
@@ -68,6 +69,94 @@ export async function fetchQuestionsBySubject(
 // ─── Test Taking ────────────────────────────────────────────────────
 
 /**
+ * Persist a single answer interaction live during the test.
+ *
+ * Called immediately when the student selects/deselects an option.
+ * Does NOT wait for submission — updates are written to the DB in real time.
+ *
+ * This replaces the old pattern of saving everything at submit time.
+ *
+ * ├─ MCQ / True-False : Deletes old options → inserts the newly selected one
+ * ├─ MSQ              : Deletes all old options → inserts current selection set
+ * └─ Numerical        : Updates numerical_answer directly (no options)
+ *
+ * @param answerId        - The pre-populated mock_answer row ID
+ * @param questionType    - 'mcq' | 'msq' | 'numerical' | 'true_false'
+ * @param value           - Selected option ID, array of IDs, numerical string, or null
+ * @param isMarkedForReview - Whether the question is currently flagged for review
+ */
+export async function persistAnswerLive(params: {
+  answerId: string;
+  questionType: string;
+  value: string | string[] | null;
+  isMarkedForReview: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  const { answerId, questionType, value, isMarkedForReview } = params;
+
+  const val = value;
+  const isAnswered =
+    val !== null &&
+    val !== undefined &&
+    (typeof val === 'string' ? val.trim() !== '' : true) &&
+    (!Array.isArray(val) || val.length > 0);
+
+  let numericalValue: number | null = null;
+
+  try {
+    // ── MCQ / True-False: replace single option ──────────────────
+    if (questionType === 'mcq' || questionType === 'true_false') {
+      await deleteMockAnswerOptionsByAnswerId(answerId);
+      if (isAnswered && typeof val === 'string' && val.trim() !== '') {
+        const optResult = await createMockAnswerOption({ answerId, optionId: val });
+        if (!optResult.success) {
+          console.log('[PERSIST_WARN] createMockAnswerOption failed:', optResult.error);
+        }
+      }
+    }
+    // ── MSQ: replace all selected options ────────────────────────
+    else if (questionType === 'msq') {
+      await deleteMockAnswerOptionsByAnswerId(answerId);
+      if (isAnswered && Array.isArray(val) && val.length > 0) {
+        await Promise.all(
+          val.map((optId) =>
+            createMockAnswerOption({ answerId, optionId: optId }).then((r) => {
+              if (!r.success) console.log('[PERSIST_WARN] MSQ option failed:', r.error);
+            }),
+          ),
+        );
+      }
+    }
+    // ── Numerical: store the parsed value ────────────────────────
+    else if (questionType === 'numerical') {
+      if (isAnswered && typeof val === 'string' && val.trim() !== '') {
+        const parsed = Number(val.trim());
+        if (!isNaN(parsed)) {
+          numericalValue = parsed;
+        }
+      }
+    }
+
+    // ── Update the mock_answer row ────────────────────────────────
+    const updateResult = await updateMockAnswer(answerId, {
+      isAnswered,
+      isMarkedForReview,
+      numericalAnswer: numericalValue,
+      answeredAt: isAnswered ? new Date().toISOString() : null,
+    });
+
+    if (!updateResult.success) {
+      return { success: false, error: updateResult.error };
+    }
+
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log('[PERSIST_ERROR] Failed to persist answer:', msg);
+    return { success: false, error: msg };
+  }
+}
+
+/**
  * Save the student's answer for a question.
  * Replace with: POST /api/attempts/:attemptId/answers
  */
@@ -93,243 +182,66 @@ export async function markForReview(
 }
 
 /**
- * Submit the test — creates an attempt, saves all answers,
+ * Submit the test — saves all answers using the pre-existing attempt,
  * evaluates, and returns the attempt and result IDs.
  *
+ * The attempt and mock_answers rows were already created by
+ * initializeAttempt() when the student started the test.
+ *
  * Steps:
- * 1. Resolve the current student ID from the auth session
- * 2. Fetch the mock test to get instituteId
- * 3. Create a mock_attempts row
- * 4. Pre-populate mock_answers rows (one per question)
- * 5. Save selected options to mock_answer_options
- * 6. Update attempt status to 'submitted'
- * 7. Call evaluateAttempt() to compute and persist the result
- * 8. Return the attemptId and resultId
+ * 1. Load the pre-existing attempt and mock test
+ * 2. Load test questions to map indices → questionIds
+ * 3. Load existing pre-populated mock_answers
+ * 4. For each answered question: update mock_answer + create mock_answer_options
+ * 5. Update attempt status to 'submitted'
+ * 6. Call evaluateAttempt() to compute and persist the result
+ * 7. Return the attemptId and resultId
  */
 export async function submitTest(input: SubmitTestInput): Promise<SubmitTestOutput> {
-  console.log('[SUBMIT_STEP_2] testEngineService.submitTest()');
-  console.log('[SUBMIT_STEP_2] input.testId:', input.testId);
-  console.log('[SUBMIT_STEP_2] input.paperId:', input.paperId);
-  console.log('[SUBMIT_STEP_2] input.questions.length:', input.questions?.length);
-  console.log('[SUBMIT_STEP_2] input.answers keys:', Object.keys(input.answers));
-  console.log('[SUBMIT_STEP_2] input.timeTakenSeconds:', input.timeTakenSeconds);
+  const { attemptId } = input;
+  console.log('[SUBMIT] testEngineService.submitTest() for attemptId:', attemptId);
+  console.log('[SUBMIT] input.testId:', input.testId);
+  console.log('[SUBMIT] input.answers keys:', Object.keys(input.answers));
+  console.log('[SUBMIT] input.timeTakenSeconds:', input.timeTakenSeconds);
 
-  // ── 1. Resolve current student ───────────────────────────────────────
-  console.log('[SUBMIT_STEP_3] Calling resolveCurrentStudentId()...');
-  const resolved = await resolveCurrentStudentId();
-  console.log('[SUBMIT_STEP_3] resolveCurrentStudentId resolved:', JSON.stringify(resolved));
-  if (!resolved) {
-    console.log('[SUBMIT_STEP_3_ERROR] resolveCurrentStudentId returned null');
-    throw new Error('Cannot submit test: no student profile found for the current user.');
-  }
-  const studentId = resolved.studentId;
-
-  // ── 2. Fetch mock test for instituteId ───────────────────────────────
-  console.log('[SUBMIT_STEP_4] Calling getMockTestById()...');
+  // ── 1. Fetch mock test for duration, etc. ───────────────────────────
+  console.log('[SUBMIT] Fetching mock test...');
   const testResult = await getMockTestById(input.testId);
-  console.log('[SUBMIT_STEP_4] getMockTestById success:', testResult.success);
-  console.log('[SUBMIT_STEP_4] getMockTestById error:', testResult.error);
-  console.log('[SUBMIT_STEP_4] getMockTestById data (testId):', testResult.data?.testId);
-  console.log('[SUBMIT_STEP_4] getMockTestById data (instituteId):', testResult.data?.instituteId);
   if (!testResult.success || !testResult.data) {
-    console.log('[SUBMIT_STEP_4_ERROR] Mock test not found');
+    console.log('[SUBMIT_ERROR] Mock test not found:', input.testId);
     throw new Error(`Mock test not found: ${input.testId}`);
   }
   const mockTest: MockTest = testResult.data;
-  const instituteId = mockTest.instituteId;
+  console.log('[SUBMIT] Loaded test:', mockTest.title);
 
-  // ── 3. Create mock attempt ───────────────────────────────────────────
-  console.log('[SUBMIT_STEP_5] Calling createMockAttempt()...');
-  const attemptResult = await createMockAttempt({
-    testId: input.testId,
-    studentId,
-    instituteId,
+  // ── 2. Final safety flush: persist all answers from local state ───────
+  // Answers were already persisted live during the attempt, but we
+  // flush one more time here so that any in-flight or missed updates
+  // are captured before finalising the attempt.
+  await flushRemainingAnswers(input.attemptId, input.testId, input.questions, input.answers, input.markedForReviewIndices ?? []);
+
+  // ── 3. Mark attempt as submitted ───────────────────────────────────────
+  console.log('[SUBMIT] Marking attempt as submitted...');
+  const submitUpdateResult = await updateMockAttempt(attemptId, {
+    status: 'submitted',
+    submittedAt: new Date().toISOString(),
+    timeRemainingSeconds: Math.max(0, mockTest.durationMin * 60 - input.timeTakenSeconds),
   });
-  console.log('[SUBMIT_STEP_5] createMockAttempt success:', attemptResult.success);
-  console.log('[SUBMIT_STEP_5] createMockAttempt error:', attemptResult.error);
-  console.log('[SUBMIT_STEP_5] createMockAttempt data (attemptId):', attemptResult.data?.attemptId);
+  console.log('[SUBMIT] updateMockAttempt success:', submitUpdateResult.success);
 
-  if (!attemptResult.success || !attemptResult.data) {
-    console.log('[SUBMIT_STEP_5_ERROR] Failed to create attempt');
-    throw new Error(`Failed to create attempt: ${attemptResult.error}`);
+  // ── 4. Evaluate the attempt ────────────────────────────────────────────
+  console.log('[SUBMIT] Evaluating attempt...');
+  const evalResult = await evaluateAttempt(attemptId);
+  console.log('[SUBMIT] Evaluate success:', evalResult.success);
+
+  if (!evalResult.success || !evalResult.data) {
+    console.log('[SUBMIT_ERROR] Evaluation failed:', evalResult.error);
+    throw new Error(`Evaluation failed: ${evalResult.error}`);
   }
 
-  const attempt = attemptResult.data;
-  const attemptId = attempt.attemptId;
-  let answerCreateCount = 0;
-  let answerOptionCreateCount = 0;
-
-  try {
-    // ── 4. Fetch questions to map indices → questionIds ────────────────
-    console.log('[SUBMIT_STEP_6] Calling getMockTestQuestions()...');
-    const questionsResult = await getMockTestQuestions(input.testId, 'orderSequence', 'asc');
-    console.log('[SUBMIT_STEP_6] getMockTestQuestions success:', questionsResult.success);
-    console.log('[SUBMIT_STEP_6] getMockTestQuestions error:', questionsResult.error);
-    console.log('[SUBMIT_STEP_6] getMockTestQuestions data.length:', questionsResult.data?.length);
-    if (!questionsResult.success || !questionsResult.data) {
-      throw new Error('Failed to load test questions.');
-    }
-    const testQuestions = questionsResult.data;
-
-    // Build questionId lookup by orderSequence (1-indexed)
-    const questionIdBySequence = new Map<number, string>();
-    for (const mtq of testQuestions) {
-      questionIdBySequence.set(mtq.orderSequence, mtq.questionId);
-    }
-
-    // ── 5. Create mock_answers and mock_answer_options for each answer ─
-    console.log('[SUBMIT_STEP_7] Starting answer creation loop...');
-    for (const [indexStr, selectedOptionId] of Object.entries(input.answers)) {
-      const questionIndex = Number(indexStr);
-      const displayQuestion = input.questions[questionIndex];
-      if (!displayQuestion) {
-        console.log('[SUBMIT_STEP_7_WARN] No displayQuestion at index', questionIndex, '- skipping');
-        continue;
-      }
-
-      // Find the questionId from the test questions using orderSequence
-      const orderSequence = questionIndex + 1; // 0-based → 1-based
-      const questionId = questionIdBySequence.get(orderSequence);
-      if (!questionId) {
-        console.log('[SUBMIT_STEP_7_WARN] No questionId for orderSequence', orderSequence, '- skipping');
-        continue;
-      }
-
-      console.log('[SUBMIT_STEP_7_ANSWER] Creating answer for question', questionIndex, 'questionId:', questionId, 'selectedOptionId:', selectedOptionId);
-
-      // Create mock_answer row
-      const answerResult = await createMockAnswer({
-        attemptId,
-        questionId,
-        instituteId,
-      });
-
-      console.log('[SUBMIT_STEP_7_ANSWER_RESULT] createMockAnswer success:', answerResult.success);
-      console.log('[SUBMIT_STEP_7_ANSWER_RESULT] createMockAnswer error:', answerResult.error);
-      console.log('[SUBMIT_STEP_7_ANSWER_RESULT] createMockAnswer data (answerId):', answerResult.data?.answerId);
-
-      if (!answerResult.success || !answerResult.data) {
-        console.log('[SUBMIT_STEP_7_ANSWER_FAIL] Skipping answer creation due to failure');
-        continue;
-      }
-
-      answerCreateCount++;
-      const answerId = answerResult.data.answerId;
-
-      // ── Process answer content based on format / questionType ─────────
-      const val = selectedOptionId;
-      const isMarked = input.markedForReviewIndices?.includes(questionIndex) ?? false;
-      let isAnswered = false;
-      let numericalValue: number | null = null;
-
-      if (val !== null && val !== undefined) {
-        if (displayQuestion.questionType === 'numerical') {
-          // It's a numerical question
-          const numStr = String(val).trim();
-          if (numStr !== '') {
-            const parsedNum = Number(numStr);
-            if (!isNaN(parsedNum)) {
-              numericalValue = parsedNum;
-              isAnswered = true;
-            }
-          }
-        } else if (Array.isArray(val)) {
-          // MSQ (Multiple select option IDs)
-          if (val.length > 0) {
-            isAnswered = true;
-            for (const optId of val) {
-              const optResult = await createMockAnswerOption({
-                answerId,
-                optionId: optId,
-              });
-              if (optResult.success) {
-                answerOptionCreateCount++;
-              }
-            }
-          }
-        } else if (typeof val === 'string' && val.trim() !== '') {
-          // MCQ (Single select option ID)
-          isAnswered = true;
-          const optResult = await createMockAnswerOption({
-            answerId,
-            optionId: val,
-          });
-          if (optResult.success) {
-            answerOptionCreateCount++;
-          }
-        }
-      }
-
-      // Update the mock answer fields
-      console.log('[SUBMIT_STEP_7_UPDATE] Calling updateMockAnswer() for answerId:', answerId);
-      const updateResult = await updateMockAnswer(answerId, {
-        isAnswered,
-        isMarkedForReview: isMarked,
-        numericalAnswer: numericalValue,
-        answeredAt: isAnswered ? new Date().toISOString() : null,
-      });
-      console.log('[SUBMIT_STEP_7_UPDATE_RESULT] updateMockAnswer success:', updateResult.success);
-      console.log('[SUBMIT_STEP_7_UPDATE_RESULT] updateMockAnswer error:', updateResult.error);
-    }
-    console.log('[SUBMIT_STEP_7_DONE] Created', answerCreateCount, 'answers and', answerOptionCreateCount, 'option selections');
-
-    // ── 6. Mark attempt as submitted ────────────────────────────────────
-    console.log('[SUBMIT_STEP_8] Calling updateMockAttempt(status=submitted)...');
-    const submitUpdateResult = await updateMockAttempt(attemptId, {
-      status: 'submitted',
-      submittedAt: new Date().toISOString(),
-      timeRemainingSeconds: Math.max(0, mockTest.durationMin * 60 - input.timeTakenSeconds),
-    });
-    console.log('[SUBMIT_STEP_8] updateMockAttempt success:', submitUpdateResult.success);
-    console.log('[SUBMIT_STEP_8] updateMockAttempt error:', submitUpdateResult.error);
-
-    // ── 7. Evaluate the attempt ────────────────────────────────────────
-    console.log('[SUBMIT_STEP_EVAL] Calling evaluateAttempt()...');
-    const evalResult = await evaluateAttempt(attemptId);
-    console.log('[SUBMIT_STEP_EVAL] evaluateAttempt success:', evalResult.success);
-    console.log('[SUBMIT_STEP_EVAL] evaluateAttempt error:', evalResult.error);
-    console.log('[SUBMIT_STEP_EVAL] evaluateAttempt data:', JSON.stringify(evalResult.data));
-
-    if (!evalResult.success || !evalResult.data) {
-      console.log('[SUBMIT_STEP_EVAL_ERROR] Evaluation failed:', evalResult.error);
-      throw new Error(`Evaluation failed: ${evalResult.error}`);
-    }
-
-    const result = evalResult.data;
-    console.log('[SUBMIT_STEP_SUCCESS] Returning: attemptId:', attemptId, 'resultId:', result.resultId);
-    return { attemptId, resultId: result.resultId };
-  } catch (err) {
-    console.log('[SUBMIT_STEP_CATCH] Submit pipeline failed after attempt creation');
-    console.log('[SUBMIT_STEP_CATCH] Full error object:');
-    if (err instanceof Error) {
-      console.log('[SUBMIT_STEP_CATCH] name:', err.name);
-      console.log('[SUBMIT_STEP_CATCH] message:', err.message);
-      console.log('[SUBMIT_STEP_CATCH] stack:', err.stack);
-      const castErr = err as unknown as Record<string, unknown>;
-      if (castErr.cause) console.log('[SUBMIT_STEP_CATCH] cause:', castErr.cause);
-      const pgErr = castErr.details;
-      if (pgErr) console.log('[SUBMIT_STEP_CATCH] Postgres details:', pgErr);
-      const pgHint = castErr.hint;
-      if (pgHint) console.log('[SUBMIT_STEP_CATCH] Postgres hint:', pgHint);
-      const pgCode = castErr.code;
-      if (pgCode) console.log('[SUBMIT_STEP_CATCH] Postgres code:', pgCode);
-    } else {
-      console.log('[SUBMIT_STEP_CATCH] raw error:', String(err));
-    }
-    // If something fails after attempt creation, still mark as submitted
-    // so the attempt isn't left in an inconsistent state.
-    try {
-      console.log('[SUBMIT_STEP_CATCH_CLEANUP] Marking attempt as submitted (best-effort)...');
-      await updateMockAttempt(attemptId, {
-        status: 'submitted',
-        submittedAt: new Date().toISOString(),
-      });
-      console.log('[SUBMIT_STEP_CATCH_CLEANUP] Done');
-    } catch (cleanupErr) {
-      console.log('[SUBMIT_STEP_CATCH_CLEANUP_ERROR] Failed to mark attempt as submitted:', cleanupErr);
-    }
-    throw err;
-  }
+  const result = evalResult.data;
+  console.log('[SUBMIT_SUCCESS] attemptId:', attemptId, 'resultId:', result.resultId);
+  return { attemptId, resultId: result.resultId };
 }
 
 /**
@@ -391,18 +303,252 @@ export async function resumeTest(attemptId: string): Promise<{ success: boolean 
 // ─── Initialisation ─────────────────────────────────────────────────
 
 /**
- * Create a new test attempt.
- * Replace with: POST /api/attempts
+ * Initialize a new test attempt.
+ *
+ * Called when the student presses "Start Test".
+ *
+ * Uses the `initialize_mock_attempt` RPC (Supabase database function) which
+ * performs the entire operation in a single transaction:
+ *
+ * 1. Acquires an advisory lock to serialise concurrent requests
+ * 2. Checks for an existing in_progress attempt for this student + test
+ * 3. If found and answers are fully populated → reuses it (returns immediately)
+ * 4. If found but answers are partially populated → completes the missing ones
+ * 5. If not found → creates a new mock_attempts row + bulk-inserts all
+ *    mock_answers rows (one per question) in a single INSERT-SELECT
+ * 6. Returns the real database-generated attemptId
+ *
+ * No orphaned rows, no partial state, no N+1 network round-trips.
  */
-export async function createAttempt(
+export async function initializeAttempt(
   testId: string,
-  studentId: string,
-): Promise<{ attemptId: string; timeRemaining: number }> {
-  await delay(200);
+): Promise<{ success: true; data: { attemptId: string; reused: boolean; effectiveRemainingSeconds?: number; isExpired?: boolean } } | { success: false; error: string }> {
+  console.log('[INIT_ATTEMPT] Starting initialization for testId:', testId);
+
+  // ── 1. Resolve current student ───────────────────────────────────────
+  console.log('[INIT_ATTEMPT] Resolving student...');
+  const resolved = await resolveCurrentStudentId();
+  if (!resolved) {
+    console.log('[INIT_ATTEMPT_ERROR] No student profile found');
+    return { success: false, error: 'Cannot start test: no student profile found for the current user.' };
+  }
+  const studentId = resolved.studentId;
+  console.log('[INIT_ATTEMPT] Resolved studentId:', studentId);
+
+  // ── 2. Fetch mock test for instituteId + attemptLimit ────────────────
+  console.log('[INIT_ATTEMPT] Fetching mock test...');
+  const testResult = await getMockTestById(testId);
+  if (!testResult.success || !testResult.data) {
+    console.log('[INIT_ATTEMPT_ERROR] Mock test not found');
+    return { success: false, error: `Mock test not found: ${testId}` };
+  }
+  const mockTest = testResult.data;
+  const instituteId = mockTest.instituteId;
+  const attemptLimit = mockTest.attemptLimit;
+  console.log('[INIT_ATTEMPT] Loaded test:', mockTest.title, 'instituteId:', instituteId, 'attemptLimit:', attemptLimit);
+
+  // ── 3. Delegate to the atomic RPC ────────────────────────────────────
+  // The RPC performs all DB work in a single transaction:
+  //   - Acquires advisory lock to prevent duplicate concurrent attempts
+  //   - Checks for existing in_progress attempt → reuses or completes it
+  //   - Otherwise creates attempt + bulk-inserts all answers atomically
+  //   - Returns success/error with the attemptId
+  console.log('[INIT_ATTEMPT] Calling atomic RPC...');
+  const rpcResult = await initializeMockAttemptRpc(
+    testId,
+    studentId,
+    instituteId,
+    attemptLimit,
+  );
+
+  if (!rpcResult.success || !rpcResult.data) {
+    console.log('[INIT_ATTEMPT_ERROR] RPC initialization failed:', rpcResult.error);
+    return { success: false, error: rpcResult.error ?? 'Failed to initialize test. Please try again.' };
+  }
+
+  const { attemptId, reused, effectiveRemainingSeconds, isExpired } = rpcResult.data;
+
+  if (reused) {
+    console.log('[INIT_ATTEMPT] Reused existing attempt, attemptId:', attemptId,
+      'effectiveRemainingSeconds:', effectiveRemainingSeconds,
+      'isExpired:', isExpired);
+  } else {
+    console.log('[INIT_ATTEMPT] New attempt created, attemptId:', attemptId);
+  }
+
   return {
-    attemptId: `attempt_${Date.now()}`,
-    timeRemaining: MOCK_DURATION_SECONDS,
+    success: true,
+    data: {
+      attemptId,
+      reused,
+      effectiveRemainingSeconds,
+      isExpired,
+    },
   };
+}
+
+/**
+ * Safety flush — re-persists all answers from local state just before
+ * submission.  This is intentionally redundant with live persistence
+ * (Phase 2) so that any answer that was never successfully persisted
+ * during the attempt still gets into the database.
+ *
+ * The update is idempotent because:
+ *   - mock_answer rows already exist (pre-populated by initializeAttempt())
+ *   - updateMockAnswer() overwrites in place
+ *   - deleteMockAnswerOptionsByAnswerId() + createMockAnswerOption()
+ *     resets the junction table each time
+ */
+async function flushRemainingAnswers(
+  attemptId: string,
+  testId: string,
+  questions: QuestionDisplay[],
+  answers: Record<number, string | string[] | null>,
+  markedForReviewIndices: number[],
+): Promise<void> {
+  // Load test questions to map indices → questionIds
+  const questionsResult = await getMockTestQuestions(testId, 'orderSequence', 'asc');
+  if (!questionsResult.success || !questionsResult.data) {
+    console.log('[FLUSH_WARN] Cannot load test questions, skipping flush');
+    return;
+  }
+
+  const questionIdBySequence = new Map<number, string>();
+  for (const mtq of questionsResult.data) {
+    questionIdBySequence.set(mtq.orderSequence, mtq.questionId);
+  }
+
+  // Load existing pre-populated mock_answers for answerId lookup
+  const existingAnswersResult = await getMockAnswers({ attemptId });
+  const answerByQuestionId = new Map<string, string>();
+  if (existingAnswersResult.success && existingAnswersResult.data) {
+    for (const ans of existingAnswersResult.data) {
+      answerByQuestionId.set(ans.questionId, ans.answerId);
+    }
+  }
+
+  const markedSet = new Set(markedForReviewIndices);
+
+  for (const [indexStr, selectedOptionId] of Object.entries(answers)) {
+    const questionIndex = Number(indexStr);
+    const displayQuestion = questions[questionIndex];
+    if (!displayQuestion) continue;
+
+    const orderSequence = questionIndex + 1;
+    const questionId = questionIdBySequence.get(orderSequence);
+    if (!questionId) continue;
+
+    const answerId = answerByQuestionId.get(questionId);
+    if (!answerId) continue;
+
+    // Persist — reuses the same live-persist function
+    await persistAnswerLive({
+      answerId,
+      questionType: displayQuestion.questionType ?? 'mcq',
+      value: selectedOptionId,
+      isMarkedForReview: markedSet.has(questionIndex),
+    });
+  }
+}
+
+// ─── Resume ────────────────────────────────────────────────────────
+
+/**
+ * Load all persisted state for an existing in_progress attempt.
+ * Called after initializeAttempt() returns reused=true.
+ *
+ * Returns everything needed to restore the student's test session:
+ *   - Saved answers (option selections, numerical values)
+ *   - Marked-for-review flags
+ *   - Remaining time
+ *   - Last visited question
+ *   - Existing question time accumulators
+ */
+export async function loadResumeData(
+  attemptId: string,
+): Promise<{ success: true; data: ResumeData } | { success: false; error: string }> {
+  try {
+    // ── 1. Load attempt (for timeRemainingSeconds + lastQuestionId) ──
+    const attemptResult = await getMockAttemptById(attemptId);
+    if (!attemptResult.success || !attemptResult.data) {
+      return { success: false, error: 'Failed to load attempt details for resume.' };
+    }
+    const attempt = attemptResult.data;
+
+    // ── 2. Load all mock_answers ─────────────────────────────────────
+    const answersResult = await getMockAnswers({ attemptId });
+    if (!answersResult.success || !answersResult.data) {
+      return { success: false, error: 'Failed to load saved answers for resume.' };
+    }
+    const answers = answersResult.data;
+
+    // ── 3. Build answerId → optionIds map ────────────────────────────
+    const answerIds = answers.map((a) => a.answerId);
+    const selectedOptionsByAnswerId = new Map<string, string[]>();
+    if (answerIds.length > 0) {
+      const optsResult = await getMockAnswerOptions({ answerIds });
+      if (optsResult.success && optsResult.data) {
+        for (const opt of optsResult.data) {
+          const existing = selectedOptionsByAnswerId.get(opt.answerId) ?? [];
+          existing.push(opt.optionId);
+          selectedOptionsByAnswerId.set(opt.answerId, existing);
+        }
+      }
+    }
+
+    // ── 4. Build index → value mapping ───────────────────────────────
+    // The caller (screen) will map these to indices once questions load.
+    const answersByQuestionId = new Map<string, {
+      answerId: string;
+      isAnswered: boolean;
+      isMarkedForReview: boolean;
+      numericalAnswer: number | null;
+      selectedOptionIds: string[];
+      timeSpentSeconds: number;
+    }>();
+    for (const ans of answers) {
+      answersByQuestionId.set(ans.questionId, {
+        answerId: ans.answerId,
+        isAnswered: ans.isAnswered,
+        isMarkedForReview: ans.isMarkedForReview,
+        numericalAnswer: ans.numericalAnswer,
+        selectedOptionIds: selectedOptionsByAnswerId.get(ans.answerId) ?? [],
+        timeSpentSeconds: ans.timeSpentSeconds,
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        attemptId,
+        timeRemainingSeconds: attempt.timeRemainingSeconds ?? 0,
+        lastQuestionId: (attempt as any).lastQuestionId ?? null,
+        answersByQuestionId,
+      },
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log('[RESUME_ERROR] Failed to load resume data:', msg);
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Persist the last-visited question ID to the mock_attempt row.
+ * Called on every navigation event so the student can resume from
+ * the correct question after a crash or app close.
+ */
+export async function updateLastQuestionId(
+  attemptId: string,
+  questionId: string,
+): Promise<void> {
+  try {
+    await updateMockAttempt(attemptId, {
+      lastQuestionId: questionId,
+    } as any);
+  } catch (err) {
+    console.log('[RESUME] Failed to update lastQuestionId:', err);
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────

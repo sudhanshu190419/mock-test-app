@@ -46,11 +46,23 @@ interface UseTestTimerReturn {
 /**
  * Countdown timer hook.
  *
- * Uses a ref-based approach to avoid re-creating the interval on every
- * tick. The onTimeUp callback is stored in a ref to avoid stale closures
- * without re-triggering the effect. A separate useEffect watches for the
- * timer reaching zero to fire the callback, avoiding impure side effects
- * inside state updaters (which React Strict Mode would double-invoke).
+ * Uses **wall-clock elapsed time** instead of naive tick-based counting.
+ * This ensures the timer is accurate regardless of:
+ *   - App backgrounding (no JS ticks for 20 min → one tick subtracts 20 min)
+ *   - JS thread pauses, GC pauses, or missed intervals
+ *   - Multiple background/foreground cycles (no accumulated drift)
+ *
+ * The approach:
+ *   1. Store `lastTickTimestamp` (wall-clock ms when the last tick fired)
+ *   2. On each interval tick, compute `elapsed = floor((now - lastTick) / 1000)`
+ *   3. Subtract `elapsed` from remaining time
+ *   4. Advance `lastTickTimestamp` by `elapsed * 1000` (not `Date.now()`),
+ *      which naturally discards the sub-second remainder and prevents drift
+ *
+ * The onTimeUp callback is stored in a ref to avoid stale closures.
+ * A separate useEffect watches for the timer reaching zero to fire the
+ * callback, avoiding impure side effects inside state updaters (which
+ * React Strict Mode would double-invoke).
  *
  * @param initialSeconds - Starting countdown value in seconds.
  * @param onTimeUp - Callback invoked when the timer reaches zero.
@@ -65,6 +77,8 @@ export function useTestTimer(
   const initialRef = useRef(initialSeconds);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasFiredRef = useRef(false);
+  /** Wall-clock timestamp (ms) of the most recent tick. */
+  const lastTickTimestampRef = useRef<number>(Date.now());
 
   // Keep the callback ref current without re-triggering the effect.
   onTimeUpRef.current = onTimeUp;
@@ -81,9 +95,17 @@ export function useTestTimer(
 
     // Reset the fired flag when timer starts/resumes.
     hasFiredRef.current = false;
+    // Initialise the wall-clock anchor.
+    lastTickTimestampRef.current = Date.now();
 
     intervalRef.current = setInterval(() => {
-      setTimeRemaining((prev) => Math.max(0, prev - 1));
+      const now = Date.now();
+      const elapsed = Math.floor((now - lastTickTimestampRef.current) / 1000);
+
+      if (elapsed > 0) {
+        lastTickTimestampRef.current += elapsed * 1000;
+        setTimeRemaining((prev) => Math.max(0, prev - elapsed));
+      }
     }, 1000);
 
     return () => {

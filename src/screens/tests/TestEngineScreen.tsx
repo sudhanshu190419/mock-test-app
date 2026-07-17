@@ -21,7 +21,11 @@ import {
   ScrollView,
   StyleSheet,
   useWindowDimensions,
+  ActivityIndicator,
+  TouchableOpacity,
   Alert,
+  AppState,
+  type AppStateStatus,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -46,6 +50,9 @@ import * as testService from '../../services/testEngineService';
 import { checkResultStatus } from '../../services/resultService';
 import { supabase } from '../../config/supabase';
 import { getMockTestQuestions } from '../../services/mockTest/mockTestQuestionService';
+import { getMockAnswers, getMockAttemptById, updateMockAnswer as updateMockAnswerService } from '../../services/mockTest/mockAttemptService';
+import { enqueuePersist, clearAllPersistQueues, drainAllPersistQueues } from '../../services/persistenceQueue';
+import { startTimerSync, stopTimerSync, syncTimerOnce } from '../../services/timerSyncService';
 import type { MockTestQuestion } from '../../types/mockTest';
 import type { TestEngineParams, QuestionDisplay } from '../../types/testEngine';
 
@@ -163,6 +170,12 @@ export default function TestEngineScreen({
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= DESKTOP_BREAKPOINT;
 
+  // ── Attempt Initialization ────────────────────────────────────
+  const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
+  const [isExpired, setIsExpired] = useState(false);
+
   // ── State ──────────────────────────────────────────────────────
   const [questions, setQuestions] = useState<QuestionDisplay[]>([]);
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(true);
@@ -178,9 +191,36 @@ export default function TestEngineScreen({
   const [showQuitDialog, setShowQuitDialog] = useState(false);
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'local'>('saved');
+  const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
+
+  // ── Refs for live persistence (always hold the latest value) ────
+  const attemptIdRef = useRef(attemptId);
+  attemptIdRef.current = attemptId;
+  const markedForReviewRef = useRef(markedForReview);
+  markedForReviewRef.current = markedForReview;
+  const selectedOptionRef = useRef(selectedOption);
+  selectedOptionRef.current = selectedOption;
+  const answerIdByQuestionIdRef = useRef<Map<string, string>>(new Map());
+
+  // ── Refs for resume data (Phase 4) ──────────────────────────
+  // Populated by the init effect when `reused=true`. Applied in the
+  // answer map effect once questions are loaded and indices can be
+  // mapped from questionIds.
+  const resumeDataRef = useRef<import('../../types/testEngine').ResumeData | null>(null);
+  /** Server-corrected remaining seconds for crash-safe timer recovery (Phase 4.5). */
+  const effectiveRemainingRef = useRef<number | null>(null);
+
+  // ── Refs for per-question time tracking ─────────────────────
+  const questionsRef = useRef(questions);
+  questionsRef.current = questions;
+  const currentIndexRef = useRef(currentIndex);
+  currentIndexRef.current = currentIndex;
+  const accumulatedTimeRef = useRef<Map<string, number>>(new Map());
+  const lastSwitchTimestampRef = useRef<number>(0);
 
   const scrollRef = useRef<ScrollView>(null);
   const handleSubmitTestRef = useRef<(() => void) | undefined>(undefined);
+  const handleAutoSubmitRef = useRef<(() => void) | undefined>(undefined);
   const stackNavigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
 
   // ── Derived state ──────────────────────────────────────────────
@@ -199,8 +239,89 @@ export default function TestEngineScreen({
 
   const answerProgress = questions.length > 0 ? answeredIndices.size / questions.length : 0;
 
-  // ── Load questions via existing Mock Test module ──────────────
+  // ── Initialize attempt on mount ─────────────────────────────────
+  // Phase 1 / 1.5: Creates a real mock_attempt in the DB (or reuses
+  // an existing in_progress one) and pre-populates mock_answers.
+  // Phase 4: If the attempt is being *reused* (student crashed / closed
+  // and returned), also loads the full resume data (answers, timer,
+  // current question, review flags, question timing).
+  //
+  // Resume data is stored in a ref and applied once questions load.
   useEffect(() => {
+    let isMounted = true;
+
+    async function init() {
+      console.log('[TEST_ENGINE] Initializing attempt for testId:', testId);
+      setIsInitializing(true);
+      setInitError(null);
+
+      const result = await testService.initializeAttempt(testId);
+
+      if (!isMounted) return;
+
+      if (result.success) {
+        const {
+          attemptId: newAttemptId,
+          reused,
+          effectiveRemainingSeconds,
+          isExpired: expired,
+        } = result.data;
+
+        console.log('[TEST_ENGINE] Attempt initialized, attemptId:', newAttemptId,
+          'reused:', reused, 'effectiveRemainingSeconds:', effectiveRemainingSeconds,
+          'isExpired:', expired);
+
+        // Phase 4.5: If the server says the timer expired during the crash,
+        // show the expired screen instead of letting the student enter.
+        if (expired) {
+          setIsExpired(true);
+          setIsInitializing(false);
+          return;
+        }
+
+        setAttemptId(newAttemptId);
+
+        if (reused) {
+          // Phase 4: Load persisted answers, current question, etc.
+          // Phase 4.5: Timer value comes from the server-corrected RPC,
+          // NOT from the stale DB value.
+          console.log('[TEST_ENGINE] Loading resume data...');
+          const resumeResult = await testService.loadResumeData(newAttemptId);
+          if (isMounted) {
+            if (resumeResult.success) {
+              resumeDataRef.current = resumeResult.data;
+              // Store the server-corrected remaining time for crash-safe recovery
+              if (effectiveRemainingSeconds !== undefined) {
+                effectiveRemainingRef.current = effectiveRemainingSeconds;
+              }
+              console.log('[TEST_ENGINE] Resume data loaded:', {
+                timeRemainingSeconds: resumeResult.data.timeRemainingSeconds,
+                effectiveRemainingSeconds,
+                lastQuestionId: resumeResult.data.lastQuestionId,
+                answerCount: resumeResult.data.answersByQuestionId.size,
+              });
+            } else {
+              console.log('[TEST_ENGINE] Resume data load failed, starting fresh:', resumeResult.error);
+            }
+          }
+        }
+
+        setIsInitializing(false);
+      } else {
+        console.log('[TEST_ENGINE] Initialization failed:', result.error);
+        setInitError(result.error);
+        setIsInitializing(false);
+      }
+    }
+
+    init();
+    return () => { isMounted = false; };
+  }, [testId]);
+
+  // ── Load questions after initialization succeeds ─────────────
+  useEffect(() => {
+    if (!attemptId) return; // Wait for initialization
+
     let isMounted = true;
     async function loadQuestions() {
       try {
@@ -331,7 +452,120 @@ export default function TestEngineScreen({
     return () => {
       isMounted = false;
     };
-  }, [testId]);
+  }, [testId, attemptId]);
+
+  // ── Load answerId map + initial question times after questions load ──
+  // This data is needed by persistAnswerLive() and the question time tracker.
+  //
+  // Phase 4: If resume data is present, also restores:
+  //   - Answer selections (from DB -> index-based state)
+  //   - Marked-for-review flags
+  //   - Current question (from lastQuestionId)
+  //   - Question timing
+  //   - Timer remaining seconds
+  //   - Visited questions
+  useEffect(() => {
+    if (!attemptId || isQuestionsLoading) return;
+
+    let isMounted = true;
+    async function loadRuntimeData() {
+      const result = await getMockAnswers({ attemptId: attemptId! });
+      if (!isMounted) return;
+
+      if (result.success && result.data) {
+        const idMap = new Map<string, string>();
+        const timeMap = new Map<string, number>();
+        for (const ans of result.data) {
+          idMap.set(ans.questionId, ans.answerId);
+          timeMap.set(ans.questionId, ans.timeSpentSeconds);
+        }
+        answerIdByQuestionIdRef.current = idMap;
+        accumulatedTimeRef.current = timeMap;
+        lastSwitchTimestampRef.current = Date.now();
+        console.log('[ANSWER_MAP] Loaded', idMap.size, 'answer IDs + times');
+      }
+
+      // ── Phase 4: Apply resume data if present ───────────────────
+      const rd = resumeDataRef.current;
+      if (!rd) return;
+
+      console.log('[RESUME] Applying resume data...');
+      resumeDataRef.current = null; // Clear so it only fires once
+
+      const restoredSelectedOption: Record<number, string | string[] | null> = {};
+      const restoredMarkedForReview = new Set<number>();
+      const restoredVisited = new Set<number>();
+
+      // Get questions from the current render cycle
+      const currentQuestions = questionsRef.current;
+
+      for (let i = 0; i < currentQuestions.length; i++) {
+        const q = currentQuestions[i];
+        const answer = rd.answersByQuestionId.get(q.id);
+        if (!answer) continue;
+
+        // Mark as visited if there's any persisted state
+        if (answer.isAnswered || answer.isMarkedForReview || (answer.numericalAnswer !== null)) {
+          restoredVisited.add(i);
+        }
+
+        // Restore review flag
+        if (answer.isMarkedForReview) {
+          restoredMarkedForReview.add(i);
+        }
+
+        // Restore answer selection
+        if (!answer.isAnswered) continue;
+
+        const qType = q.questionType ?? 'mcq';
+        if (qType === 'msq') {
+          restoredSelectedOption[i] = answer.selectedOptionIds;
+        } else if (qType === 'numerical') {
+          restoredSelectedOption[i] = answer.numericalAnswer?.toString() ?? null;
+        } else {
+          // MCQ / True-False
+          restoredSelectedOption[i] = answer.selectedOptionIds[0] ?? null;
+        }
+      }
+
+      // Restore current question from lastQuestionId
+      let restoredIndex = 0;
+      if (rd.lastQuestionId) {
+        const idx = currentQuestions.findIndex((q) => q.id === rd.lastQuestionId);
+        if (idx >= 0) restoredIndex = idx;
+      }
+      restoredVisited.add(restoredIndex);
+
+      console.log('[RESUME] Restoring:', {
+        currentIndex: restoredIndex,
+        answeredCount: Object.keys(restoredSelectedOption).length,
+        markedCount: restoredMarkedForReview.size,
+        visitedCount: restoredVisited.size,
+        timeRemainingSeconds: rd.timeRemainingSeconds,
+        lastQuestionId: rd.lastQuestionId,
+      });
+
+      // Batch all state updates
+      setSelectedOption(restoredSelectedOption);
+      setMarkedForReview(restoredMarkedForReview);
+      setVisitedQuestions(restoredVisited);
+      setCurrentIndex(restoredIndex);
+
+      // Restore timer — use server-corrected value when available
+      // (Phase 4.5: RPC computes effective remaining time accounting for
+      // wall-clock elapsed during the crash gap).
+      const serverCorrected = effectiveRemainingRef.current;
+      const timerValue = serverCorrected !== null ? serverCorrected : rd.timeRemainingSeconds;
+      effectiveRemainingRef.current = null; // Clear so it only applies once
+
+      if (timerValue > 0) {
+        timerRef.current.reset(timerValue);
+      }
+    }
+
+    loadRuntimeData();
+    return () => { isMounted = false; };
+  }, [attemptId, isQuestionsLoading]);
 
   // Load saved answers from AsyncStorage when mounting
   useEffect(() => {
@@ -389,11 +623,169 @@ export default function TestEngineScreen({
 
 
 
+  // ── Persist lastQuestionId on every navigation ────────────────
+  // Whenever the student moves to a different question, save the new
+  // question ID to mock_attempts.lastQuestionId so the resume flow
+  // can restore their position after crash or app close.
+  // Fire-and-forget — errors are logged but never block navigation.
+  useEffect(() => {
+    const aid = attemptIdRef.current;
+    if (!aid || questions.length === 0) return;
+    const q = questions[currentIndex];
+    if (!q) return;
+
+    testService.updateLastQuestionId(aid, q.id);
+  }, [currentIndex, questions]);
+
+  // ── Cleanup on unmount ─────────────────────────────────────────
+  // Release queue resources and stop timer sync to prevent memory leaks.
+  useEffect(() => {
+    return () => {
+      stopTimerSync();
+      clearAllPersistQueues();
+      resumeDataRef.current = null;
+      effectiveRemainingRef.current = null;
+      handleAutoSubmitRef.current = undefined;
+    };
+  }, []);
+
   // ── Timer ──────────────────────────────────────────────────────
+  // The onTimeUp callback fires when the countdown reaches zero.
+  // It invokes the auto-submit handler (Phase 5), NOT the manual
+  // submit handler.  This ensures timer expiry always triggers
+  // an automatic submission regardless of UI state.
   const timer = useTestTimer(
     durationMin * 60,
-    () => handleSubmitTestRef.current?.(),
+    () => handleAutoSubmitRef.current?.(),
   );
+  // Timer refs (avoid stale closures in effects with [] deps)
+  const timerRef = useRef(timer);
+  timerRef.current = timer;
+  const timeRemainingRef = useRef(timer.timeRemaining);
+  timeRemainingRef.current = timer.timeRemaining;
+
+  // ── Start timer sync when attempt is ready ───────────────────────
+  // Depends only on attemptId — uses timerRef to avoid re-running
+  // on every timer tick (timer.timeRemaining changes every second).
+  useEffect(() => {
+    if (!attemptId) return;
+    startTimerSync({
+      attemptId,
+      getTimeRemaining: () => timerRef.current.timeRemaining,
+      onStatusChange: (status) => setAutoSaveStatus(status),
+    });
+    return () => {
+      stopTimerSync();
+    };
+  }, [attemptId]);
+
+  // ── Per-Question Time Tracking ───────────────────────────────────
+  // Accumulates time per question in memory.  Flushes to the DB only
+  // on navigation, background, and submit.
+  //
+  // flushCurrentQuestionTime() must be called BEFORE changing currentIndex.
+
+  function flushCurrentQuestionTime(): void {
+    const q = questionsRef.current[currentIndexRef.current];
+    if (!q || !attemptIdRef.current) return;
+    const answerId = answerIdByQuestionIdRef.current.get(q.id);
+    if (!answerId) return;
+
+    const now = Date.now();
+    const elapsed = Math.floor((now - lastSwitchTimestampRef.current) / 1000);
+    lastSwitchTimestampRef.current = now;
+
+    if (elapsed <= 0) return;
+
+    const prevTotal = accumulatedTimeRef.current.get(q.id) ?? 0;
+    const newTotal = prevTotal + elapsed;
+    accumulatedTimeRef.current.set(q.id, newTotal);
+
+    enqueuePersist(answerId, async () => {
+      await updateMockAnswerService(answerId, { timeSpentSeconds: newTotal });
+    });
+  }
+
+  function flushAllQuestionTimes(): void {
+    // Flush the current question (captures any time on the current view)
+    flushCurrentQuestionTime();
+    // All accumulated times are already enqueued via flushCurrentQuestionTime
+    // or were already persisted on previous navigations.
+  }
+
+  // ── AppState Listener (background / foreground) ───────────────────
+  // Uses refs exclusively to avoid stale closures ([] deps is intentional).
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'background') {
+        // Flush current question time so it's not lost if the app is killed
+        flushCurrentQuestionTime();
+        // Sync remaining time to server using the ref (not stale closure)
+        const aid = attemptIdRef.current;
+        if (aid) {
+          syncTimerOnce(aid, timeRemainingRef.current);
+        }
+      } else if (nextState === 'active') {
+        // App came back to foreground — reset the switch timestamp so
+        // background time is not counted as time spent on the question.
+        lastSwitchTimestampRef.current = Date.now();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Live Persistence Helper (Queue-based) ──────────────────────
+  // Every persist goes through enqueuePersist() which serialises
+  // operations per answerId — only one in-flight at a time, latest
+  // state always wins, no race conditions (see Phase 2.5).
+  //
+  // Reads from refs so closures never go stale.
+
+  function persistCurrentAnswer(value: string | string[] | null) {
+    const aid = attemptIdRef.current;
+    const q = questions[currentIndex];
+    if (!aid || !q) return;
+    const answerId = answerIdByQuestionIdRef.current.get(q.id);
+    if (!answerId) return;
+    const isMarked = markedForReviewRef.current.has(currentIndex);
+
+    enqueuePersist(answerId, async () => {
+      const result = await testService.persistAnswerLive({
+        answerId,
+        questionType: q.questionType ?? 'mcq',
+        value,
+        isMarkedForReview: isMarked,
+      });
+
+      if (!result.success) {
+        console.log('[PERSIST] Failed:', result.error);
+        setAutoSaveStatus('local');
+      } else {
+        setAutoSaveStatus('saved');
+      }
+    });
+  }
+
+  function persistCurrentReviewFlag(isMarked: boolean) {
+    const aid = attemptIdRef.current;
+    const q = questions[currentIndex];
+    if (!aid || !q) return;
+    const answerId = answerIdByQuestionIdRef.current.get(q.id);
+    if (!answerId) return;
+
+    enqueuePersist(answerId, async () => {
+      const result = await updateMockAnswerService(answerId, {
+        isMarkedForReview: isMarked,
+      });
+
+      if (!result.success) {
+        console.log('[PERSIST] Review flag persist failed:', result.error);
+        setAutoSaveStatus('local');
+      }
+    });
+  }
 
   // ── Handlers ───────────────────────────────────────────────────
 
@@ -404,12 +796,15 @@ export default function TestEngineScreen({
         ...prev,
         [currentIndex]: value,
       }));
+      // Immediately persist to DB (fire-and-forget)
+      persistCurrentAnswer(value);
     },
-    [currentIndex, isSubmitted],
+    [currentIndex, isSubmitted, questions, attemptId],
   );
 
   const handleToggleReview = useCallback(() => {
     if (isSubmitted) return;
+    const newIsMarked = !markedForReview.has(currentIndex);
     setMarkedForReview((prev) => {
       const next = new Set(prev);
       if (next.has(currentIndex)) {
@@ -419,7 +814,9 @@ export default function TestEngineScreen({
       }
       return next;
     });
-  }, [currentIndex, isSubmitted]);
+    // Persist review flag immediately
+    persistCurrentReviewFlag(newIsMarked);
+  }, [currentIndex, isSubmitted, markedForReview, questions, attemptId]);
 
   const handleToggleBookmark = useCallback(() => {
     setBookmarks((prev) => {
@@ -445,15 +842,21 @@ export default function TestEngineScreen({
       next.delete(currentIndex);
       return next;
     });
-  }, [currentIndex, isSubmitted]);
+    // Persist the cleared state (null value = isAnswered = false)
+    persistCurrentAnswer(null);
+  }, [currentIndex, isSubmitted, questions, attemptId]);
 
   const handleMarkForReview = useCallback(() => {
     if (isSubmitted) return;
+    // Flush time for the current question before navigating
+    flushCurrentQuestionTime();
     setMarkedForReview((prev) => {
       const next = new Set(prev);
       next.add(currentIndex);
       return next;
     });
+    // Persist review flag immediately
+    persistCurrentReviewFlag(true);
     if (currentIndex < questions.length - 1) {
       const newIndex = currentIndex + 1;
       setCurrentIndex(newIndex);
@@ -462,10 +865,12 @@ export default function TestEngineScreen({
     } else {
       setShowSubmitDialog(true);
     }
-  }, [currentIndex, questions.length, isSubmitted]);
+  }, [currentIndex, questions.length, isSubmitted, markedForReview, questions, attemptId]);
 
   const handlePrevious = useCallback(() => {
     if (currentIndex > 0) {
+      // Flush time for the current question before navigating
+      flushCurrentQuestionTime();
       const newIndex = currentIndex - 1;
       setCurrentIndex(newIndex);
       markVisited(newIndex);
@@ -475,11 +880,15 @@ export default function TestEngineScreen({
 
   const handleSaveAndNext = useCallback(() => {
     if (isSubmitted) return;
+    // Flush time for the current question before navigating
+    flushCurrentQuestionTime();
     setMarkedForReview((prev) => {
       const next = new Set(prev);
       next.delete(currentIndex);
       return next;
     });
+    // Persist the removed review flag
+    persistCurrentReviewFlag(false);
     if (currentIndex < questions.length - 1) {
       const newIndex = currentIndex + 1;
       setCurrentIndex(newIndex);
@@ -488,10 +897,12 @@ export default function TestEngineScreen({
     } else {
       setShowSubmitDialog(true);
     }
-  }, [currentIndex, questions.length, isSubmitted]);
+  }, [currentIndex, questions.length, isSubmitted, markedForReview, questions, attemptId]);
 
   const handleQuestionSelect = useCallback(
     (index: number) => {
+      // Flush time for the current question before jumping
+      flushCurrentQuestionTime();
       setCurrentIndex(index);
       markVisited(index);
       setIsPaletteVisible(false);
@@ -531,13 +942,28 @@ export default function TestEngineScreen({
   }, [testId, navigation]);
 
   const handleConfirmSubmit = useCallback(async () => {
+    if (!attemptId) {
+      Alert.alert('Error', 'Test not properly initialized. Please try again.');
+      return;
+    }
+
     setShowSubmitDialog(false);
     setIsSubmitted(true);
+
+    // ── Final timing flush before submit ─────────────────────────
+    // 1. Flush current question's accumulated time to the DB
+    flushAllQuestionTimes();
+    // 2. Stop periodic timer sync
+    stopTimerSync();
+    // 3. Sync the final remaining time to the server
+    syncTimerOnce(attemptId, timer.timeRemaining);
+
     timer.pause();
 
     const timeTaken = durationMin * 60 - timer.timeRemaining;
     try {
       const output = await testService.submitTest({
+        attemptId,
         testId,
         paperId,
         questions,
@@ -575,12 +1001,148 @@ export default function TestEngineScreen({
       Alert.alert('Error', 'Failed to submit test. Please try again.');
       setIsSubmitted(false);
     }
-  }, [selectedOption, markedForReview, questions, testId, paperId, timer, stackNavigation, durationMin]);
+  }, [selectedOption, markedForReview, questions, testId, paperId, timer, stackNavigation, durationMin, attemptId]);
 
-  // Sync the ref so the timer callback always has the latest submit handler.
+  // ── Auto-Submit Handler (Phase 5) ───────────────────────────────
+  // Called by useTestTimer's onTimeUp when the countdown reaches zero.
+  // Drains the persistence queue, syncs the final timer, and submits.
+  const handleAutoSubmit = useCallback(async () => {
+    if (!attemptId || isSubmitted) {
+      console.log('[AUTO_SUBMIT] Skipping — already submitted or no attemptId');
+      return;
+    }
+
+    console.log('[AUTO_SUBMIT] Timer expired, auto-submitting attempt:', attemptId);
+    setIsAutoSubmitting(true);
+    setIsSubmitted(true);
+    setShowSubmitDialog(false);
+    setShowQuitDialog(false);
+
+    // ── 1. Drain the persistence queue ──────────────────────────
+    // Wait for ALL in-flight and pending answer persistence operations
+    // to complete before finalising.  After isSubmitted=true, no new
+    // tasks are enqueued (all handlers check isSubmitted).
+    console.log('[AUTO_SUBMIT] Draining persistence queue...');
+    try {
+      await drainAllPersistQueues();
+      console.log('[AUTO_SUBMIT] Queue drained successfully');
+    } catch (drainErr) {
+      console.log('[AUTO_SUBMIT] Queue drain warning (non-fatal):', drainErr);
+    }
+
+    // ── 2. Final timing flush ───────────────────────────────────
+    flushAllQuestionTimes();
+    stopTimerSync();
+    // Sync timer = 0 to the server (timer has already expired)
+    syncTimerOnce(attemptId, 0);
+    timer.pause();
+
+    // ── 3. Submit via existing pipeline ─────────────────────────
+    const timeTaken = durationMin * 60; // Full duration used
+    try {
+      const output = await testService.submitTest({
+        attemptId,
+        testId,
+        paperId,
+        questions,
+        answers: selectedOption,
+        timeTakenSeconds: timeTaken,
+        markedForReviewIndices: Array.from(markedForReview),
+      });
+
+      console.log('[AUTO_SUBMIT] Submit successful:', output);
+
+      try {
+        await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+      } catch (e) {
+        console.log('Error cleaning up local storage', e);
+      }
+
+      const statusCheck = await checkResultStatus(output.attemptId);
+      if (statusCheck.status === 'released') {
+        stackNavigation.reset({
+          index: 1,
+          routes: [
+            { name: 'MainTabs' },
+            { name: 'TestResult', params: { testId, attemptId: output.attemptId } },
+          ],
+        });
+      } else {
+        stackNavigation.reset({
+          index: 1,
+          routes: [
+            { name: 'MainTabs' },
+            { name: 'TestSubmitted', params: { testId, attemptId: output.attemptId } },
+          ],
+        });
+      }
+    } catch (err) {
+      console.log('[AUTO_SUBMIT] Submit failed (network error):', err);
+
+      // ── Recovery: verify server-side completion ─────────────
+      // The submitTest call may have succeeded on the server even
+      // though the client timed out waiting for the response.
+      // Check the attempt's actual status in the database.
+      try {
+        const verifyResult = await getMockAttemptById(attemptId);
+        if (
+          verifyResult.success &&
+          verifyResult.data &&
+          (verifyResult.data.status === 'submitted' || verifyResult.data.status === 'timed_out')
+        ) {
+          console.log('[AUTO_SUBMIT] Server-side submission confirmed — navigating to result.');
+          // The server already processed the submission. Navigate
+          // to the existing result screen using the same flow as
+          // a successful submission.
+          try {
+            await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+          } catch (e) {
+            console.log('Error cleaning up local storage', e);
+          }
+          const statusCheck = await checkResultStatus(attemptId);
+          if (statusCheck.status === 'released') {
+            stackNavigation.reset({
+              index: 1,
+              routes: [
+                { name: 'MainTabs' },
+                { name: 'TestResult', params: { testId, attemptId } },
+              ],
+            });
+          } else {
+            stackNavigation.reset({
+              index: 1,
+              routes: [
+                { name: 'MainTabs' },
+                { name: 'TestSubmitted', params: { testId, attemptId } },
+              ],
+            });
+          }
+          return; // Exit — student is now on the result screen
+        }
+      } catch (verifyErr) {
+        console.log('[AUTO_SUBMIT] Verification also failed:', verifyErr);
+      }
+
+      // ── Server-side submission did NOT complete ──────────────
+      // The attempt remains in_progress in the DB.
+      // isSubmitted stays true to keep the UI locked.
+      // The student can close the app and resume later.
+      console.log('[AUTO_SUBMIT] Server-side submission NOT confirmed — keeping UI locked.');
+      setIsAutoSubmitting(false);
+    }
+  }, [
+    attemptId, isSubmitted, testId, paperId, questions,
+    selectedOption, markedForReview, timer, stackNavigation, durationMin,
+  ]);
+
+  // Sync refs so callbacks always have the latest handler.
   useEffect(() => {
     handleSubmitTestRef.current = handleConfirmSubmit;
   }, [handleConfirmSubmit]);
+
+  useEffect(() => {
+    handleAutoSubmitRef.current = handleAutoSubmit;
+  }, [handleAutoSubmit]);
 
   function markVisited(index: number) {
     setVisitedQuestions((prev) => {
@@ -595,6 +1157,65 @@ export default function TestEngineScreen({
 
   const timerWarning = timer.timeRemaining <= TIMER_WARNING_THRESHOLD && timer.timeRemaining > TIMER_CRITICAL_THRESHOLD;
   const timerCritical = timer.timeRemaining <= TIMER_CRITICAL_THRESHOLD;
+
+  // ── Initialization Error Screen ───────────────────────────────
+  if (initError) {
+    return (
+      <View style={styles.centerContainer}>
+        <View style={styles.errorIconContainer}>
+          <Text style={styles.errorIconText}>!</Text>
+        </View>
+        <Text style={styles.errorTitle}>Unable to Start Test</Text>
+        <Text style={styles.errorMessage}>{initError}</Text>
+        <TouchableOpacity
+          style={styles.goBackButton}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.85}
+          accessibilityLabel="Go back"
+          accessibilityRole="button"
+        >
+          <Text style={styles.goBackButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ── Expired Test Screen (Phase 4.5) ──────────────────────────
+  // The server detected that the timer expired while the student was
+  // away (crash / app close). Show a clear message and redirect back.
+  if (isExpired) {
+    return (
+      <View style={styles.centerContainer}>
+        <View style={[styles.errorIconContainer, { backgroundColor: '#FFF7ED' }]}>
+          <Text style={[styles.errorIconText, { color: '#EA580C' }]}>⏰</Text>
+        </View>
+        <Text style={styles.errorTitle}>Test Time Expired</Text>
+        <Text style={styles.errorMessage}>
+          Your time for this test has expired while you were away.{'\n\n'}
+          You can start a new attempt if retakes are allowed for this test.
+        </Text>
+        <TouchableOpacity
+          style={styles.goBackButton}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.85}
+          accessibilityLabel="Go back"
+          accessibilityRole="button"
+        >
+          <Text style={styles.goBackButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ── Initialization Loading Screen ──────────────────────────────
+  if (isInitializing) {
+    return (
+      <View style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.initializingText}>Preparing your test...</Text>
+      </View>
+    );
+  }
 
   // ── Render ─────────────────────────────────────────────────────
 
@@ -748,6 +1369,17 @@ export default function TestEngineScreen({
         />
       )}
 
+      {/* ═══ Auto-Submit Overlay (Phase 5) ═══ */}
+      {isAutoSubmitting && (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <View style={styles.autoSubmitOverlay}>
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={styles.autoSubmitText}>Time is up</Text>
+            <Text style={styles.autoSubmitSubText}>Submitting your test...</Text>
+          </View>
+        </View>
+      )}
+
       {/* ═══ Modals ═══ */}
       <QuitDialog
         visible={showQuitDialog}
@@ -822,5 +1454,86 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: colors.surface,
+  },
+  // ── Initialization / Error States ─────────────────────────────
+  centerContainer: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing[32],
+  },
+  errorIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[16],
+  },
+  errorIconText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#DC2626',
+  },
+  errorTitle: {
+    ...typography.title,
+    fontSize: 18,
+    fontWeight: '700',
+    color: palette.slate800,
+    marginBottom: spacing[8],
+    textAlign: 'center',
+  },
+  errorMessage: {
+    ...typography.body,
+    fontSize: 14,
+    color: palette.slate600,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing[24],
+  },
+  goBackButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing[12],
+    paddingHorizontal: spacing[24],
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goBackButtonText: {
+    ...typography.button,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  initializingText: {
+    ...typography.body,
+    fontSize: 15,
+    color: palette.slate500,
+    marginTop: spacing[16],
+  },
+  // ── Auto-Submit Overlay (Phase 5) ──────────────────────────
+  autoSubmitOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing[32],
+  },
+  autoSubmitText: {
+    ...typography.title,
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: spacing[24],
+    textAlign: 'center',
+  },
+  autoSubmitSubText: {
+    ...typography.body,
+    fontSize: 15,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: spacing[8],
+    textAlign: 'center',
   },
 });

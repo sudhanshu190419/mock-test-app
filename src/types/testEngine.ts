@@ -158,6 +158,8 @@ export interface SaveAnswerInput {
 }
 
 export interface SubmitTestInput {
+  /** Existing attempt ID — created by initializeAttempt(). */
+  attemptId: string;
   testId: string;
   paperId: string;
   questions: QuestionDisplay[];
@@ -170,4 +172,33 @@ export interface SubmitTestInput {
 export interface SubmitTestOutput {
   attemptId: string;
   resultId: string;
+}
+
+/**
+ * Data loaded by the resume flow for restoring an in-progress attempt.
+ * Contains all persisted state needed to restore the student's session
+ * after crash, app close, or page refresh.
+ */
+export interface ResumeData {
+  /** The existing attempt ID. */
+  attemptId: string;
+  /** Remaining time from the last sync. */
+  timeRemainingSeconds: number;
+  /** The last question the student was viewing (null for fresh attempts). */
+  lastQuestionId: string | null;
+  /**
+   * Per-question persisted state, keyed by questionId.
+   * Every question in the test has an entry (pre-populated at init time).
+   */
+  answersByQuestionId: Map<
+    string,
+    {
+      answerId: string;
+      isAnswered: boolean;
+      isMarkedForReview: boolean;
+      numericalAnswer: number | null;
+      selectedOptionIds: string[];
+      timeSpentSeconds: number;
+    }
+  >;
 }
