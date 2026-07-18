@@ -31,6 +31,12 @@ import AnswerReviewScreen from '../screens/tests/AnswerReviewScreen';
 import AnswerReviewDetailScreen from '../screens/tests/AnswerReviewDetailScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 
+// LiveKit POC screens
+import JoinRoomScreen from '../features/livekit/screens/JoinRoomScreen';
+import LiveRoomScreen from '../features/livekit/screens/LiveRoomScreen';
+
+import type { LiveKitRole } from '../features/livekit/types';
+
 // DEV ONLY - Remove after frontend integration
 import DevNavigator from './DevNavigator';
 import { colors } from '../theme/colors';
@@ -72,8 +78,28 @@ export type AppStackParamList = {
   MyResults: undefined;
   AnswerReview: AnswerReviewParams;
   AnswerReviewDetail: AnswerReviewDetailParams;
+  // LiveKit POC screens
+  JoinRoom: undefined;
+  LiveRoom: LiveKitStackParamList['LiveRoom'];
   // DEV ONLY - Remove after frontend integration
   DevHub: undefined;
+};
+
+/**
+ * LiveKit navigation param list (exported for screens to reference).
+ *
+ * @todo Phase 2: Move to its own navigator when integrating with
+ *       Teacher/Student dashboards.
+ */
+export type LiveKitStackParamList = {
+  JoinRoom: undefined;
+  LiveRoom: {
+    url: string;
+    token: string;
+    roomName: string;
+    participantName: string;
+    role: LiveKitRole;
+  };
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -222,6 +248,28 @@ export default function AppNavigator(): React.JSX.Element {
           headerShown: false,
           animation: 'slide_from_right',
           animationDuration: SCREEN_TRANSITION_DURATION,
+        }}
+      />
+
+      {/* LiveKit POC — Phase 1 screens */}
+      <Stack.Screen
+        name="JoinRoom"
+        component={JoinRoomScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+      <Stack.Screen
+        name="LiveRoom"
+        component={LiveRoomScreen}
+        options={{
+          headerShown: false,
+          // Use slide from bottom for room entry (immersive feel)
+          animation: 'slide_from_bottom',
+          animationDuration: 300,
+          // Prevent gesture back — user must press Leave button
+          gestureEnabled: false,
         }}
       />
 
