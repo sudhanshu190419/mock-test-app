@@ -26,6 +26,9 @@ import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withRepeat, withSequence } from 'react-native-reanimated';
+
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -49,6 +52,33 @@ export interface CTASectionProps {
 const CTASection = React.memo(function CTASection({
   onStartFreeTest,
 }: CTASectionProps): React.JSX.Element {
+  const scale = useSharedValue(1);
+
+  React.useEffect(() => {
+    // Pulse animation (slow breath effect)
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.02, { duration: 1200 }),
+        withTiming(1, { duration: 1200 })
+      ),
+      -1, // infinite repeat
+      true // reverse
+    );
+  }, [scale]);
+
+  const handlePressIn = () => {
+    scale.value = withTiming(0.94, { duration: 200 });
+  };
+  const handlePressOut = () => {
+    // Return to 1, the effect hook's sequence will restart if unmounted, 
+    // but a simple spring to 1 restores it visually before pulse kicks back.
+    scale.value = withTiming(1, { duration: 200 });
+  };
+
+  const animatedButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
     <View
       style={styles.container}
@@ -61,8 +91,10 @@ const CTASection = React.memo(function CTASection({
           Take a free mock test and experience MockPrep
         </Text>
 
-        <TouchableOpacity
-          style={styles.ctaButton}
+        <AnimatedTouchableOpacity
+          style={[styles.ctaButton, animatedButtonStyle]}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
           onPress={onStartFreeTest}
           activeOpacity={0.85}
           accessibilityLabel="Start Free Test"
@@ -75,7 +107,7 @@ const CTASection = React.memo(function CTASection({
             width={18}
             height={18}
           />
-        </TouchableOpacity>
+        </AnimatedTouchableOpacity>
       </View>
 
       {/* Right: gift-box illustration */}

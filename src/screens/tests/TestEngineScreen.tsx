@@ -165,8 +165,7 @@ export default function TestEngineScreen({
   route,
   navigation,
 }: TestEngineScreenProps): React.JSX.Element {
-  const { testId, paperId, title, durationMin  } = route.params;
-  const insets = useSafeAreaInsets();
+  const { testId, paperId, durationMin  } = route.params;
   const { width: screenWidth } = useWindowDimensions();
   const isDesktop = screenWidth >= DESKTOP_BREAKPOINT;
 
@@ -188,7 +187,7 @@ export default function TestEngineScreen({
   const [markedForReview, setMarkedForReview] = useState<Set<number>>(new Set());
   const [visitedQuestions, setVisitedQuestions] = useState<Set<number>>(new Set([0]));
   const [bookmarks, setBookmarks] = useState<Set<number>>(new Set());
-  const [activeSubject, setActiveSubject] = useState<string | null>(null);
+
   const [isPaletteVisible, setIsPaletteVisible] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
@@ -556,6 +555,26 @@ export default function TestEngineScreen({
         lastQuestionId: rd.lastQuestionId,
       });
 
+      try {
+        const stored = await AsyncStorage.getItem(`attempt_answers_${attemptId}`);
+        if (stored && isMounted) {
+          const parsed = JSON.parse(stored);
+          console.log('[RESUME] Found local AsyncStorage cache, merging...');
+          Object.assign(restoredSelectedOption, parsed.selectedOption || {});
+          if (parsed.markedForReview) {
+            parsed.markedForReview.forEach((idx: number) => restoredMarkedForReview.add(idx));
+          }
+          if (parsed.visitedQuestions) {
+            parsed.visitedQuestions.forEach((idx: number) => restoredVisited.add(idx));
+          }
+          if (parsed.bookmarks) {
+            setBookmarks(new Set(parsed.bookmarks));
+          }
+        }
+      } catch (err) {
+        console.log('[RESUME] Failed to merge local AsyncStorage cache:', err);
+      }
+
       // Batch all state updates
       setSelectedOption(restoredSelectedOption);
       setMarkedForReview(restoredMarkedForReview);
@@ -578,30 +597,9 @@ export default function TestEngineScreen({
     return () => { isMounted = false; };
   }, [attemptId, isQuestionsLoading]);
 
-  // Load saved answers from AsyncStorage when mounting
-  useEffect(() => {
-    async function loadSavedAttempt() {
-      try {
-        const stored = await AsyncStorage.getItem(`attempt_answers_${testId}`);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setSelectedOption(parsed.selectedOption || {});
-          setMarkedForReview(new Set(parsed.markedForReview || []));
-          setVisitedQuestions(new Set(parsed.visitedQuestions || [0]));
-          setBookmarks(new Set(parsed.bookmarks || []));
-        }
-      } catch (err) {
-        console.log('Failed to load saved attempt', err);
-      }
-    }
-    if (!isQuestionsLoading) {
-      loadSavedAttempt();
-    }
-  }, [testId, isQuestionsLoading]);
-
   // Trigger auto-save whenever answer state changes
   useEffect(() => {
-    if (isQuestionsLoading || questions.length === 0) return;
+    if (isQuestionsLoading || questions.length === 0 || !attemptId) return;
 
     let isMounted = true;
     async function saveAttempt() {
@@ -613,7 +611,7 @@ export default function TestEngineScreen({
           visitedQuestions: Array.from(visitedQuestions),
           bookmarks: Array.from(bookmarks),
         };
-        await AsyncStorage.setItem(`attempt_answers_${testId}`, JSON.stringify(payload));
+        await AsyncStorage.setItem(`attempt_answers_${attemptId}`, JSON.stringify(payload));
         if (isMounted) {
           setAutoSaveStatus('saved');
         }
@@ -630,7 +628,7 @@ export default function TestEngineScreen({
       isMounted = false;
       clearTimeout(saveTimer);
     };
-  }, [selectedOption, markedForReview, visitedQuestions, bookmarks, testId, isQuestionsLoading, questions.length]);
+  }, [selectedOption, markedForReview, visitedQuestions, bookmarks, attemptId, isQuestionsLoading, questions.length]);
 
 
 
@@ -922,9 +920,6 @@ export default function TestEngineScreen({
     [],
   );
 
-  const handleSubjectChange = useCallback((subjectId: string | null) => {
-    setActiveSubject(subjectId);
-  }, []);
 
   const handleOpenPalette = useCallback(() => {
     setIsPaletteVisible(true);
@@ -944,13 +939,16 @@ export default function TestEngineScreen({
 
   const handleConfirmQuit = useCallback(async () => {
     setShowQuitDialog(false);
+    const aid = attemptId || attemptIdRef.current;
     try {
-      await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+      if (aid) {
+        await AsyncStorage.removeItem(`attempt_answers_${aid}`);
+      }
     } catch (e) {
       console.log('Error cleaning up local storage', e);
     }
     navigation.goBack();
-  }, [testId, navigation]);
+  }, [attemptId, navigation]);
 
   const handleConfirmSubmit = useCallback(async () => {
     if (!attemptId) {
@@ -984,7 +982,7 @@ export default function TestEngineScreen({
       });
 
       try {
-        await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+        await AsyncStorage.removeItem(`attempt_answers_${attemptId}`);
       } catch (e) {
         console.log('Error cleaning up local storage', e);
       }
@@ -1086,7 +1084,7 @@ export default function TestEngineScreen({
         console.log('[AUTO_SUBMIT] Submit succeeded on attempt', attempt, ':', output);
 
         try {
-          await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+          await AsyncStorage.removeItem(`attempt_answers_${attemptId}`);
         } catch (e) {
           console.log('Error cleaning up local storage', e);
         }
@@ -1130,7 +1128,7 @@ export default function TestEngineScreen({
       ) {
         console.log('[AUTO_SUBMIT] Server-side submission confirmed — navigating to result.');
         try {
-          await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+          await AsyncStorage.removeItem(`attempt_answers_${attemptId}`);
         } catch (e) {
           console.log('Error cleaning up local storage', e);
         }
@@ -1199,7 +1197,7 @@ export default function TestEngineScreen({
       console.log('[RETRY_SUBMIT] Submit succeeded:', output);
 
       try {
-        await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+        await AsyncStorage.removeItem(`attempt_answers_${attemptId}`);
       } catch (e) {
         console.log('Error cleaning up local storage', e);
       }
@@ -1238,7 +1236,7 @@ export default function TestEngineScreen({
       ) {
         console.log('[RETRY_SUBMIT] Server-side submission confirmed — navigating to result.');
         try {
-          await AsyncStorage.removeItem(`attempt_answers_${testId}`);
+          await AsyncStorage.removeItem(`attempt_answers_${attemptId}`);
         } catch (e) {
           console.log('Error cleaning up local storage', e);
         }
@@ -1344,8 +1342,6 @@ export default function TestEngineScreen({
 
   // ── Accessibility ──────────────────────────────────────────────
 
-  const timerWarning = timer.timeRemaining <= TIMER_WARNING_THRESHOLD && timer.timeRemaining > TIMER_CRITICAL_THRESHOLD;
-  const timerCritical = timer.timeRemaining <= TIMER_CRITICAL_THRESHOLD;
 
   // ── Initialization Error Screen ───────────────────────────────
   if (initError) {

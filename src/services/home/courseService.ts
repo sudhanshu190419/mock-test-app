@@ -469,6 +469,8 @@ interface DbCourseDetailRaw {
   description: string | null;
   thumbnail_bucket: string | null;
   thumbnail_path: string | null;
+  banner_bucket: string | null;
+  banner_path: string | null;
   language: string | null;
   difficulty_level: string | null;
   duration: number | null;
@@ -599,6 +601,8 @@ export async function getCourseById(
         description,
         thumbnail_bucket,
         thumbnail_path,
+        banner_bucket,
+        banner_path,
         language,
         difficulty_level,
         duration,
@@ -630,6 +634,16 @@ export async function getCourseById(
     const hasDiscount = raw.discounted_price != null && raw.discounted_price < raw.original_price;
     const currentPrice = hasDiscount ? Number(raw.discounted_price) : Number(raw.original_price);
 
+    const imageUrl =
+      raw.thumbnail_bucket && raw.thumbnail_path
+        ? `${raw.thumbnail_bucket}/${raw.thumbnail_path}`
+        : null;
+
+    const bannerPath =
+      raw.banner_bucket && raw.banner_path
+        ? `${raw.banner_bucket}/${raw.banner_path}`
+        : null;
+
     const course: CourseDetail = {
       courseId: raw.course_id,
       category: raw.stream?.name ?? 'Course',
@@ -653,6 +667,8 @@ export async function getCourseById(
       language: raw.language ?? undefined,
       difficultyLevel: raw.difficulty_level ?? undefined,
       duration: raw.duration ?? undefined,
+      imageUrl,
+      bannerPath,
     };
 
     console.log('[COURSE_SERVICE] Course loaded:', course.courseId, course.title);

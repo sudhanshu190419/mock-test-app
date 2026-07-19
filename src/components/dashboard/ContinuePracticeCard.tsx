@@ -10,8 +10,11 @@
  */
 
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { shadows } from '../../theme/shadows';
+import { coursesLightM3 } from '../../theme/colors';
+import { typographyV5 } from '../../theme/typography';
+import AnimatedPressable from '../AnimatedPressable';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -50,15 +53,14 @@ const ContinuePracticeCard = React.memo(function ContinuePracticeCard({
       {/* Header */}
       <View style={styles.headerRow}>
         <Text style={styles.sectionTitle}>Continue Practice</Text>
-        <TouchableOpacity
+        <AnimatedPressable
           onPress={onViewAllPress}
-          activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
           accessibilityLabel="View All"
           accessibilityRole="button"
         >
           <Text style={styles.viewAllText}>View All</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
 
       {/* Card */}
@@ -95,16 +97,15 @@ const ContinuePracticeCard = React.memo(function ContinuePracticeCard({
               <Text style={styles.remainingLabel}>Remaining</Text>
             </View>
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={styles.continueButton}
               onPress={onContinuePress}
-              activeOpacity={0.85}
               accessibilityLabel={`Continue ${testName}`}
               accessibilityRole="button"
             >
               <Text style={styles.continueText}>Continue</Text>
               <Text style={styles.continueArrow}>→</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </View>
       </View>
@@ -128,23 +129,21 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1E293B',
+    ...typographyV5.cardTitleHero,
+    color: coursesLightM3.textOnDark,
   },
   viewAllText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0F5132',
+    ...typographyV5.buttonLabel,
+    color: coursesLightM3.accentPrimary,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: coursesLightM3.surfaceCard,
     borderRadius: 16,
     padding: 16,
     flexDirection: 'row',
     gap: 16,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: coursesLightM3.dividerOnDark,
     ...shadows.small,
   },
   cardLeftCol: {
@@ -155,7 +154,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 12,
-    backgroundColor: '#0F5132',
+    backgroundColor: coursesLightM3.surfaceCardDark,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -168,21 +167,19 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   testName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-    lineHeight: 20,
+    ...typographyV5.cardTitleCompact,
+    color: coursesLightM3.textOnCard,
   },
   progressTrack: {
     width: '100%',
     height: 6,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: coursesLightM3.dividerOnDark,
     borderRadius: 3,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#0F5132',
+    backgroundColor: coursesLightM3.accentPrimary,
     borderRadius: 3,
   },
   progressInfoRow: {
@@ -191,48 +188,42 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   progressText: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#64748B',
+    ...typographyV5.metadataSmall,
+    color: coursesLightM3.textMutedOnCard,
     flex: 1,
   },
   progressHighlight: {
-    color: '#0F5132',
-    fontWeight: '700',
+    ...typographyV5.metadataStrong,
+    color: coursesLightM3.accentPrimary,
   },
   remainingBox: {
     alignItems: 'center',
     paddingRight: 12,
   },
   remainingValue: {
+    ...typographyV5.ratingValue,
     fontSize: 14,
-    fontWeight: '700',
-    color: '#1E293B',
-    lineHeight: 18,
+    color: coursesLightM3.textOnCard,
   },
   remainingLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#64748B',
-    lineHeight: 12,
+    ...typographyV5.metadataSmall,
+    color: coursesLightM3.textMutedOnCard,
   },
   continueButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#0F5132',
+    backgroundColor: coursesLightM3.accentPrimary,
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 12,
   },
   continueText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    ...typographyV5.buttonLabel,
+    color: coursesLightM3.surfaceCard,
   },
   continueArrow: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '700',
+    ...typographyV5.buttonLabel,
+    color: coursesLightM3.surfaceCard,
   },
 });

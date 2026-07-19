@@ -21,11 +21,7 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 import Icon from '../home/Icons';
 import type { IconName } from '../home/Icons';
@@ -83,21 +79,11 @@ const NotificationCard = React.memo(function NotificationCard({
   const scale = useSharedValue(1);
 
   const handlePressIn = useCallback(() => {
-    scale.value = withSpring(0.98, {
-      damping: 20,
-      mass: 0.25,
-      stiffness: 300,
-      overshootClamping: true,
-    });
+    scale.value = withTiming(0.98, { duration: 200 });
   }, [scale]);
 
   const handlePressOut = useCallback(() => {
-    scale.value = withSpring(1, {
-      damping: 20,
-      mass: 0.25,
-      stiffness: 300,
-      overshootClamping: true,
-    });
+    scale.value = withTiming(1, { duration: 200 });
   }, [scale]);
 
   const animatedCardStyle = useAnimatedStyle(() => ({

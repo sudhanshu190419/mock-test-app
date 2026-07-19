@@ -1,595 +1,526 @@
-/**
- * MockTestsTabScreen
- *
- * Premium "Practice" screen with glassmorphism cards matching the
- * original design — now populated with live backend data from
- * `usePracticeList()` instead of hardcoded exam cards.
- *
- * Features:
- * - Ambient background gradient layers for depth
- * - Glass card exam items with icon, title, subtitle, and chevron
- * - Stats grid (year range, papers, price) per package
- * - Color-coded themes per card (purple, blue, green, cyan, amber, rose)
- * - Spring animation on press
- * - Sticky translucent header with "View All" link to full listing
- *
- * @module screens/tabs/MockTestsTabScreen
- */
-
-import React, { useRef, useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
+  Dimensions,
+  Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
-  Animated,
-  ActivityIndicator,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import LinearGradient from 'react-native-linear-gradient';
+import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, withTiming, FadeInDown, Layout } from 'react-native-reanimated';
 
+// Component imports
+import CategoryChipStrip from '../../components/courses/CategoryChipStrip';
+import SortPillsRow, { type SortOptionValue } from '../../components/courses/SortPillsRow';
+import CoursesSectionHeader from '../../components/courses/CoursesSectionHeader';
+import CourseCard from '../../components/courses/CourseCard';
+import CourseCardCompact from '../../components/courses/CourseCardCompact';
+import EnrolledCourseCard from '../../components/courses/EnrolledCourseCard';
+import CoursesSkeleton from '../../components/courses/CoursesSkeleton';
+import CoursesEmptyState from '../../components/courses/CoursesEmptyState';
 import Icon from '../../components/home/Icons';
-import type { IconName } from '../../components/home/Icons';
-import type { AppStackParamList } from '../../navigation/AppNavigator';
-import { usePracticeList } from '../../hooks/practice/usePractice';
-import { colors } from '../../theme/colors';
+
+// Theme imports
+import { coursesDark } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
+import { radius } from '../../theme/radius';
+
+// Auth and Service hooks
+import { useAppSelector } from '../../store/hooks';
+import { selectUser } from '../../store/authSlice';
+import { usePracticeList } from '../../hooks/practice/usePractice';
+import { usePurchasedPractices } from '../../hooks/practice/usePurchasedPractices';
 import type { PracticePackage } from '../../types/practice';
+import type { AppStackParamList } from '../../navigation/AppNavigator';
 
-// ═══════════════════════════════════════════════════════════════════
-//  Types
-// ═══════════════════════════════════════════════════════════════════
+const { width } = Dimensions.get('window');
 
-interface ExamStats {
-  label: string;
-  value: string;
-  caption: string;
-  icon: IconName;
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+
+// Category mapping helper
+function matchesCategoryFilter(streamName: string, filterValue: string | null): boolean {
+  if (!filterValue) return true;
+  const streamCat = streamName.toLowerCase();
+  const filter = filterValue.toLowerCase();
+  
+  if (filter === 'school') {
+    return streamCat.includes('class') || streamCat.includes('school');
+  }
+  return streamCat.includes(filter);
 }
 
-interface ExamCardData {
-  key: string;
-  icon: IconName;
-  title: string;
-  subtitle: string;
-  accentColor: string;
-  iconBg: string;
-  iconBorder: string;
-  hoverTint: string;
-  stats: ExamStats[];
-}
+export default function MockTestsTabScreen(): React.JSX.Element {
+  const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+  const user = useAppSelector(selectUser);
 
-// ═══════════════════════════════════════════════════════════════════
-//  Constants
-// ═══════════════════════════════════════════════════════════════════
+  // States
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeSort, setActiveSort] = useState<SortOptionValue>('popular');
+  const [searchText, setSearchText] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isFilterPanelExpanded, setIsFilterPanelExpanded] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
 
-/** 6 color themes cycled across live packages. */
-const THEMES: Array<{
-  accentColor: string;
-  iconBg: string;
-  iconBorder: string;
-  hoverTint: string;
-}> = [
-  { accentColor: '#9333EA', iconBg: '#FFFFFF', iconBorder: '#E9D5FF', hoverTint: 'rgba(147, 51, 234, 0.05)' },
-  { accentColor: '#2563EB', iconBg: '#FFFFFF', iconBorder: '#BFDBFE', hoverTint: 'rgba(37, 99, 235, 0.05)' },
-  { accentColor: '#16A34A', iconBg: '#FFFFFF', iconBorder: '#BBF7D0', hoverTint: 'rgba(22, 163, 74, 0.05)' },
-  { accentColor: '#0891B2', iconBg: '#FFFFFF', iconBorder: '#A5F3FC', hoverTint: 'rgba(8, 145, 178, 0.05)' },
-  { accentColor: '#D97706', iconBg: '#FFFFFF', iconBorder: '#FDE68A', hoverTint: 'rgba(217, 119, 6, 0.05)' },
-  { accentColor: '#E11D48', iconBg: '#FFFFFF', iconBorder: '#FECDD3', hoverTint: 'rgba(225, 29, 72, 0.05)' },
-];
+  // Reanimated Shared Values
+  const scrollY = useSharedValue(0);
+  const filterHeight = useSharedValue(0);
+  const filterOpacity = useSharedValue(0);
 
-const ICONS: IconName[] = ['science', 'architecture', 'stethoscope', 'school', 'balance', 'menu-book'];
+  // Toggle collapsible filter panel
+  useEffect(() => {
+    filterHeight.value = withTiming(isFilterPanelExpanded ? 112 : 0, { duration: 200 });
+    filterOpacity.value = withTiming(isFilterPanelExpanded ? 1 : 0, { duration: 200 });
+  }, [isFilterPanelExpanded]);
 
-function buildExamCards(packages: PracticePackage[]): ExamCardData[] {
-  return packages.map((pkg, index) => {
-    const theme = THEMES[index % THEMES.length];
-    const yearRange =
-      pkg.yearFrom && pkg.yearTo
-        ? `${pkg.yearFrom} – ${pkg.yearTo}`
-        : pkg.yearFrom
-          ? `Since ${pkg.yearFrom}`
-          : 'All Years';
+  // Data fetching
+  const {
+    data: practiceData,
+    isLoading,
+    error,
+    refetch,
+  } = usePracticeList(undefined, undefined, { page: 1, pageSize: 50 });
 
+  const { data: purchasedPractices, refetch: refetchPurchased } = usePurchasedPractices(user?.id);
+
+  // Handle manual pull-to-refresh
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refetch(), refetchPurchased()]);
+    setRefreshing(false);
+  }, [refetch, refetchPurchased]);
+
+  const allPractices = useMemo<PracticePackage[]>(() => {
+    return practiceData?.data ?? [];
+  }, [practiceData]);
+
+  // Filter & Sort Main Practices
+  const processedPractices = useMemo(() => {
+    let list = [...allPractices];
+
+    if (activeCategory) {
+      list = list.filter((p) => matchesCategoryFilter(p.streamName, activeCategory));
+    }
+
+    if (searchText.trim()) {
+      const query = searchText.toLowerCase().trim();
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(query) ||
+          (p.description && p.description.toLowerCase().includes(query)) ||
+          p.streamName.toLowerCase().includes(query)
+      );
+    }
+
+    list.sort((a, b) => {
+      switch (activeSort) {
+        case 'price_asc':
+          return a.price - b.price;
+        case 'price_desc':
+          return b.price - a.price;
+        case 'newest':
+          return new Date(b.publishedAt || '').getTime() - new Date(a.publishedAt || '').getTime();
+        case 'popular':
+        default:
+          return b.totalPapers - a.totalPapers;
+      }
+    });
+
+    return list;
+  }, [allPractices, activeCategory, searchText, activeSort]);
+
+  // Spotlight card is the first item of processed list
+  const spotlightPractice = useMemo(() => {
+    return processedPractices.length > 0 ? processedPractices[0] : null;
+  }, [processedPractices]);
+
+  // Grid practices are the remaining items
+  const gridPractices = useMemo(() => {
+    return processedPractices.length > 1 ? processedPractices.slice(1) : [];
+  }, [processedPractices]);
+
+  const handlePracticePress = useCallback(
+    (packageId: string) => {
+      navigation.navigate('ExamPackDetail', { packageId });
+    },
+    [navigation]
+  );
+
+  const handleClearSearch = useCallback(() => {
+    setSearchText('');
+    searchInputRef.current?.blur();
+  }, []);
+
+  // Reanimated Scroll Handler
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
+
+  const baseColor = coursesDark.base;
+  const dividerColor = coursesDark.dividerOnDark;
+
+  // Animated styles for sticky header wrapper shadow and color
+  const stickyHeaderAnimatedStyle = useAnimatedStyle(() => {
+    const isScrolled = scrollY.value > 50;
     return {
-      key: pkg.packageId,
-      icon: ICONS[index % ICONS.length],
-      title: pkg.name,
-      subtitle: `${pkg.totalPapers} Papers`,
-      accentColor: theme.accentColor,
-      iconBg: theme.iconBg,
-      iconBorder: theme.iconBorder,
-      hoverTint: theme.hoverTint,
-      stats: [
-        { label: 'Coverage', value: yearRange, caption: 'Years', icon: 'calendar' },
-        { label: 'Papers', value: `${pkg.totalPapers}`, caption: 'Papers', icon: 'description' },
-        { label: 'Price', value: `₹${pkg.price}`, caption: 'Price', icon: 'timer' },
-      ],
+      backgroundColor: withTiming(isScrolled ? '#FFFFFF' : baseColor, { duration: 150 }),
+      borderBottomWidth: withTiming(isScrolled ? 1 : 0, { duration: 150 }),
+      borderBottomColor: dividerColor,
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: withTiming(isScrolled ? 0.05 : 0, { duration: 150 }),
+      shadowRadius: 8,
+      elevation: withTiming(isScrolled ? 3 : 0, { duration: 150 }),
     };
   });
-}
 
-// ═══════════════════════════════════════════════════════════════════
-//  Sub-components
-// ═══════════════════════════════════════════════════════════════════
-
-// ── Ambient Background ────────────────────────────────────────────
-
-const AmbientBackground = React.memo(function AmbientBackground(): React.JSX.Element {
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <View />
-      <View />
-      <View />
-    </View>
-  );
-});
-
-// ── Header ────────────────────────────────────────────────────────
-
-interface HeaderProps {
-  safeAreaTop: number;
-}
-
-const Header = React.memo(function Header({
-  safeAreaTop,
-}: HeaderProps): React.JSX.Element {
-  return (
-    <View style={[styles.header, { paddingTop: safeAreaTop + spacing[12] }]}>
-      <View style={styles.headerRow}>
-        <Text style={styles.headerTitle}>Practice with PYQs</Text>
-      </View>
-      <Text style={styles.headerSubtitle}>
-        Browse previous year question packages with timed tests and smart analytics.
-      </Text>
-    </View>
-  );
-});
-
-// ── Exam Stat Row ─────────────────────────────────────────────────
-
-interface ExamStatItemProps {
-  stat: ExamStats;
-}
-
-const ExamStatItem = React.memo(function ExamStatItem({
-  stat,
-}: ExamStatItemProps): React.JSX.Element {
-  return (
-    <View style={styles.statItem}>
-      <View style={styles.statRow}>
-        <Icon
-          name={stat.icon}
-          color={colors.text.secondary}
-          width={16}
-          height={16}
-        />
-        <Text style={styles.statValue}>{stat.value}</Text>
-      </View>
-      <Text style={styles.statCaption}>{stat.caption}</Text>
-    </View>
-  );
-});
-
-// ── Exam Card ─────────────────────────────────────────────────────
-
-interface ExamCardProps {
-  item: ExamCardData;
-  onPress: () => void;
-}
-
-const ExamCard = React.memo(function ExamCard({
-  item,
-  onPress,
-}: ExamCardProps): React.JSX.Element {
-  const pressAnim = useRef(new Animated.Value(0)).current;
-
-  const handlePressIn = useCallback(() => {
-    Animated.spring(pressAnim, {
-      toValue: 1,
-      friction: 8,
-      tension: 100,
-      useNativeDriver: true,
-    }).start();
-  }, [pressAnim]);
-
-  const handlePressOut = useCallback(() => {
-    Animated.spring(pressAnim, {
-      toValue: 0,
-      friction: 6,
-      tension: 60,
-      useNativeDriver: true,
-    }).start();
-  }, [pressAnim]);
-
-  const translateY = pressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -2],
+  // Collapsible panel heights/opacities
+  const filterPanelAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      height: filterHeight.value,
+      opacity: filterOpacity.value,
+    };
   });
 
   return (
-    <Animated.View
-      style={[
-        styles.cardOuterShadow,
-        {
-          transform: [{ translateY }],
-        },
-      ]}
-    >
-      <TouchableOpacity
-        style={styles.cardTouchable}
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={1}
-        accessibilityLabel={`${item.title} - ${item.subtitle}`}
-        accessibilityRole="button"
+    <SafeAreaView edges={['top']} style={styles.screen}>
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={[1]}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={coursesDark.accentPrimary}
+            colors={[coursesDark.accentPrimary]}
+          />
+        }
       >
-        <View style={styles.card}>
-          {/* Gradient overlay on press */}
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.cardGradientOverlay,
-              {
-                opacity: pressAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 1],
-                }),
-              },
-            ]}
-          >
-            <LinearGradient
-              colors={[item.hoverTint, 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.gradientFill}
-            />
-          </Animated.View>
+        {/* ═══ Header Title Zone (Scrolls away) ═══ */}
+        <View style={styles.staticHeader}>
+          <Text style={styles.headerTitle}>Practice</Text>
+          <Text style={styles.headerSubtitle}>Master your exams with PYQs</Text>
+        </View>
 
-          {/* Top row: icon + title + chevron */}
-          <View style={styles.cardTopRow}>
-            <View style={styles.cardLeftRow}>
-              {/* Icon circle */}
+        {/* ═══ Unified Sticky Search & Collapsible Panel Wrapper ═══ */}
+        <View style={styles.stickyHeaderWrapper}>
+          <Animated.View style={[styles.stickyHeaderInner, stickyHeaderAnimatedStyle]}>
+            <View style={styles.searchRow}>
+
+
+              {/* Unified Search Input */}
               <View
                 style={[
-                  styles.iconCircle,
-                  {
-                    backgroundColor: item.iconBg,
-                    borderColor: item.iconBorder,
-                  },
-                  {
-                    shadowColor: item.accentColor,
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.15,
-                    shadowRadius: 12,
-                    elevation: 4,
-                  },
+                  styles.searchContainer,
+                  isSearchFocused && styles.searchContainerFocused,
                 ]}
               >
                 <Icon
-                  name={item.icon}
-                  color={item.accentColor}
-                  width={32}
-                  height={32}
+                  name="search"
+                  color={isSearchFocused ? coursesDark.accentPrimary : coursesDark.textMutedOnDark}
+                  width={18}
+                  height={18}
                 />
+                <TextInput
+                  ref={searchInputRef}
+                  style={styles.searchInput}
+                  placeholder="Search PYQs, exams, years..."
+                  placeholderTextColor={coursesDark.textMutedOnDark}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
+                  returnKeyType="search"
+                  autoCorrect={false}
+                />
+                {searchText.length > 0 && (
+                  <TouchableOpacity
+                    onPress={handleClearSearch}
+                    style={styles.clearButton}
+                  >
+                    <Icon name="x-circle" color={coursesDark.textMutedOnDark} width={16} height={16} />
+                  </TouchableOpacity>
+                )}
               </View>
 
-              {/* Title & subtitle */}
-              <View style={styles.titleGroup}>
-                <Text style={styles.cardTitle} numberOfLines={2}>
-                  {item.title}
-                </Text>
-                <Text style={styles.cardSubtitle}>{item.subtitle}</Text>
-              </View>
+              {/* Unified Collapsible Panel Toggle Button */}
+              <TouchableOpacity
+                style={[
+                  styles.filterButtonInline,
+                  isFilterPanelExpanded && styles.filterButtonInlineActive,
+                ]}
+                activeOpacity={0.8}
+                onPress={() => setIsFilterPanelExpanded(!isFilterPanelExpanded)}
+              >
+                <Icon
+                  name="filter"
+                  color={isFilterPanelExpanded ? '#FFFFFF' : coursesDark.accentPrimary}
+                  width={18}
+                  height={18}
+                />
+              </TouchableOpacity>
             </View>
 
-            {/* Chevron circle */}
-            <View style={styles.chevronCircle}>
-              <Icon
-                name="chevron-right"
-                color={colors.text.secondary}
-                width={20}
-                height={20}
+            {/* Collapsible Panel */}
+            <Animated.View style={[styles.filterPanel, filterPanelAnimatedStyle]}>
+              <CategoryChipStrip
+                activeCategory={activeCategory}
+                onCategorySelect={setActiveCategory}
               />
+              <SortPillsRow
+                activeSort={activeSort}
+                onSortSelect={setActiveSort}
+              />
+            </Animated.View>
+          </Animated.View>
+        </View>
+
+        {/* ═══ Content loading / empty / main view ═══ */}
+        {isLoading ? (
+          <CoursesSkeleton variant="all" />
+        ) : error ? (
+          <CoursesEmptyState
+            variant="error"
+            title="Unable to load PYQs"
+            description="There was a connection issue loading the practice catalog. Please check your network and try again."
+            buttonText="Try Again"
+            onButtonPress={handleRefresh}
+          />
+        ) : allPractices.length === 0 ? (
+          <CoursesEmptyState
+            title="No PYQs Available"
+            description="Check back later! We are currently uploading awesome new practice papers."
+          />
+        ) : (
+          <View style={styles.contentContainer}>
+            {/* My PYQs row (Purchased) */}
+            {purchasedPractices && purchasedPractices.length > 0 && !searchText && !activeCategory && (
+              <View style={styles.sectionContainer}>
+                <CoursesSectionHeader title="My Purchased PYQs" emoji="⚡" />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.enrolledScroll}
+                >
+                  {purchasedPractices.map((practice) => (
+                    <EnrolledCourseCard
+                      key={practice.packageId}
+                      courseId={practice.packageId}
+                      title={practice.name}
+                      category={practice.streamName}
+                      progressPercent={0}
+                      progressSuffix=" Papers"
+                      onPress={() => handlePracticePress(practice.packageId)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* All PYQs catalog */}
+            <View style={styles.sectionContainer}>
+              <CoursesSectionHeader
+                title={searchText || activeCategory ? 'Filtered PYQs' : 'Browse All PYQs'}
+                emoji="📚"
+              />
+
+              {processedPractices.length === 0 ? (
+                <CoursesEmptyState
+                  title="No matches found"
+                  description="We couldn't find any PYQs matching your criteria. Try resetting your search query or filters."
+                  buttonText="Clear Filters"
+                  onButtonPress={() => {
+                    setActiveCategory(null);
+                    setSearchText('');
+                  }}
+                />
+              ) : (
+                <View style={styles.catalogContainer}>
+                  {/* Spotlight Large Card */}
+                  {spotlightPractice && (
+                    <Animated.View layout={Layout.duration(200)}>
+                      <CourseCard
+                        key={spotlightPractice.packageId}
+                        courseId={spotlightPractice.packageId}
+                        title={spotlightPractice.name}
+                        description={spotlightPractice.description || ''}
+                        category={spotlightPractice.streamName}
+                        price={spotlightPractice.price}
+                        originalPrice={spotlightPractice.originalPrice || undefined}
+                        imageUrl={spotlightPractice.thumbnailUrl}
+                        primaryCtaText="Unlock PYQs →"
+                        secondaryCtaText="View Papers"
+                        features={[
+                          { icon: 'layers', text: `${spotlightPractice.totalPapers} Papers` },
+                          { icon: 'calendar', text: `${spotlightPractice.yearFrom}${spotlightPractice.yearTo ? ` - ${spotlightPractice.yearTo}` : ''}` },
+                          { icon: 'check-circle', text: 'Solutions' }
+                        ]}
+                        onPress={() => handlePracticePress(spotlightPractice.packageId)}
+                        onExplorePress={() => handlePracticePress(spotlightPractice.packageId)}
+                      />
+                    </Animated.View>
+                  )}
+
+                  {/* Dynamic 2-column grid of compact cards */}
+                  {gridPractices.length > 0 && (
+                    <View style={styles.gridCatalog}>
+                      {gridPractices.map((practice, idx) => (
+                        <Animated.View
+                          key={practice.packageId}
+                          entering={FadeInDown.delay(idx * 50).duration(200)}
+                          layout={Layout.duration(200)}
+                          style={styles.gridCardWrapper}
+                        >
+                          <CourseCardCompact
+                            courseId={practice.packageId}
+                            title={practice.name}
+                            category={practice.streamName}
+                            price={practice.price}
+                            originalPrice={practice.originalPrice || undefined}
+                            imageUrl={practice.thumbnailUrl}
+                            primaryCtaText="View Papers"
+                            onPress={() => handlePracticePress(practice.packageId)}
+                            onExplorePress={() => handlePracticePress(practice.packageId)}
+                          />
+                        </Animated.View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           </View>
-
-          {/* Divider */}
-          <View style={styles.cardDivider} />
-
-          {/* Stats grid */}
-          <View style={styles.statsGrid}>
-            {item.stats.map((stat, i) => (
-              <ExamStatItem key={`${item.key}-stat-${i}`} stat={stat} />
-            ))}
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-});
-
-// ── Loading State ─────────────────────────────────────────────────
-
-const LoadingState = React.memo(function LoadingState(): React.JSX.Element {
-  return (
-    <View style={styles.centerState}>
-      <ActivityIndicator size="large" color={colors.secondary} />
-      <Text style={styles.centerStateText}>Loading packages...</Text>
-    </View>
-  );
-});
-
-// ═══════════════════════════════════════════════════════════════════
-//  Main Screen
-// ═══════════════════════════════════════════════════════════════════
-
-type NavigationProp = NativeStackNavigationProp<AppStackParamList>;
-
-export default function MockTestsTabScreen(): React.JSX.Element {
-  const insets = useSafeAreaInsets();
-  const navigation = useNavigation<NavigationProp>();
-
-  const { data, isLoading, error } = usePracticeList(undefined, undefined, {
-    page: 1,
-    pageSize: 50,
-  });
-
-  const examCards = useMemo<ExamCardData[]>(() => {
-    const packages = data?.data ?? [];
-    return buildExamCards(packages);
-  }, [data]);
-
-  const handleExamPress = useCallback(
-    (exam: ExamCardData) =>
-      navigation.navigate('ExamPackDetail', {
-        packageId: exam.key,
-      }),
-    [navigation],
-  );
-
-  // Header height calculation for content offset
-  const headerHeight =
-    insets.top + spacing[12] + 24 + spacing[8] + 20 + spacing[12] + 1;
-
-  return (
-    <View style={styles.screen}>
-      {/* Ambient background blobs */}
-      <AmbientBackground />
-
-      {/* Sticky header */}
-      <Header safeAreaTop={insets.top} />
-
-      {isLoading ? (
-        <View style={[styles.scrollView, { paddingTop: headerHeight + spacing[40] }]}>
-          <LoadingState />
-        </View>
-      ) : error ? (
-        <View style={[styles.scrollView, { paddingTop: headerHeight + spacing[40] }]}>
-          <View style={styles.centerState}>
-            <Icon name="bell" color={colors.error} width={40} height={40} />
-            <Text style={[styles.centerStateText, { color: colors.error, marginTop: spacing[12] }]}>
-              Failed to load packages.
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={{
-            paddingTop: headerHeight + spacing[40],
-            paddingHorizontal: spacing[16],
-            paddingBottom: spacing[8],
-          }}
-          showsVerticalScrollIndicator={false}
-          bounces
-          overScrollMode="never"
-        >
-          {examCards.map((exam) => (
-            <ExamCard
-              key={exam.key}
-              item={exam}
-              onPress={() => handleExamPress(exam)}
-            />
-          ))}
-
-          {/* Bottom padding for tab bar */}
-          <View style={styles.bottomSpacer} />
-        </ScrollView>
-      )}
-    </View>
+        )}
+        <View style={styles.bottomSpacer} />
+      </Animated.ScrollView>
+    </SafeAreaView>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  Styles
-// ═══════════════════════════════════════════════════════════════════
-
 const styles = StyleSheet.create({
-  // ── Screen ──────────────────────────────────────────────────────
   screen: {
     flex: 1,
-    backgroundColor: '#F0F4F8',
+    backgroundColor: coursesDark.base,
   },
-  scrollView: {
-    flex: 1,
-  },
-
-  // ── Center State (loading/error) ────────────────────────────────
-  centerState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing[48],
-  },
-  centerStateText: {
-    ...typography.body,
-    color: colors.text.secondary,
-    marginTop: spacing[12],
-  },
-
-  // ── Header ──────────────────────────────────────────────────────
-  header: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    paddingBottom: spacing[12],
+  staticHeader: {
     paddingHorizontal: spacing[16],
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEF1F5',
-    gap: spacing[8],
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[8],
+    paddingTop: spacing[16],
+    paddingBottom: spacing[12],
+    backgroundColor: coursesDark.base,
   },
   headerTitle: {
-    ...typography.title,
-    fontSize: 24,
-    fontWeight: '700',
-    color: colors.text.primary,
+    ...typography.heroTitle,
+    color: coursesDark.textOnDark,
+    lineHeight: 34,
   },
   headerSubtitle: {
-    ...typography.body,
-    fontSize: 14,
-    color: colors.text.secondary,
-    lineHeight: 20,
-    paddingLeft: spacing[4],
-    maxWidth: '85%',
-  },
-
-  // ── Card ────────────────────────────────────────────────────────
-  cardOuterShadow: {
-    marginBottom: spacing[16],
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    elevation: 6,
-  },
-  cardTouchable: {
-    borderRadius: 24,
-    overflow: 'hidden',
-  },
-  card: {
-    borderRadius: 24,
-    padding: spacing[20],
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
-    gap: spacing[16],
-  },
-  cardGradientOverlay: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: 24,
-  },
-
-  // ── Card Top Row ────────────────────────────────────────────────
-  cardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    zIndex: 1,
-  },
-  cardLeftRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[16],
-    flex: 1,
-  },
-  iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  titleGroup: {
-    flex: 1,
-    gap: 2,
-  },
-  cardTitle: {
-    ...typography.title,
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.text.primary,
-    lineHeight: 24,
-  },
-  cardSubtitle: {
     ...typography.bodySmall,
+    color: coursesDark.textMutedOnDark,
     fontSize: 13,
-    fontWeight: '700',
-    color: colors.text.secondary,
-    marginTop: 1,
+    marginTop: spacing[4],
   },
-  chevronCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  stickyHeaderWrapper: {
+    backgroundColor: 'transparent',
+  },
+  stickyHeaderInner: {
+    paddingVertical: spacing[8],
+    backgroundColor: coursesDark.base,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[16],
+    gap: spacing[8],
+  },
+  backButtonInline: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.full,
+    backgroundColor: coursesDark.surfaceCardDark,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: coursesDark.dividerOnDark,
   },
-
-  // ── Divider ─────────────────────────────────────────────────────
-  cardDivider: {
-    height: 1,
-    backgroundColor: '#EEF1F5',
-    zIndex: 1,
-  },
-
-  // ── Stats Grid ──────────────────────────────────────────────────
-  statsGrid: {
-    flexDirection: 'row',
-    gap: spacing[8],
-    zIndex: 1,
-  },
-  statItem: {
+  searchContainer: {
     flex: 1,
-    gap: spacing[4],
-  },
-  statRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    backgroundColor: coursesDark.surfaceElevated,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing[12],
+    height: 42,
+    borderWidth: 1.5,
+    borderColor: coursesDark.dividerOnDark,
+    gap: spacing[8],
   },
-  statValue: {
-    ...typography.labelSmall,
-    fontSize: 12,
-    fontWeight: '500',
-    color: colors.text.primary,
-    lineHeight: 16,
+  searchContainerFocused: {
+    borderColor: coursesDark.accentPrimary,
   },
-  statCaption: {
-    ...typography.caption,
-    fontSize: 9,
-    color: '#727785',
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase' as const,
-    marginLeft: 22,
+  searchInput: {
+    ...typography.body,
+    flex: 1,
+    color: coursesDark.textOnDark,
+    paddingVertical: 0,
+    fontSize: 14,
   },
-
-  // ── Gradient Fill (for LinearGradient) ──────────────────────────
-  gradientFill: {
-    ...StyleSheet.absoluteFill,
+  clearButton: {
+    padding: spacing[4],
   },
-
-  // ── Bottom spacer ───────────────────────────────────────────────
+  filterButtonInline: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.full,
+    backgroundColor: coursesDark.surfaceCardDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: coursesDark.dividerOnDark,
+  },
+  filterButtonInlineActive: {
+    backgroundColor: coursesDark.accentPrimary,
+    borderColor: coursesDark.accentPrimary,
+  },
+  filterPanel: {
+    overflow: 'hidden',
+    marginTop: spacing[4],
+  },
+  contentContainer: {
+    paddingBottom: spacing[24],
+  },
+  sectionContainer: {
+    marginBottom: spacing[8],
+  },
+  enrolledScroll: {
+    paddingHorizontal: spacing[16],
+    gap: spacing[8],
+    paddingBottom: spacing[8],
+  },
+  gridCardWrapper: {
+    width: (width - 16 - 16 - 12) / 2,
+  },
+  catalogContainer: {
+    marginTop: spacing[4],
+  },
+  gridCatalog: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: spacing[16],
+    justifyContent: 'space-between',
+    rowGap: spacing[12],
+  },
   bottomSpacer: {
-    height: spacing[24],
+    height: 100,
   },
 });

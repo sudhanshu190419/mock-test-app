@@ -1,45 +1,41 @@
 /**
  * OverallPerformanceCard
  *
- * Dark green gradient hero card showing overall accuracy with a circular
- * SVG progress indicator, improvement trend badge, and three stat rows.
- *
- * Matches the HTML design reference exactly.
+ * A jaw-dropping premium card showing overall accuracy with a sleek
+ * gradient background, glowing circular SVG progress indicator, and micro-animations.
  *
  * @module components/dashboard/OverallPerformanceCard
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import Svg, { Circle, Text as SvgText } from 'react-native-svg';
-import { shadows } from '../../theme/shadows';
+import Svg, { Circle, Text as SvgText, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import LinearGradient from 'react-native-linear-gradient';
+import Animated, { useSharedValue, useAnimatedProps, withTiming, Easing, useAnimatedStyle, withDelay } from 'react-native-reanimated';
+import { coursesLightM3 } from '../../theme/colors';
+import { typographyV5 } from '../../theme/typography';
+import AnimatedPressable from '../AnimatedPressable';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const CIRCLE_SIZE = 110;
-const STROKE_WIDTH = 4;
+const STROKE_WIDTH = 5;
 const RADIUS = (CIRCLE_SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
-/** Dark green gradient base colour — matches HTML #0a472a / #0F5132. */
-const DARK_GREEN = '#0F5132';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
 export interface OverallPerformanceCardProps {
-  /** Overall accuracy percentage (0–100). */
   accuracy: number;
-  /** Number of tests attempted. */
   testsAttempted: number;
-  /** Average score across tests. */
   averageScore: number;
-  /** Best score achieved. */
   bestScore: number;
-  /** Improvement trend text (e.g. "12% improvement from last month"). */
   improvementText?: string;
 }
 
-// ─── Circular Progress (white on green) ──────────────────────────────────────
+// ─── Circular Progress (Animated & Glowing) ───────────────────────────────────
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 interface CircularProgressProps {
   percentage: number;
@@ -49,77 +45,145 @@ const CircularProgress = React.memo(function CircularProgress({
   percentage,
 }: CircularProgressProps): React.JSX.Element {
   const clamped = Math.min(100, Math.max(0, percentage));
-  const offset = CIRCUMFERENCE - (clamped / 100) * CIRCUMFERENCE;
+  const animatedProgress = useSharedValue(0);
+
+  useEffect(() => {
+    animatedProgress.value = withDelay(
+      300,
+      withTiming(clamped, {
+        duration: 1500,
+        easing: Easing.bezier(0.25, 1, 0.5, 1),
+      })
+    );
+  }, [clamped]);
+
+  const animatedProps = useAnimatedProps(() => {
+    const offset = CIRCUMFERENCE - (animatedProgress.value / 100) * CIRCUMFERENCE;
+    return {
+      strokeDashoffset: offset,
+    };
+  });
 
   return (
-    <Svg width={CIRCLE_SIZE} height={CIRCLE_SIZE} viewBox="0 0 36 36">
-      {/* Background track — semi-transparent white */}
-      <Circle
-        cx="18"
-        cy="18"
-        r="15.9155"
-        fill="none"
-        stroke="rgba(255,255,255,0.2)"
-        strokeWidth="3.8"
-      />
-      {/* Progress arc — white */}
-      <Circle
-        cx="18"
-        cy="18"
-        r="15.9155"
-        fill="none"
-        stroke="#4ADE80"
-        strokeWidth="3.8"
-        strokeLinecap="round"
-        strokeDasharray="100, 100"
-        strokeDashoffset={100 - clamped}
-      />
-      {/* Centre text */}
-      <SvgText
-        x="18"
-        y="20"
-        textAnchor="middle"
-        fill="#FFFFFF"
-        fontSize="9"
-        fontWeight="700"
-      >
-        {Math.round(clamped)}%
-      </SvgText>
-      <SvgText
-        x="18"
-        y="25"
-        textAnchor="middle"
-        fill="rgba(255,255,255,0.9)"
-        fontSize="4"
-        fontWeight="500"
-      >
-        Accuracy
-      </SvgText>
-    </Svg>
+    <View style={styles.circularProgressContainer}>
+      <Svg width={CIRCLE_SIZE} height={CIRCLE_SIZE} viewBox={`0 0 ${CIRCLE_SIZE} ${CIRCLE_SIZE}`}>
+        <Defs>
+          <SvgLinearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0%" stopColor="#A7F3D0" stopOpacity="1" />
+            <Stop offset="100%" stopColor="#10B981" stopOpacity="1" />
+          </SvgLinearGradient>
+        </Defs>
+        {/* Background track — thin, sleek */}
+        <Circle
+          cx={CIRCLE_SIZE / 2}
+          cy={CIRCLE_SIZE / 2}
+          r={RADIUS}
+          fill="none"
+          stroke="rgba(255,255,255,0.06)"
+          strokeWidth={STROKE_WIDTH}
+        />
+        {/* Glow Ring */}
+        <AnimatedCircle
+          cx={CIRCLE_SIZE / 2}
+          cy={CIRCLE_SIZE / 2}
+          r={RADIUS}
+          fill="none"
+          stroke="rgba(52, 211, 153, 0.3)"
+          strokeWidth={STROKE_WIDTH + 4}
+          strokeLinecap="round"
+          strokeDasharray={`${CIRCUMFERENCE}, ${CIRCUMFERENCE}`}
+          animatedProps={animatedProps}
+          rotation="-90"
+          origin={`${CIRCLE_SIZE / 2}, ${CIRCLE_SIZE / 2}`}
+        />
+        {/* Animated Progress Ring */}
+        <AnimatedCircle
+          cx={CIRCLE_SIZE / 2}
+          cy={CIRCLE_SIZE / 2}
+          r={RADIUS}
+          fill="none"
+          stroke="url(#grad)"
+          strokeWidth={STROKE_WIDTH}
+          strokeLinecap="round"
+          strokeDasharray={`${CIRCUMFERENCE}, ${CIRCUMFERENCE}`}
+          animatedProps={animatedProps}
+          rotation="-90"
+          origin={`${CIRCLE_SIZE / 2}, ${CIRCLE_SIZE / 2}`}
+        />
+        {/* Centre text */}
+        <SvgText
+          x={CIRCLE_SIZE / 2}
+          y={(CIRCLE_SIZE / 2) + 6}
+          textAnchor="middle"
+          fill="#FFFFFF"
+          fontSize="24"
+          fontWeight="800"
+        >
+          {Math.round(clamped)}%
+        </SvgText>
+        <SvgText
+          x={CIRCLE_SIZE / 2}
+          y={(CIRCLE_SIZE / 2) + 22}
+          textAnchor="middle"
+          fill="rgba(255,255,255,0.6)"
+          fontSize="10"
+          fontWeight="600"
+        >
+          Accuracy
+        </SvgText>
+      </Svg>
+    </View>
   );
 });
 
-// ─── Stat Row (single) ───────────────────────────────────────────────────────
+// ─── Stat Row (Animated) ─────────────────────────────────────────────────────
 
 interface StatRowProps {
   icon: React.ReactNode;
   label: string;
   value: string | number;
+  index: number;
 }
 
 const StatRow = React.memo(function StatRow({
   icon,
   label,
   value,
+  index,
 }: StatRowProps): React.JSX.Element {
+  const opacity = useSharedValue(0);
+  const translateY = useSharedValue(10);
+  
+  useEffect(() => {
+    opacity.value = withDelay(
+      400 + index * 150,
+      withTiming(1, { duration: 200 })
+    );
+    translateY.value = withDelay(
+      400 + index * 150,
+      withTiming(0, { duration: 200 })
+    );
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: translateY.value }]
+  }));
+
   return (
-    <View style={styles.statRow}>
-      <View style={styles.statIcon}>{icon}</View>
+    <Animated.View style={[styles.statRow, animatedStyle]}>
+      <View style={styles.statIconWrapper}>
+        <LinearGradient
+          colors={['#F8FAFC', '#E2E8F0']}
+          style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
+        />
+        {icon}
+      </View>
       <View style={styles.statTextGroup}>
         <Text style={styles.statLabel}>{label}</Text>
         <Text style={styles.statValue}>{value}</Text>
       </View>
-    </View>
+    </Animated.View>
   );
 });
 
@@ -135,58 +199,68 @@ const OverallPerformanceCard = React.memo(function OverallPerformanceCard({
   const clampedAccuracy = Math.min(100, Math.max(0, accuracy));
 
   return (
-    <View style={styles.container}>
-      {/* Decorative glow */}
-      <View style={styles.glow} pointerEvents="none" />
+    <AnimatedPressable style={styles.containerWrapper}>
+      <LinearGradient
+        colors={['#0F172A', '#1E293B', '#0F172A']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.container}
+      >
+        {/* Subtle top-right glow */}
+        <Animated.View
+          style={StyleSheet.absoluteFill}
+        >
+          <LinearGradient
+            colors={['rgba(52, 211, 153, 0.15)', 'transparent']}
+            start={{ x: 1, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+        
+        {/* Glassmorphic border overlay */}
+        <View style={styles.glassBorder} pointerEvents="none" />
 
-      <View style={styles.content}>
-        {/* Left: Overall Accuracy column */}
-        <View style={styles.leftColumn}>
-          <Text style={styles.overallLabel}>Overall Accuracy</Text>
-          <Text style={styles.overallValue}>{Math.round(clampedAccuracy)}%</Text>
-          <View style={styles.trendBadge}>
-            <Text style={styles.trendArrow}>↑</Text>
-            <Text style={styles.trendText}>{improvementText}</Text>
+        <View style={styles.content}>
+          {/* Left: Overall Accuracy column */}
+          <View style={styles.leftColumn}>
+            <Text style={styles.overallLabel}>Overall Accuracy</Text>
+            <Text style={styles.overallValue}>{Math.round(clampedAccuracy)}%</Text>
+            <View style={styles.trendBadge}>
+              <Text style={styles.trendArrow}>↗</Text>
+              <Text style={styles.trendText}>{improvementText}</Text>
+            </View>
+          </View>
+
+          {/* Center: Circular progress */}
+          <View style={styles.centerColumn}>
+            <CircularProgress percentage={clampedAccuracy} />
+          </View>
+
+          {/* Right: Stats list */}
+          <View style={styles.rightColumn}>
+            <StatRow
+              index={0}
+              icon={<Text style={styles.miniIconText}>📋</Text>}
+              label="Tests Attempted"
+              value={testsAttempted}
+            />
+            <StatRow
+              index={1}
+              icon={<Text style={styles.miniIconText}>📊</Text>}
+              label="Average Score"
+              value={averageScore}
+            />
+            <StatRow
+              index={2}
+              icon={<Text style={styles.miniIconText}>🏆</Text>}
+              label="Best Score"
+              value={bestScore}
+            />
           </View>
         </View>
-
-        {/* Center: Circular progress */}
-        <View style={styles.centerColumn}>
-          <CircularProgress percentage={clampedAccuracy} />
-        </View>
-
-        {/* Right: Stats list */}
-        <View style={styles.rightColumn}>
-          <StatRow
-            icon={
-              <View style={styles.miniIcon}>
-                <Text style={styles.miniIconText}>📋</Text>
-              </View>
-            }
-            label="Tests Attempted"
-            value={testsAttempted}
-          />
-          <StatRow
-            icon={
-              <View style={styles.miniIcon}>
-                <Text style={styles.miniIconText}>📊</Text>
-              </View>
-            }
-            label="Average Score"
-            value={averageScore}
-          />
-          <StatRow
-            icon={
-              <View style={styles.miniIcon}>
-                <Text style={styles.miniIconText}>🏆</Text>
-              </View>
-            }
-            label="Best Score"
-            value={bestScore}
-          />
-        </View>
-      </View>
-    </View>
+      </LinearGradient>
+    </AnimatedPressable>
   );
 });
 
@@ -195,34 +269,44 @@ export default OverallPerformanceCard;
 // ─── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: DARK_GREEN,
-    borderRadius: 24,
-    padding: 20,
+  containerWrapper: {
     marginHorizontal: 20,
     marginBottom: 24,
-    overflow: 'hidden',
-    position: 'relative',
+    borderRadius: 24,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 20 },
+        shadowOpacity: 0.1,
+        shadowRadius: 30,
       },
       android: {
-        elevation: 6,
+        elevation: 0,
       },
     }),
   },
-  glow: {
-    position: 'absolute',
-    right: -40,
-    bottom: -40,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(74, 222, 128, 0.15)',
+  container: {
+    borderRadius: 24,
+    padding: 22,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  glowContainer: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gradientBg: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  glassBorder: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   content: {
     flexDirection: 'row',
@@ -233,74 +317,72 @@ const styles = StyleSheet.create({
   // Left column
   leftColumn: {
     flex: 1,
-    paddingRight: 8,
+    paddingRight: 4,
   },
   overallLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.9)',
-    marginBottom: 4,
+    ...typographyV5.metadataStrong,
+    color: 'rgba(255,255,255,0.7)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
   },
   overallValue: {
-    fontSize: 44,
-    fontWeight: '800',
+    ...typographyV5.displayAsymmetric,
+    fontSize: 48,
+    lineHeight: 52,
     color: '#FFFFFF',
-    letterSpacing: -1,
-    marginBottom: 12,
-    lineHeight: 48,
+    marginBottom: 16,
+    textShadowColor: 'rgba(52, 211, 153, 0.4)',
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 12,
+    fontVariant: ['tabular-nums'],
   },
   trendBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
     borderRadius: 20,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    gap: 4,
+    borderColor: 'rgba(52, 211, 153, 0.3)',
+    gap: 6,
   },
   trendArrow: {
+    ...typographyV5.metadataStrong,
+    color: '#34D399',
     fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '700',
-    lineHeight: 16,
   },
   trendText: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.9)',
-    lineHeight: 12,
-    maxWidth: 80,
+    ...typographyV5.metadataSmall,
+    color: '#A7F3D0',
+    maxWidth: 90,
   },
   // Center column
   centerColumn: {
-    width: '28%',
+    width: 120,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+  },
+  circularProgressContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Right column
   rightColumn: {
     flex: 1,
-    paddingLeft: 8,
-    gap: 14,
+    paddingLeft: 12,
+    gap: 16,
   },
   statRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
-  statIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniIcon: {
+  statIconWrapper: {
+    width: 34,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -312,16 +394,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.8)',
-    lineHeight: 14,
+    ...typographyV5.metadataSmall,
+    color: 'rgba(255,255,255,0.5)',
     marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: '700',
+    ...typographyV5.cardTitle,
     color: '#FFFFFF',
-    lineHeight: 22,
+    fontSize: 16,
+    fontVariant: ['tabular-nums'],
   },
 });

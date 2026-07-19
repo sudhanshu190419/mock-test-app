@@ -47,7 +47,7 @@ interface TestSubmittedScreenProps {
 }
 
 export default function TestSubmittedScreen({
-  route,
+  route: _route,
 }: TestSubmittedScreenProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const stackNavigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();

@@ -26,6 +26,9 @@ import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+
+const AnimatedView = Animated.createAnimatedComponent(View);
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -45,9 +48,24 @@ const PopularExamCard = React.memo(function PopularExamCard({
   accessibilityLabel,
   onPress,
 }: PopularExamCardProps): React.JSX.Element {
+  const scale = useSharedValue(1);
+
+  const handlePressIn = () => {
+    scale.value = withTiming(0.96, { duration: 200 });
+  };
+  const handlePressOut = () => {
+    scale.value = withTiming(1, { duration: 200 });
+  };
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
-    <View style={[styles.card, shadows.small]}>
+    <AnimatedView style={[styles.card, shadows.small, animatedStyle]}>
       <TouchableOpacity
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
         onPress={onPress}
         activeOpacity={0.85}
         accessibilityLabel={accessibilityLabel}
@@ -82,7 +100,7 @@ const PopularExamCard = React.memo(function PopularExamCard({
           />
         </View>
       </TouchableOpacity>
-    </View>
+    </AnimatedView>
   );
 });
 

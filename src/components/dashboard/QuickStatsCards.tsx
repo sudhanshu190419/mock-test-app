@@ -1,56 +1,95 @@
 /**
  * QuickStatsCards
  *
- * A 4-column grid of compact white stat cards showing key metrics:
- * Tests Attempted, Best Score, Average Score, Overall Accuracy.
- *
- * Matches the HTML design reference exactly.
+ * A premium glassmorphic 4-column grid of compact stat cards with subtle gradients,
+ * glowing icons, and smooth entrance animations.
  *
  * @module components/dashboard/QuickStatsCards
  */
 
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, Platform } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay } from 'react-native-reanimated';
 import Icon from '../home/Icons';
 import type { IconName } from '../home/Icons';
+import { coursesLightM3 } from '../../theme/colors';
+import { typographyV5 } from '../../theme/typography';
+import AnimatedPressable from '../AnimatedPressable';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface QuickStatItem {
-  /** Unique key. */
   key: string;
-  /** Vector icon name from the project's Icon component. */
   iconName: IconName;
-  /** Label text (supports \n for multi-line). */
   label: string;
-  /** Value text. */
   value: string;
+  gradientStart: string;
+  gradientEnd: string;
 }
 
 export interface QuickStatsCardsProps {
-  /** Array of 4 stat items. */
   items: QuickStatItem[];
 }
 
-// ─── Single Stat Card ────────────────────────────────────────────────────────
+// ─── Single Stat Card (Animated & Glassmorphic) ──────────────────────────────
 
 const StatCard = React.memo(function StatCard({
-  iconName,
-  label,
-  value,
-}: QuickStatItem): React.JSX.Element {
+  item,
+  index,
+}: {
+  item: QuickStatItem;
+  index: number;
+}): React.JSX.Element {
+  const opacity = useSharedValue(0);
+  const translateY = useSharedValue(20);
+
+  useEffect(() => {
+    opacity.value = withDelay(
+      index * 100,
+      withTiming(1, { duration: 200 })
+    );
+    translateY.value = withDelay(
+      index * 100,
+      withTiming(0, { duration: 200 })
+    );
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: translateY.value }],
+  }));
+
   return (
-    <View style={styles.card}>
-      <View style={styles.iconCircle}>
-        <Icon name={iconName} color="#166534" width={22} height={22} />
-      </View>
-      <Text style={styles.label} numberOfLines={2}>
-        {label}
-      </Text>
-      <Text style={styles.value} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
+    <Animated.View style={[styles.cardWrapper, animatedStyle]}>
+      <AnimatedPressable style={styles.cardPressable}>
+        <LinearGradient
+          colors={['#FFFFFF', 'rgba(255,255,255,0.85)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.card}
+        >
+          {/* Subtle inner glass border */}
+          <View style={styles.innerBorder} pointerEvents="none" />
+
+          <View style={styles.iconContainer}>
+            <LinearGradient
+              colors={[item.gradientStart, item.gradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}
+            />
+            <Icon name={item.iconName} color="#FFFFFF" width={22} height={22} />
+          </View>
+          <Text style={styles.label} numberOfLines={2}>
+            {item.label}
+          </Text>
+          <Text style={styles.value} numberOfLines={1}>
+            {item.value}
+          </Text>
+        </LinearGradient>
+      </AnimatedPressable>
+    </Animated.View>
   );
 });
 
@@ -65,8 +104,8 @@ const QuickStatsCards = React.memo(function QuickStatsCards({
 
   return (
     <View style={styles.grid}>
-      {items.map((item) => (
-        <StatCard key={item.key} iconName={item.iconName} label={item.label} value={item.value} />
+      {items.map((item, index) => (
+        <StatCard key={item.key} item={item} index={index} />
       ))}
     </View>
   );
@@ -74,64 +113,94 @@ const QuickStatsCards = React.memo(function QuickStatsCards({
 
 export default QuickStatsCards;
 
-// ─── Styles (matches HTML design exactly) ───────────────────────────────────
-
-/** Tailwind `shadow-sm` equivalent. */
-const SHADOW_SM = {
-  shadowColor: '#000',
-  
-  shadowOpacity:0.03,
-shadowRadius:8,
-shadowOffset:{
-   width:0,
-   height:3,
-},
-elevation:2,
-} as const;
+// ─── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 16,
-    marginBottom: 24,
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
+    paddingHorizontal: 20,
+    marginBottom: 28,
+  },
+  cardWrapper: {
+    width: '48%',
+  },
+  cardPressable: {
+    flex: 1,
+    borderRadius: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.05,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 10 },
+      },
+      android: {
+        elevation: 0,
+      },
+    }),
   },
   card: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 20,
+    padding: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    height: 125,
-    ...SHADOW_SM,
+    height: 135,
+    position: 'relative',
   },
-  iconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 22,
-    backgroundColor: '#E8F5E9',
+  innerBorder: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  innerBorderGlow: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: '#05C46B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  gradientBg: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 16,
+    opacity: 0.8,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  iconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#10B981',
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+      },
+    }),
   },
   label: {
-    height: 34,
-    fontSize: 10,
-    fontWeight: '600',
+    ...typographyV5.metadataSmall,
+    height: 32,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 14,
-    marginBottom: 1,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   value: {
-    height: 26, 
+    ...typographyV5.cardTitleHero,
     fontSize: 20,
-    fontWeight: '800',
-    color: '#1E293B',
+    height: 28,
+    color: '#0F172A',
     textAlign: 'center',
-    lineHeight: 24,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
 });

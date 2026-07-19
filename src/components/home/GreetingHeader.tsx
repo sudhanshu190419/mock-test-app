@@ -74,57 +74,47 @@ function getGreeting(): string {
 
 const GreetingHeader = React.memo(function GreetingHeader({
   userName = 'Learner',
-  avatarUrl,
   onNotificationPress,
-  onProfilePress,
   hasUnreadNotifications = false,
   unreadCount = 0,
 }: GreetingHeaderProps): React.JSX.Element {
-  // Calculate greeting once on mount and whenever the component re-renders
-  // (typically only on mount, since the screen is not re-rendered at every hour)
   const greeting = useMemo(() => getGreeting(), []);
+  const skyDark = colors.sky?.dark || '#0F172A';
+  const skyTint = colors.sky?.tint || '#E0F2FE';
+  const textSlateSub = '#475569';
+  
+  const dateString = useMemo(() => {
+    return new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
+  }, []);
 
   return (
-    <View style={[styles.container, { paddingTop: spacing[12] }]}>
+    <View style={[styles.container, { paddingTop: spacing[8] }]}>
       {/* Left: Greeting text */}
       <View style={styles.textSection}>
-        <View style={styles.greetingRow}>
-          <Text style={styles.emoji}>👋</Text>
-          <Text style={styles.greeting}>{greeting}</Text>
+        <View style={styles.dateBadge}>
+          <Icon name="calendar" color="#0284C7" width={12} height={12} />
+          <Text style={styles.dateText}>{dateString}</Text>
         </View>
-        <Text style={styles.title}>{userName}!</Text>
-        <Text style={styles.subtitle}>
-          Keep learning, keep growing!
+
+        <Text style={[styles.title, { color: skyDark }]}>
+          {greeting.replace('!', '')}, {userName} <Text style={styles.emoji}>👋</Text>
+        </Text>
+        
+        <Text style={[styles.subtitle, { color: textSlateSub }]}>
+          Ready to crush your goals today?
         </Text>
       </View>
 
-      {/* Right: Notification + Avatar */}
+      {/* Right: Notification */}
       <View style={styles.actions}>
-        <NotificationBell
-          unreadCount={unreadCount}
-          onPress={onNotificationPress ?? (() => {})}
-          color={colors.text.primary}
-          size={24}
-        />
-
-        <TouchableOpacity
-          style={styles.avatar}
-          onPress={onProfilePress}
-          activeOpacity={0.8}
-          accessibilityLabel="Profile"
-          accessibilityRole="button"
-        >
-          {avatarUrl ? (
-            <Image
-              source={{ uri: avatarUrl }}
-              style={styles.avatarImage}
-              resizeMode="cover"
-              accessibilityLabel="Profile avatar"
-            />
-          ) : (
-            <Icon name="user" color={colors.text.inverse} width={20} height={20} />
-          )}
-        </TouchableOpacity>
+        <View style={[styles.bellPill, { backgroundColor: '#FFFFFF', borderColor: skyTint, borderWidth: 1 }]}>
+          <NotificationBell
+            unreadCount={unreadCount}
+            onPress={onNotificationPress ?? (() => {})}
+            color={skyDark}
+            size={22}
+          />
+        </View>
       </View>
     </View>
   );
@@ -136,63 +126,62 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: spacing[20],
-    paddingBottom: spacing[12],
+    alignItems: 'center',
+    paddingHorizontal: spacing[16],
+    paddingBottom: spacing[16],
   },
   textSection: {
     flex: 1,
     marginRight: spacing[12],
   },
-  greetingRow: {
+  dateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[8],
-    marginBottom: spacing[4],
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginBottom: spacing[12],
+  },
+  dateText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: '#0284C7',
+    fontSize: 11,
   },
   emoji: {
-    fontSize: 20,
-  },
-  greeting: {
-    ...typography.subtitle,
-    color: colors.text.primary,
+    fontSize: 22,
   },
   title: {
     ...typography.title,
-    color: colors.text.primary,
+    fontWeight: '900',
+    fontSize: 22,
     marginBottom: spacing[4],
+    lineHeight: 28,
   },
   subtitle: {
-    ...typography.body,
-    color: colors.text.secondary,
-    lineHeight: 20,
+    ...typography.bodySmall,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[12],
-    paddingTop: spacing[4],
-  },
-  iconButton: {
-    position: 'relative',
-    width: 36,
-    height: 36,
-    alignItems: 'center',
     justifyContent: 'center',
+    paddingTop: spacing[8],
   },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.secondary,
+  bellPill: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.small,
-  },
-  avatarImage: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    shadowColor: '#0284C7',
+    shadowOpacity: 0.08,
   },
 });
 

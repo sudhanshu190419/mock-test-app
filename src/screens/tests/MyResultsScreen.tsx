@@ -32,6 +32,7 @@ import { colors, palette } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
+import { shadows } from '../../theme/shadows';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
 import { useMyResults } from '../../hooks/mockTest/useMyResults';
 import { useStudentScoreTrend } from '../../hooks/analytics/useAnalytics';
@@ -91,60 +92,116 @@ const ResultCard = React.memo(function ResultCard({
   onPress,
 }: ResultCardProps): React.JSX.Element {
   const formattedDate = formatDate(item.attemptedAt);
-  const formattedReleased = item.releasedAt ? formatDate(item.releasedAt) : 'N/A';
+  const percentage = item.percentage;
+  
+  const statusConfig = useMemo(() => {
+    if (percentage >= 80) {
+      return { label: 'Excellent', color: '#10B981', bg: 'rgba(16, 185, 129, 0.1)' };
+    }
+    if (percentage >= 60) {
+      return { label: 'Good', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.1)' };
+    }
+    if (percentage >= 40) {
+      return { label: 'Average', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.1)' };
+    }
+    return { label: 'Needs Focus', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.1)' };
+  }, [percentage]);
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, { borderLeftColor: statusConfig.color, borderLeftWidth: 4 }]}
       onPress={onPress}
       activeOpacity={0.7}
-      accessibilityLabel={`${item.testTitle}, Score: ${item.score} out of ${item.maxScore}, ${item.percentage.toFixed(1)}%`}
       accessibilityRole="button"
     >
-      <View style={styles.cardTopRow}>
-        <View style={styles.cardIconContainer}>
-          <Icon name="clipboard-list" color={colors.primary} width={22} height={22} />
-        </View>
-        <View style={styles.cardTitleGroup}>
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.cardInfoGroup}>
           <Text style={styles.cardTitle} numberOfLines={2}>
             {item.testTitle}
           </Text>
           <Text style={styles.cardDate}>{formattedDate}</Text>
         </View>
-        <Icon name="chevron-right" color={palette.slate300} width={20} height={20} />
+        <View style={[styles.percentageBadge, { backgroundColor: statusConfig.bg }]}>
+          <Text style={[styles.percentageText, { color: statusConfig.color }]}>
+            {percentage.toFixed(1)}%
+          </Text>
+        </View>
       </View>
 
-      <View style={styles.cardDivider} />
-
-      <View style={styles.cardStats}>
-        {/* Score */}
-        <View style={styles.cardStat}>
-          <Text style={styles.cardStatLabel}>Score</Text>
-          <Text style={styles.cardStatValue}>
-            {item.score}
-            <Text style={styles.cardStatMax}>/{item.maxScore}</Text>
+      <View style={styles.cardMetricsRow}>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricLabel}>Score Obtained</Text>
+          <Text style={styles.metricValue}>
+            {item.score} <Text style={styles.metricMax}>/ {item.maxScore}</Text>
           </Text>
         </View>
-
-        {/* Percentage */}
-        <View style={styles.cardStatDivider} />
-        <View style={styles.cardStat}>
-          <Text style={styles.cardStatLabel}>Percentage</Text>
-          <Text style={[styles.cardStatValue, styles.cardStatPercent]}>
-            {item.percentage.toFixed(1)}%
+        <View style={styles.metricItem}>
+          <Text style={styles.metricLabel}>Performance</Text>
+          <Text style={[styles.metricValue, { color: statusConfig.color, fontSize: 13 }]}>
+            {statusConfig.label}
           </Text>
         </View>
-
-        {/* Released */}
-        <View style={styles.cardStatDivider} />
-        <View style={styles.cardStat}>
-          <Text style={styles.cardStatLabel}>Released</Text>
-          <Text style={[styles.cardStatValue, styles.cardStatSmall]}>
-            {formattedReleased}
-          </Text>
-        </View>
+        <Icon name="chevron-right" color="#BFC4CC" width={18} height={18} />
       </View>
     </TouchableOpacity>
+  );
+});
+
+const ResultsStatsHub = React.memo(function ResultsStatsHub({
+  results,
+}: {
+  results: StudentResultItem[];
+}): React.JSX.Element {
+  const stats = useMemo(() => {
+    const total = results.length;
+    if (total === 0) return null;
+
+    const avgPct = results.reduce((sum, r) => sum + r.percentage, 0) / total;
+    const highestScore = Math.max(...results.map((r) => r.score));
+    const highestMax = results.find((r) => r.score === highestScore)?.maxScore ?? 720;
+
+    return [
+      {
+        label: 'Total Tests',
+        value: total,
+        icon: 'clipboard-list',
+        color: '#3B82F6',
+        bg: 'rgba(59, 130, 246, 0.1)',
+      },
+      {
+        label: 'Average Score',
+        value: `${avgPct.toFixed(1)}%`,
+        icon: 'bar-chart-2',
+        color: '#8B5CF6',
+        bg: 'rgba(139, 92, 246, 0.1)',
+      },
+      {
+        label: 'Highest Score',
+        value: `${highestScore}/${highestMax}`,
+        icon: 'trophy',
+        color: '#F59E0B',
+        bg: 'rgba(245, 158, 11, 0.1)',
+      },
+    ];
+  }, [results]);
+
+  if (!stats) return <View />;
+
+  return (
+    <View style={styles.statsHubContainer}>
+      <Text style={styles.dashboardSectionTitle}>Performance Dashboard</Text>
+      <View style={styles.statsHubRow}>
+        {stats.map((item, idx) => (
+          <View key={idx} style={[styles.hubCard, shadows.small]}>
+            <View style={[styles.hubIconWrapper, { backgroundColor: item.bg }]}>
+              <Icon name={item.icon as any} color={item.color} width={18} height={18} />
+            </View>
+            <Text style={styles.hubValue}>{item.value}</Text>
+            <Text style={styles.hubLabel}>{item.label}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 });
 
@@ -276,6 +333,25 @@ export default function MyResultsScreen({
     return <ScoreTrendChart data={trendData} />;
   }, [trendData, trendLoading, trendError, trendRefetch]);
 
+  const listHeader = useMemo(() => {
+    return (
+      <View style={styles.listHeaderContainer}>
+        {results && results.length > 0 && <ResultsStatsHub results={results} />}
+        
+        <View style={styles.chartWrapper}>
+          <Text style={styles.dashboardSectionTitle}>Score Progression</Text>
+          {trendHeader}
+        </View>
+        
+        {results && results.length > 0 && (
+          <Text style={[styles.dashboardSectionTitle, { marginTop: spacing[12] }]}>
+            Recent Attempts
+          </Text>
+        )}
+      </View>
+    );
+  }, [results, trendHeader]);
+
   // ── Loading State ──────────────────────────────────────────────
 
   if (isLoading) {
@@ -342,7 +418,7 @@ export default function MyResultsScreen({
             colors={[colors.primary]}
           />
         }
-        ListHeaderComponent={trendHeader}
+        ListHeaderComponent={listHeader}
         ListEmptyComponent={<EmptyState />}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
@@ -453,7 +529,58 @@ const styles = StyleSheet.create({
   separator: {
     height: spacing[12],
   },
-  // ── Card ──────────────────────────────────────────────────────────
+  listHeaderContainer: {
+    marginBottom: spacing[16],
+    gap: spacing[20],
+  },
+  statsHubContainer: {
+    gap: spacing[8],
+  },
+  dashboardSectionTitle: {
+    ...typography.subtitle,
+    fontSize: 15,
+    fontWeight: '700',
+    color: palette.slate800,
+    letterSpacing: -0.15,
+  },
+  statsHubRow: {
+    flexDirection: 'row',
+    gap: spacing[12],
+  },
+  hubCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: spacing[12],
+    paddingHorizontal: spacing[8],
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#EEF1F5',
+  },
+  hubIconWrapper: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[8],
+  },
+  hubValue: {
+    ...typography.subtitle,
+    fontSize: 15,
+    fontWeight: '700',
+    color: palette.slate800,
+  },
+  hubLabel: {
+    ...typography.caption,
+    fontSize: 10,
+    color: palette.slate500,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  chartWrapper: {
+    gap: spacing[8],
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
@@ -472,22 +599,15 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  cardTopRow: {
+  cardHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     gap: spacing[12],
   },
-  cardIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0, 105, 72, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardTitleGroup: {
+  cardInfoGroup: {
     flex: 1,
-    gap: 2,
+    gap: 4,
   },
   cardTitle: {
     ...typography.subtitle,
@@ -502,52 +622,46 @@ const styles = StyleSheet.create({
     color: palette.slate500,
     lineHeight: 16,
   },
-  cardDivider: {
-    height: 1,
-    backgroundColor: palette.slate100,
-    marginVertical: spacing[12],
+  percentageBadge: {
+    paddingHorizontal: spacing[12],
+    paddingVertical: spacing[8],
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  cardStats: {
+  percentageText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  cardMetricsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: radius.sm,
+    paddingVertical: spacing[12],
+    paddingHorizontal: spacing[12],
+    marginTop: spacing[12],
   },
-  cardStat: {
-    flex: 1,
-    alignItems: 'center',
+  metricItem: {
+    gap: 2,
   },
-  cardStatLabel: {
-    ...typography.caption,
+  metricLabel: {
     fontSize: 10,
     fontWeight: '600',
-    color: palette.slate500,
-    letterSpacing: 1,
+    color: palette.slate400,
     textTransform: 'uppercase',
-    marginBottom: spacing[4],
+    letterSpacing: 0.5,
   },
-  cardStatValue: {
-    ...typography.subtitle,
-    fontSize: 16,
+  metricValue: {
+    fontSize: 14,
     fontWeight: '700',
     color: palette.slate800,
   },
-  cardStatMax: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: palette.slate300,
-  },
-  cardStatPercent: {
-    color: colors.primary,
-  },
-  cardStatSmall: {
+  metricMax: {
     fontSize: 11,
     fontWeight: '500',
-    color: palette.slate500,
-  },
-  cardStatDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: palette.slate200,
-    marginHorizontal: spacing[8],
+    color: palette.slate400,
   },
   // ── Empty State ───────────────────────────────────────────────────
   emptyState: {

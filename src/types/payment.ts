@@ -75,6 +75,8 @@ export interface RazorpayPaymentFailure {
 export type PurchaseState =
   /** Initial state — no payment has been attempted. */
   | 'idle'
+  /** Custom checkout screen/order summary before order creation. */
+  | 'order_summary'
   /** Creating the payment order via Edge Function. */
   | 'creating_order'
   /** Razorpay checkout is open and awaiting user action. */

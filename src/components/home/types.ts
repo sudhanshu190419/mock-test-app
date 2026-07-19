@@ -8,6 +8,8 @@
  * @module components/home/types
  */
 
+import type { IconName } from './Icons';
+
 // ─── Quick Action Card ────────────────────────────────────────────
 
 export interface QuickActionItem {
@@ -67,6 +69,16 @@ export interface PopularExamItem {
   onPress?: () => void;
 }
 
+// ─── Shared Feature Item ──────────────────────────────────────────
+
+/** A single feature point with icon + text for course and PYQ cards. */
+export interface CourseFeaturePoint {
+  /** Icon name (maps to the Icon component). */
+  icon: IconName;
+  /** Feature label text (punchy 1–2 words). */
+  text: string;
+}
+
 // ─── Trending Courses ─────────────────────────────────────────────
 
 export interface TrendingCourseItem {
@@ -90,14 +102,67 @@ export interface TrendingCourseItem {
   originalPrice?: number;
   /** Whether this course is marked as a best seller. */
   isBestSeller: boolean;
-  /** Gradient colours for the hero card background. */
+  /** Gradient colours for legacy hero card background. */
   gradientColors: [string, string, ...string[]];
+  /** Solid editorial banner background color for Style 1. */
+  bannerColor?: string;
+  /** Punchy 1–2 word feature badges for Style 1. */
+  features?: CourseFeaturePoint[];
   /** Emoji or icon name for the course illustration placeholder. */
   illustration: string;
   /** Callback when the card is pressed. */
   onPress?: () => void;
   /** Callback when the bookmark icon is pressed. */
   onBookmarkPress?: () => void;
+}
+
+/** Get distinct solid editorial top banner color for an exam category. */
+export function getTrendingCategoryColor(category?: string): string {
+  const cat = (category || '').toUpperCase().trim();
+  if (cat.includes('NEET')) return '#065F46'; // Deep Emerald
+  if (cat.includes('JEE')) return '#312E81'; // Bold Indigo
+  if (cat.includes('CBSE') || cat.includes('12') || cat.includes('BOARDS')) return '#1E3A8A'; // Slate Blue
+  if (cat.includes('CUET')) return '#581C87'; // Rich Plum
+  if (cat.includes('UPSC')) return '#7C2D12'; // Editorial Terracotta
+  if (cat.includes('SSC')) return '#1E293B'; // Navy Steel
+  if (cat.includes('BANKING')) return '#3B0764'; // Midnight Violet
+  if (cat.includes('MBA') || cat.includes('CAT')) return '#27272A'; // Deep Charcoal
+  return '#334155'; // Fallback Slate
+}
+
+/** Get punchy 1–2 word feature points for an exam category. */
+export function getTrendingCategoryFeatures(category?: string): CourseFeaturePoint[] {
+  const cat = (category || '').toUpperCase().trim();
+  if (cat.includes('NEET')) {
+    return [
+      { icon: 'timer', text: 'Timed Tests' },
+      { icon: 'bar-chart-2', text: 'AI Analytics' },
+      { icon: 'video', text: 'Live + Rec' },
+      { icon: 'description', text: 'PYQ Bank' },
+    ];
+  }
+  if (cat.includes('JEE')) {
+    return [
+      { icon: 'target-fill', text: 'IITian Prep' },
+      { icon: 'bar-chart-2', text: 'AI Analytics' },
+      { icon: 'video', text: 'Live + Rec' },
+      { icon: 'description', text: 'PYQ Bank' },
+    ];
+  }
+  if (cat.includes('UPSC')) {
+    return [
+      { icon: 'shield-check', text: 'GS + CSAT' },
+      { icon: 'bar-chart-2', text: 'AI Analytics' },
+      { icon: 'video', text: 'Live + Rec' },
+      { icon: 'description', text: 'PYQ Bank' },
+    ];
+  }
+  return [
+    { icon: 'timer', text: 'Timed Tests' },
+    { icon: 'bar-chart-2', text: 'AI Analytics' },
+    { icon: 'video', text: 'Live + Rec' },
+    { icon: 'description', text: 'PYQ Bank' },
+  ];
 }
 
 // ─── PYQ (Previous Year Questions) ────────────────────────────────────

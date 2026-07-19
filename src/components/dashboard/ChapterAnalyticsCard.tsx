@@ -1,37 +1,42 @@
 /**
  * ChapterAnalyticsCard
  *
- * Displays chapter-wise analytics grouped by subject, with accuracy
- * progress bars and attempt counts.
- *
- * Matches the existing dashboard design language established by
- * PerformanceSnapshotCard.
+ * A state-of-the-art premium chapter-wise analytics card grouped by subject.
+ * Features sleek accordion expansion (LayoutAnimation) and animated LinearGradient progress bars.
+ * Uses coursesLightM3 and typographyV5 design system.
  *
  * @module components/dashboard/ChapterAnalyticsCard
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  LayoutAnimation,
+  UIManager,
+  Platform,
 } from 'react-native';
-import { colors, palette } from '../../theme/colors';
-import { typography } from '../../theme/typography';
-import { radius } from '../../theme/radius';
-import { shadows } from '../../theme/shadows';
+import LinearGradient from 'react-native-linear-gradient';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, withDelay } from 'react-native-reanimated';
+import { coursesLightM3 } from '../../theme/colors';
+import { typographyV5 } from '../../theme/typography';
 import type { ChapterAnalyticsItem } from '../../types/analytics';
+
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android') {
+  if (UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+  }
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ChapterAnalyticsCardProps {
-  /** Array of chapter analytics items. */
   chapters: ChapterAnalyticsItem[];
 }
-
-// ─── Subject Group ───────────────────────────────────────────────────────────
 
 interface SubjectGroup {
   subjectName: string;
@@ -56,6 +61,36 @@ function groupBySubject(chapters: ChapterAnalyticsItem[]): SubjectGroup[] {
   return Array.from(map.values());
 }
 
+// ─── Animated Progress Bar ───────────────────────────────────────────────────
+
+const AnimatedProgress = React.memo(({ percentage }: { percentage: number }) => {
+  const width = useSharedValue(0);
+
+  useEffect(() => {
+    width.value = withDelay(
+      200,
+      withTiming(percentage, { duration: 200 })
+    );
+  }, [percentage]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    width: `${width.value}%`,
+  }));
+
+  return (
+    <View style={styles.progressTrack}>
+      <Animated.View style={[styles.progressFillWrapper, animatedStyle]}>
+        <LinearGradient
+          colors={['#34D399', '#059669']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+    </View>
+  );
+});
+
 // ─── Chapter Row ─────────────────────────────────────────────────────────────
 
 interface ChapterRowProps {
@@ -79,18 +114,8 @@ const ChapterRow = React.memo(function ChapterRow({
         </Text>
       </View>
 
-      {/* Progress bar */}
-      <View style={styles.progressTrack}>
-        <View
-          style={[
-            styles.progressFill,
-            { width: `${clampedAccuracy}%` },
-          ]}
-          pointerEvents="none"
-        />
-      </View>
+      <AnimatedProgress percentage={clampedAccuracy} />
 
-      {/* Stats row */}
       <View style={styles.statsRow}>
         <View style={styles.stat}>
           <Text style={styles.statValue}>{attempted}</Text>
@@ -98,21 +123,21 @@ const ChapterRow = React.memo(function ChapterRow({
         </View>
         <View style={styles.statDivider} />
         <View style={styles.stat}>
-          <Text style={[styles.statValue, { color: palette.green }]}>
+          <Text style={[styles.statValue, { color: '#059669' }]}>
             {chapter.correct}
           </Text>
           <Text style={styles.statLabel}>Correct</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.stat}>
-          <Text style={[styles.statValue, { color: colors.error }]}>
+          <Text style={[styles.statValue, { color: '#EF4444' }]}>
             {chapter.wrong}
           </Text>
           <Text style={styles.statLabel}>Wrong</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.stat}>
-          <Text style={[styles.statValue, { color: palette.slate400 }]}>
+          <Text style={[styles.statValue, { color: '#94A3B8' }]}>
             {chapter.skipped}
           </Text>
           <Text style={styles.statLabel}>Skipped</Text>
@@ -136,6 +161,7 @@ const SubjectAccordion = React.memo(function SubjectAccordion({
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   const toggle = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded((prev) => !prev);
   }, []);
 
@@ -152,18 +178,18 @@ const SubjectAccordion = React.memo(function SubjectAccordion({
         style={styles.groupHeader}
         onPress={toggle}
         activeOpacity={0.7}
-        accessibilityLabel={`${group.subjectName} — ${group.chapters.length} chapters`}
-        accessibilityRole="button"
       >
         <View style={styles.groupHeaderLeft}>
-          <Text style={styles.expandIcon}>
-            {expanded ? '▼' : '▶'}
-          </Text>
+          <View style={[styles.expandIconContainer, expanded && styles.expandIconExpanded]}>
+            <Text style={styles.expandIcon}>▶</Text>
+          </View>
           <Text style={styles.groupName}>{group.subjectName}</Text>
         </View>
         <View style={styles.groupHeaderRight}>
           <Text style={styles.groupAccuracy}>{avgAccuracy}%</Text>
-          <Text style={styles.groupCount}>{group.chapters.length}</Text>
+          <View style={styles.groupCountBadge}>
+            <Text style={styles.groupCountText}>{group.chapters.length}</Text>
+          </View>
         </View>
       </TouchableOpacity>
 
@@ -202,12 +228,14 @@ const ChapterAnalyticsCard = React.memo(function ChapterAnalyticsCard({
           showsVerticalScrollIndicator={false}
           style={styles.scrollContainer}
         >
-          {groups.map((group) => (
-            <SubjectAccordion
-              key={group.subjectId}
-              group={group}
-              defaultExpanded={groups.length === 1}
-            />
+          {groups.map((group, idx) => (
+            <React.Fragment key={group.subjectId}>
+              <SubjectAccordion
+                group={group}
+                defaultExpanded={groups.length === 1}
+              />
+              {idx < groups.length - 1 && <View style={styles.groupDivider} />}
+            </React.Fragment>
           ))}
         </ScrollView>
       </View>
@@ -221,86 +249,108 @@ export default ChapterAnalyticsCard;
 
 const styles = StyleSheet.create({
   outer: {
-    marginBottom: 24,
+    marginBottom: 32,
     paddingHorizontal: 20,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 12,
-    lineHeight: 22,
+    ...typographyV5.cardTitleHero,
+    color: coursesLightM3.textOnCard,
+    marginBottom: 16,
+    letterSpacing: -0.3,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.small,
+    borderColor: coursesLightM3.dividerOnDark,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.08,
+        shadowRadius: 32,
+        shadowOffset: { width: 0, height: 16 },
+      },
+      android: {
+        elevation: 0,
+      },
+    }),
+    overflow: 'hidden',
   },
   scrollContainer: {
-    maxHeight: 400,
+    maxHeight: 480,
   },
   // ── Subject Group ───────────────────────────────────────────────
   groupContainer: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+    backgroundColor: '#FFFFFF',
+  },
+  groupDivider: {
+    height: 1,
+    backgroundColor: coursesLightM3.dividerOnDark,
   },
   groupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
   },
   groupHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
     flex: 1,
+  },
+  expandIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expandIconExpanded: {
+    transform: [{ rotate: '90deg' }],
   },
   expandIcon: {
     fontSize: 10,
-    color: colors.text.secondary,
-    width: 12,
-    textAlign: 'center',
+    color: '#64748B',
+    lineHeight: 12,
+    marginLeft: 2, // optical alignment for triangle
   },
   groupName: {
-    ...typography.subtitle,
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.text.primary,
+    ...typographyV5.cardTitle,
+    color: '#0F172A',
   },
   groupHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
   },
   groupAccuracy: {
-    ...typography.labelSmall,
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primary,
+    ...typographyV5.buttonLabel,
+    color: '#059669',
+    fontSize: 15,
   },
-  groupCount: {
-    ...typography.caption,
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.text.secondary,
-    backgroundColor: colors.tint.green,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-    overflow: 'hidden',
+  groupCountBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  groupCountText: {
+    ...typographyV5.metadataStrong,
+    color: '#059669',
   },
   // ── Chapter List ────────────────────────────────────────────────
   chapterList: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: '#FAFAFA',
   },
   chapterRow: {
-    paddingVertical: 10,
-    gap: 6,
+    paddingVertical: 16,
+    gap: 10,
   },
   chapterTop: {
     flexDirection: 'row',
@@ -308,61 +358,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chapterName: {
-    ...typography.bodySmall,
-    fontSize: 13,
-    fontWeight: '500',
-    color: colors.text.primary,
+    ...typographyV5.metadata,
+    color: '#1E293B',
     flex: 1,
-    marginRight: 8,
+    marginRight: 12,
+    fontWeight: '600',
   },
   chapterAccuracy: {
-    ...typography.labelSmall,
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
+    ...typographyV5.buttonLabel,
+    color: '#059669',
+    fontVariant: ['tabular-nums'],
   },
   progressTrack: {
-    height: 4,
+    height: 6,
     backgroundColor: '#E2E8F0',
-    borderRadius: 2,
+    borderRadius: 3,
     overflow: 'hidden',
   },
-  progressFill: {
+  progressFillWrapper: {
     height: '100%',
-    backgroundColor: '#0F5132',
-    borderRadius: 2,
+    borderRadius: 3,
+    overflow: 'hidden',
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 6,
-    gap: 0,
+    paddingTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   stat: {
     flex: 1,
     alignItems: 'center',
   },
   statValue: {
-    ...typography.labelSmall,
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.text.primary,
+    ...typographyV5.buttonLabel,
+    color: '#0F172A',
+    marginBottom: 2,
+    fontVariant: ['tabular-nums'],
   },
   statLabel: {
-    ...typography.caption,
-    fontSize: 9,
-    fontWeight: '500',
-    color: colors.text.secondary,
-    marginTop: 1,
+    ...typographyV5.metadataSmall,
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   statDivider: {
     width: 1,
     height: 24,
-    backgroundColor: colors.divider,
+    backgroundColor: '#E2E8F0',
   },
   chapterDivider: {
     height: 1,
-    backgroundColor: colors.divider,
-    marginLeft: 0,
+    backgroundColor: '#E2E8F0',
+    opacity: 0.7,
   },
 });

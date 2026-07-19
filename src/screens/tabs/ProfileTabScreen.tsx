@@ -2,16 +2,14 @@
  * ProfileTabScreen
  *
  * Premium profile screen with:
- * - Profile header (avatar, name, role, premium badge)
- * - Quick stats widget (questions, accuracy, streak)
- * - Dark subscription/VIP card
- * - Course progress bars (Physics, Chemistry, Maths)
- * - Account settings list with navigation icons
+ * - M3 Hero profile header
+ * - StudentAnalyticsDashboard acting as the core Hub
+ * - Settings menu list with active mock alert and logout integration
  *
  * @module screens/tabs/ProfileTabScreen
  */
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +18,7 @@ import {
   StyleSheet,
   Animated,
   Platform,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -31,48 +30,23 @@ import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
+import { useAppSelector } from '../../store/hooks';
+import { selectUser } from '../../store/authSlice';
+import { useAuth } from '../../hooks/useAuth';
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-/** Placeholder avatar colours for the initials circle. */
 const AVATAR_BG = colors.secondary;
 
-/** Subscription card background (dark inverse surface). */
-const SUBSCRIPTION_BG = '#1E293B';
-
-/** User data — replace with real data from auth/API later. */
-const USER = {
-  name: 'Aman Sharma',
-  role: 'JEE Aspirant 2025',
-  avatarInitials: 'AS',
-  isPremium: true,
-  stats: {
-    questions: '1,240',
-    accuracy: '84%',
-    dayStreak: '21',
-  },
-  subscription: {
-    plan: 'EduMaster Pro',
-    validUntil: 'July 2026',
-  },
-  courseProgress: [
-    { subject: 'Physics', percent: 65 },
-    { subject: 'Chemistry', percent: 42 },
-    { subject: 'Mathematics', percent: 88 },
-  ] as const,
-} as const;
-
-/** Settings menu items. */
 interface SettingsItem {
   key: string;
-  icon: 'user' | 'download' | 'description' | 'bell' | 'headphones' | 'log-out';
+  icon: 'user' | 'download' | 'description' | 'bell' | 'headphones' | 'log-out' | 'bar-chart-2' | 'clipboard-list';
   label: string;
   isDestructive?: boolean;
-  onPress?: () => void;
 }
 
 const SETTINGS_ITEMS: SettingsItem[] = [
   { key: 'personal-info', icon: 'user', label: 'Personal Information' },
+  { key: 'analytics', icon: 'bar-chart-2', label: 'Detailed Analytics' },
+  { key: 'results', icon: 'clipboard-list', label: 'My Test Results' },
   { key: 'downloads', icon: 'download', label: 'My Downloads' },
   { key: 'payment-history', icon: 'description', label: 'Payment History' },
   { key: 'notifications', icon: 'bell', label: 'Notification Settings' },
@@ -80,70 +54,25 @@ const SETTINGS_ITEMS: SettingsItem[] = [
   { key: 'logout', icon: 'log-out', label: 'Logout', isDestructive: true },
 ];
 
-// ─── Animated Progress Bar ───────────────────────────────────────────────────
-
-interface ProgressBarProps {
-  label: string;
-  percent: number;
-  index: number;
-}
-
-const ProgressBar = React.memo(function ProgressBar({
-  label,
-  percent,
-  index,
-}: ProgressBarProps): React.JSX.Element {
-  const widthAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(widthAnim, {
-      toValue: percent,
-      duration: 800,
-      delay: 200 + index * 120,
-      useNativeDriver: false,
-    }).start();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [percent, index]);
-
-  const animatedWidth = widthAnim.interpolate({
-    inputRange: [0, 100],
-    outputRange: ['0%', '100%'],
-  });
-
-  const isHighlighted = percent >= 80;
-
-  return (
-    <View style={styles.progressRow}>
-      <View style={styles.progressLabelRow}>
-        <Text style={styles.progressLabel}>{label}</Text>
-        <Text style={styles.progressPercent}>{percent}%</Text>
-      </View>
-      <View style={styles.progressTrack}>
-        <Animated.View
-          style={[
-            styles.progressFill,
-            {
-              width: animatedWidth,
-              backgroundColor: isHighlighted ? colors.primary : colors.text.primary,
-              opacity: isHighlighted ? 1 : 0.55,
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
-});
-
-// ─── Setting Row ─────────────────────────────────────────────────────────────
+const getInitials = (name?: string): string => {
+  if (!name) return 'GS';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+};
 
 interface SettingRowProps {
   item: SettingsItem;
   index: number;
+  onPress: () => void;
 }
 
 const SettingRow = React.memo(function SettingRow({
   item,
   index,
+  onPress,
 }: SettingRowProps): React.JSX.Element {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(12)).current;
@@ -153,22 +82,21 @@ const SettingRow = React.memo(function SettingRow({
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 400,
-        delay: 300 + index * 60,
+        delay: 200 + index * 50,
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 400,
-        delay: 300 + index * 60,
+        delay: 200 + index * 50,
         useNativeDriver: true,
       }),
     ]).start();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index]);
+  }, [index, fadeAnim, slideAnim]);
 
-  const iconColor = '#6B7280';
-  const labelColor = '#111827';
-const chevronColor = '#BFC4CC';
+  const iconColor = item.isDestructive ? colors.error : '#6B7280';
+  const labelColor = item.isDestructive ? colors.error : '#111827';
+  const chevronColor = '#BFC4CC';
 
   return (
     <Animated.View
@@ -179,7 +107,7 @@ const chevronColor = '#BFC4CC';
     >
       <TouchableOpacity
         style={styles.settingRow}
-        onPress={item.onPress}
+        onPress={onPress}
         activeOpacity={0.6}
         accessibilityLabel={item.label}
         accessibilityRole="button"
@@ -194,7 +122,6 @@ const chevronColor = '#BFC4CC';
         </View>
         <Icon name="chevron-right" color={chevronColor} width={18} height={18} />
       </TouchableOpacity>
-      {/* Divider between settings rows (except last) */}
       {item.key !== SETTINGS_ITEMS[SETTINGS_ITEMS.length - 1].key && (
         <View style={styles.settingDivider} />
       )}
@@ -202,154 +129,58 @@ const chevronColor = '#BFC4CC';
   );
 });
 
-// ─── Profile Header ─────────────────────────────────────────────────────────
-
-const ProfileHeader = React.memo(function ProfileHeader(): React.JSX.Element {
-  return (
-    <View style={styles.profileHeader}>
-      {/* Avatar */}
-      <View style={styles.avatarContainer}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{USER.avatarInitials}</Text>
-        </View>
-        {/* Premium Badge */}
-        {USER.isPremium && (
-          <View style={styles.premiumBadge}>
-            <Icon name="badge-check" color={colors.secondary} width={14} height={14} />
-            <Text style={styles.premiumBadgeText}>Premium</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Name & Role */}
-      <Text style={styles.userName}>{USER.name}</Text>
-      <Text style={styles.userRole}>{USER.role}</Text>
-    </View>
-  );
-});
-
-// ─── Quick Stats Widget ──────────────────────────────────────────────────────
-
-const StatsWidget = React.memo(function StatsWidget(): React.JSX.Element {
-  const scaleAnim = useRef(new Animated.Value(0.96)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 6,
-        tension: 60,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        delay: 150,
-        useNativeDriver: true,
-      }),
-    ]).start();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const STATS_DATA: { label: string; value: string }[] = [
-    { label: 'Questions', value: USER.stats.questions },
-    { label: 'Accuracy', value: USER.stats.accuracy },
-    { label: 'Day Streak', value: USER.stats.dayStreak },
-  ];
-
-  return (
-    <Animated.View
-      style={[
-        styles.statsWidget,
-        {
-          opacity: fadeAnim,
-          transform: [{ scale: scaleAnim }],
-        },
-      ]}
-    >
-      {STATS_DATA.map((stat, index) => (
-        <React.Fragment key={stat.label}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stat.value}</Text>
-            <Text style={styles.statLabel}>{stat.label}</Text>
-          </View>
-          {index < STATS_DATA.length - 1 && (
-            <View style={styles.statDivider} />
-          )}
-        </React.Fragment>
-      ))}
-    </Animated.View>
-  );
-});
-
-
-
-// ─── My Results Button ───────────────────────────────────────────────────────
-
-const MyResultsButton = React.memo(function MyResultsButton(): React.JSX.Element {
-  const stackNavigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(12)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        delay: 250,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 400,
-        delay: 250,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim]);
-
-  const handlePress = useCallback(() => {
-    stackNavigation.navigate('MyResults');
-  }, [stackNavigation]);
-
-  return (
-    <Animated.View
-      style={{
-        opacity: fadeAnim,
-        transform: [{ translateY: slideAnim }],
-        marginBottom: spacing[20],
-      }}
-    >
-      <TouchableOpacity
-        style={styles.myResultsCard}
-        onPress={handlePress}
-        activeOpacity={0.7}
-        accessibilityLabel="My Test Results"
-        accessibilityRole="button"
-      >
-        <View style={styles.myResultsLeft}>
-          <View style={styles.myResultsIconContainer}>
-            <Icon name="clipboard-list" color={colors.primary} width={22} height={22} />
-          </View>
-          <View style={styles.myResultsTextGroup}>
-            <Text style={styles.myResultsTitle}>My Test Results</Text>
-            <Text style={styles.myResultsSubtitle}>View all your attempted tests</Text>
-          </View>
-        </View>
-        <View style={styles.myResultsBadge}>
-          <Icon name="chevron-right" color={colors.primary} width={18} height={18} />
-        </View>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-});
-
-// ─── Main Screen ─────────────────────────────────────────────────────────────
-
 export default function ProfileTabScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
+  const user = useAppSelector(selectUser);
+  const { logout } = useAuth();
+
+  const displayName = user?.name || 'Guest Student';
+  const displayEmail = user?.email || 'guest@mockprep.com';
+  const initials = useMemo(() => getInitials(displayName), [displayName]);
+
+  const handleSettingPress = useCallback(
+    (item: SettingsItem) => {
+      if (item.key === 'logout') {
+        Alert.alert(
+          'Logout',
+          'Are you sure you want to log out of your account?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Logout',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  await logout();
+                } catch (err) {
+                  console.warn('[ProfileTabScreen] Logout failed:', err);
+                  Alert.alert('Error', 'Failed to log out. Please try again.');
+                }
+              },
+            },
+          ]
+        );
+      } else if (item.key === 'personal-info') {
+        navigation.navigate('PersonalInfo' as any);
+      } else if (item.key === 'analytics') {
+        navigation.navigate('DetailedAnalytics' as any);
+      } else if (item.key === 'results') {
+        navigation.navigate('MyResults' as any);
+      } else if (item.key === 'payment-history') {
+        navigation.navigate('PaymentHistory' as any);
+      } else if (item.key === 'downloads') {
+        navigation.navigate('Downloads' as any);
+      } else if (item.key === 'notifications') {
+        navigation.navigate('NotificationSettings' as any);
+      } else if (item.key === 'help') {
+        navigation.navigate('HelpSupport' as any);
+      } else {
+        Alert.alert(item.label, `${item.label} feature is coming soon!`);
+      }
+    },
+    [logout, navigation]
+  );
 
   return (
     <View style={styles.root}>
@@ -357,13 +188,14 @@ export default function ProfileTabScreen(): React.JSX.Element {
       <View style={[styles.topBar, { paddingTop: insets.top + spacing[8] }]}>
         <View style={styles.topBarLeft}>
           <View style={styles.topBarAvatar}>
-            <Text style={styles.topBarAvatarText}>AS</Text>
+            <Text style={styles.topBarAvatarText}>{initials}</Text>
           </View>
           <Text style={styles.topBarTitle}>EduMastery</Text>
         </View>
         <TouchableOpacity
           style={styles.notificationButton}
           activeOpacity={0.7}
+          onPress={() => navigation.navigate('Notification')}
           accessibilityLabel="Notifications"
           accessibilityRole="button"
         >
@@ -380,30 +212,41 @@ export default function ProfileTabScreen(): React.JSX.Element {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile Header */}
-        <ProfileHeader />
+        {/* M3 Hero Profile Header */}
+        <View style={styles.heroHeader}>
+          <View style={styles.heroAvatarContainer}>
+            <Text style={styles.heroAvatarText}>{initials}</Text>
+          </View>
+          <View style={styles.heroInfo}>
+            <Text style={styles.heroName}>{displayName}</Text>
+            <Text style={styles.heroEmail}>{displayEmail}</Text>
+            <View style={styles.heroBadge}>
+              <Icon name="badge-check" color={colors.secondary} width={14} height={14} />
+              <Text style={styles.heroBadgeText}>Premium Student</Text>
+            </View>
+          </View>
+        </View>
 
-        {/* Quick Stats */}
-        <StatsWidget />
-
-        {/* My Test Results */}
-        <MyResultsButton />
-
-        {/* Settings List */}
-        <View style={styles.settingsCard}>
-          {SETTINGS_ITEMS.map((item, index) => (
-            <SettingRow key={item.key} item={item} index={index} />
-          ))}
+        {/* Settings Card */}
+        <View style={styles.settingsSection}>
+          <Text style={styles.sectionTitle}>Account Settings</Text>
+          <View style={styles.settingsCard}>
+            {SETTINGS_ITEMS.map((item, index) => (
+              <SettingRow
+                key={item.key}
+                item={item}
+                index={index}
+                onPress={() => handleSettingPress(item)}
+              />
+            ))}
+          </View>
         </View>
       </ScrollView>
     </View>
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  // ── Root ──────────────────────────────────────────────────
   root: {
     flex: 1,
     backgroundColor: colors.background,
@@ -412,16 +255,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: spacing[16],
+    paddingHorizontal: 0, 
     paddingTop: spacing[16],
   },
-
-  // ── Top Bar ───────────────────────────────────────────────
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing[16],
+    paddingHorizontal: spacing[20],
     paddingBottom: spacing[12],
     backgroundColor: colors.background,
     ...Platform.select({
@@ -470,302 +311,77 @@ const styles = StyleSheet.create({
     ...shadows.small,
   },
 
-  // ── Profile Header ────────────────────────────────────────
-  profileHeader: {
-    alignItems: 'center',
-    paddingVertical: spacing[16],
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: spacing[12],
-  },
-  avatar: {
-    width: 112,
-    height: 112,
-    borderRadius: 56,
-    backgroundColor: AVATAR_BG,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.medium,
-    borderWidth: 4,
-    borderColor: colors.surface,
-  },
-  avatarText: {
-    ...typography.heading1,
-    fontSize: 36,
-    color: colors.text.inverse,
-    fontWeight: '700',
-  },
-  premiumBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -4,
+  heroHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing[8],
-    paddingVertical: spacing[4],
+    backgroundColor: '#0F172A',
+    borderRadius: 24,
+    padding: 24,
+    marginHorizontal: spacing[20],
+    marginBottom: spacing[8],
+    ...shadows.medium,
+  },
+  heroAvatarContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  heroAvatarText: {
+    ...typography.heading2,
+    color: '#FFFFFF',
+    fontSize: 28,
+  },
+  heroInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  heroName: {
+    ...typography.title,
+    color: '#FFFFFF',
+    fontSize: 22,
+    marginBottom: 4,
+  },
+  heroEmail: {
+    ...typography.body,
+    color: '#94A3B8',
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: radius.full,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.small,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    gap: 4,
   },
-  premiumBadgeText: {
+  heroBadgeText: {
     ...typography.labelSmall,
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.secondary,
-  },
-  userName: {
-    ...typography.title,
-    fontSize: 24,
+    color: '#10B981',
     fontWeight: '700',
-    color: colors.text.primary,
-    letterSpacing: -0.3,
-    marginBottom: spacing[4],
-  },
-  userRole: {
-    ...typography.body,
-    color: colors.text.secondary,
-    fontSize: 14,
-    fontWeight: '400',
   },
 
-  // ── Stats Widget ──────────────────────────────────────────
-  statsWidget: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    paddingVertical: spacing[16],
-    paddingHorizontal: spacing[8],
-    marginBottom: spacing[20],
-    ...shadows.small,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-  },
-  statValue: {
-    ...typography.title,
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text.primary,
-    marginBottom: spacing[4],
-  },
-  statLabel: {
-    ...typography.labelSmall,
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.text.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: colors.divider,
-    alignSelf: 'center',
-    height: 32,
-  },
-
-  // ── Subscription Card ─────────────────────────────────────
-  subscriptionCard: {
-    backgroundColor: SUBSCRIPTION_BG,
-    borderRadius: radius.lg,
-    padding: spacing[16],
-    marginBottom: spacing[20],
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.2,
-        shadowRadius: 24,
-      },
-      android: {
-        elevation: 10,
-      },
-    }),
-  },
-  subscriptionGlow: {
-    position: 'absolute',
-    top: -40,
-    right: -40,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: colors.secondary,
-    opacity: 0.08,
-  },
-  subscriptionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  settingsSection: {
     gap: spacing[12],
-    flex: 1,
-  },
-  subscriptionIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  subscriptionInfo: {
-    flex: 1,
-  },
-  subscriptionPlan: {
-    ...typography.subtitle,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
-  },
-  subscriptionDate: {
-    ...typography.bodySmall,
-    color: 'rgba(255, 255, 255, 0.6)',
-    marginTop: 2,
-    fontSize: 13,
-  },
-  managePlanButton: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: spacing[16],
-    paddingVertical: 22,
-    borderRadius: radius.sm,
-    alignSelf: 'center',
-  },
-  managePlanText: {
-    ...typography.labelSmall,
-    fontSize: 13,
-    fontWeight: '600',
-    color: SUBSCRIPTION_BG,
-  },
-
-  // ── Section ───────────────────────────────────────────────
-  sectionContainer: {
-    marginBottom: spacing[20],
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: spacing[16],
+    marginHorizontal: spacing[20],
   },
   sectionTitle: {
     ...typography.subtitle,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.text.primary,
     letterSpacing: -0.2,
   },
-  sectionAction: {
-    ...typography.labelSmall,
-    fontSize: 13,
-    fontWeight: '500',
-    color: colors.text.secondary,
-  },
-
-  // ── Progress Bars ─────────────────────────────────────────
-  progressList: {
-    gap: spacing[16],
-  },
-  progressRow: {
-    gap: spacing[8],
-  },
-  progressLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  progressLabel: {
-    ...typography.bodySmall,
-    fontSize: 13,
-    fontWeight: '500',
-    color: colors.text.primary,
-  },
-  progressPercent: {
-    ...typography.caption,
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.text.secondary,
-    fontFamily: Platform.select({ ios: 'JetBrains Mono', android: 'monospace' }),
-  },
-  progressTrack: {
-    height: 4,
-    backgroundColor: colors.surface,
-    borderRadius: 2,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.divider,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-
-  // ── My Results Card ────────────────────────────────────────
-  myResultsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    paddingVertical: spacing[16],
-    paddingHorizontal: spacing[16],
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderLeftWidth: 4,
-    ...shadows.small,
-  },
-  myResultsLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[12],
-    flex: 1,
-  },
-  myResultsIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0, 105, 72, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  myResultsTextGroup: {
-    gap: 2,
-    flex: 1,
-  },
-  myResultsTitle: {
-    ...typography.subtitle,
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.text.primary,
-    lineHeight: 20,
-  },
-  myResultsSubtitle: {
-    ...typography.caption,
-    fontSize: 12,
-    color: colors.text.secondary,
-    lineHeight: 16,
-  },
-  myResultsBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0, 105, 72, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // ── Settings List ─────────────────────────────────────────
   settingsCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -778,29 +394,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 22,
+    paddingVertical: 18,
     paddingHorizontal: 20,
   },
   settingLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 34,
+    gap: 16,
   },
   settingIconWrapper: {
-    width: 20,
+    width: 24,
     alignItems: 'center',
     justifyContent: 'center',
-     marginLeft: 6,
   },
   settingLabel: {
-  fontSize: 16,
-  fontWeight: '400',
-  color: '#111827',
-  
-},
+    fontSize: 15,
+    fontWeight: '500',
+  },
   settingDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.divider,
-    marginLeft: spacing[16] + 20 + spacing[12], // align with label start (icon + gap)
+    marginLeft: spacing[16] + 24 + spacing[12],
   },
 });

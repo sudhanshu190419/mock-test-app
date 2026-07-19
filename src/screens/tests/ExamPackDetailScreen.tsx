@@ -1,434 +1,177 @@
-/**
- * ExamPackDetailScreen
- *
- * Premium pack detail screen that fetches package info + papers from the
- * backend via `usePracticeDetail(packageId)`.
- *
- * Layout:
- * - Sticky header with package name
- * - Hero card with package summary, pricing
- * - Papers list (with question count, duration, year)
- * - Sticky bottom bar with price
- *
- * @module screens/tests/ExamPackDetailScreen
- */
-
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   ScrollView,
+  TouchableOpacity,
   StyleSheet,
   Platform,
+  Share,
   ActivityIndicator,
   Modal,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Animated, { SlideInDown, SlideOutDown, FadeInUp, FadeIn, ZoomIn, LinearTransition, useSharedValue, useAnimatedScrollHandler } from 'react-native-reanimated';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 
 import Icon from '../../components/home/Icons';
-import type { AppStackParamList } from '../../navigation/AppNavigator';
-import { useAppDispatch } from '../../store/hooks';
-import { setPurchaseInProgress } from '../../store/purchaseSlice';
-import { usePracticeDetail } from '../../hooks/practice/usePractice';
-import { getPaperMockMapping } from '../../services/practice/practiceService';
-import { useCreatePaymentOrder } from '../../hooks/payment/useCreatePaymentOrder';
-import { usePurchaseStatus } from '../../hooks/payment/usePurchaseStatus';
-import { openCheckout } from '../../services/payment/razorpayService';
-import { supabase } from '../../config/supabase';
-import { UUID_REGEX } from '../../utils/supabase';
-import { checkPyqPurchase } from '../../services/payment/paymentService';
-import { colors, palette } from '../../theme/colors';
+import CourseDetailHero from '../../components/courses/CourseDetailHero';
+import { coursesDark } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
+import { shadows } from '../../theme/shadows';
+import { useAppDispatch } from '../../store/hooks';
+import { setPurchaseInProgress } from '../../store/purchaseSlice';
+import { usePracticeDetail } from '../../hooks/practice/usePractice';
+import { useCreatePaymentOrder } from '../../hooks/payment/useCreatePaymentOrder';
+import { usePurchaseStatus } from '../../hooks/payment/usePurchaseStatus';
+import { openCheckout } from '../../services/payment/razorpayService';
+import { checkPyqPurchase } from '../../services/payment/paymentService';
+import { supabase } from '../../config/supabase';
+import { UUID_REGEX } from '../../utils/supabase';
+import type { AppStackParamList } from '../../navigation/AppNavigator';
 import type { PracticePaper } from '../../types/practice';
 import type { PurchaseStateContext } from '../../types/payment';
-import { Alert } from 'react-native';
 
-// ═══════════════════════════════════════════════════════════════════
-//  Types
-// ═══════════════════════════════════════════════════════════════════
+export type ExamPackDetailParams = { packageId: string; };
 
-export interface ExamPackDetailParams {
-  /** UUID of the PYQ package to display. */
-  packageId: string;
-}
+type ExamPackDetailRouteProp = RouteProp<AppStackParamList, 'ExamPackDetail'>;
 
-// ═══════════════════════════════════════════════════════════════════
-//  Constants
-// ═══════════════════════════════════════════════════════════════════
-
-const CTA_BLUE = '#005bbf';
-
-// ═══════════════════════════════════════════════════════════════════
-//  Sub-components
-// ═══════════════════════════════════════════════════════════════════
-
-// ── Sticky Header ─────────────────────────────────────────────────
-
-interface HeaderProps {
-  safeAreaTop: number;
-  packageName: string;
-  onBackPress: () => void;
-}
-
-const Header = React.memo(function Header({
-  safeAreaTop,
-  packageName,
-  onBackPress,
-}: HeaderProps): React.JSX.Element {
-  return (
-    <View style={[styles.header, { paddingTop: safeAreaTop + spacing[12] }]}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={onBackPress}
-          activeOpacity={0.6}
-          accessibilityLabel="Go back"
-          accessibilityRole="button"
-        >
-          <Icon name="arrow-left" color={CTA_BLUE} width={24} height={24} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {packageName}
-        </Text>
-      </View>
-    </View>
-  );
-});
-
-// ── Hero Section ──────────────────────────────────────────────────
-
-interface HeroSectionProps {
-  packageName: string;
-  streamName: string;
-  totalPapers: number;
-  yearRange: string;
-  price: number;
-  originalPrice: number | null;
-  description: string | null;
-}
-
-const HeroSection = React.memo(function HeroSection({
-  packageName,
-  streamName,
-  totalPapers,
-  yearRange,
-  price,
-  originalPrice,
-  description,
-}: HeroSectionProps): React.JSX.Element {
-  const discountPercent =
-    originalPrice && originalPrice > price
-      ? Math.round((1 - price / originalPrice) * 100)
-      : 0;
-
-  return (
-    <View style={styles.heroCard}>
-      {/* Stream badge */}
-      <View style={styles.bestsellerBadge}>
-        <Icon name="star" color={CTA_BLUE} width={14} height={14} />
-        <Text style={styles.bestsellerText}>{streamName}</Text>
-      </View>
-
-      {/* Title */}
-      <Text style={styles.heroTitle}>{packageName}</Text>
-
-      {/* Description */}
-      {description ? (
-        <Text style={styles.heroDescription}>{description}</Text>
-      ) : null}
-
-      {/* Stats grid */}
-      <View style={styles.featureGrid}>
-        <View style={styles.featureItem}>
-          <View style={styles.featureIconContainer}>
-            <Icon name="calendar" color={CTA_BLUE} width={18} height={18} />
-          </View>
-          <View style={styles.featureTextGroup}>
-            <Text style={styles.featureLabel}>Coverage</Text>
-            <Text style={styles.featureValue}>{yearRange || 'All Years'}</Text>
-          </View>
-        </View>
-        <View style={styles.featureItem}>
-          <View style={styles.featureIconContainer}>
-            <Icon name="description" color={CTA_BLUE} width={18} height={18} />
-          </View>
-          <View style={styles.featureTextGroup}>
-            <Text style={styles.featureLabel}>Papers</Text>
-            <Text style={styles.featureValue}>{totalPapers} Papers</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Price & CTA */}
-      <View style={styles.heroCtaArea}>
-        <View style={styles.priceRow}>
-          <Text style={styles.priceCurrent}>₹{price}</Text>
-          {originalPrice && originalPrice > price && (
-            <Text style={styles.priceOriginal}>₹{originalPrice}</Text>
-          )}
-          {discountPercent > 0 && (
-            <View style={styles.discountBadge}>
-              <Text style={styles.discountBadgeText}>{discountPercent}% OFF</Text>
-            </View>
-          )}
-        </View>
-      </View>
-    </View>
-  );
-});
-
-// ── Paper Card ────────────────────────────────────────────────────
-
-interface PaperCardProps {
-  paper: PracticePaper;
-  onPress: () => void;
-}
-
-const PaperCard = React.memo(function PaperCard({
-  paper,
-  onPress,
-}: PaperCardProps): React.JSX.Element {
-  return (
-    <View style={styles.paperCard}>
-      <View style={styles.paperCardInner}>
-        {/* Left: Calendar icon */}
-        <View style={styles.paperIconContainer}>
-          <Icon name="calendar" color={CTA_BLUE} width={24} height={24} />
-        </View>
-
-        {/* Right column */}
-        <View style={styles.paperRightCol}>
-          <View style={styles.paperContent}>
-            <View style={styles.paperTitleRow}>
-              <Text style={styles.paperTitle} numberOfLines={1}>
-                {paper.title}
-              </Text>
-              <View style={styles.officialBadgeFlat}>
-                <Text style={styles.officialBadgeFlatText}>Official PYQ</Text>
-              </View>
-            </View>
-
-            <Text style={styles.paperYear}>Year: {paper.examYear}</Text>
-
-            <View style={styles.paperStatsRow}>
-              <View style={styles.paperStat}>
-                <Icon
-                  name="description"
-                  color={palette.slate400}
-                  width={14}
-                  height={14}
-                />
-                <Text style={styles.paperStatText}>
-                  {paper.totalQuestions} Questions
-                </Text>
-              </View>
-              {paper.durationMin ? (
-                <View style={styles.paperStat}>
-                  <Icon
-                    name="timer"
-                    color={palette.slate400}
-                    width={14}
-                    height={14}
-                  />
-                  <Text style={styles.paperStatText}>
-                    {paper.durationMin} Minutes
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-
-          {/* View Papers button */}
-          <View style={styles.paperActionRow}>
-            <TouchableOpacity
-              style={styles.viewPapersButton}
-              onPress={onPress}
-              activeOpacity={0.7}
-              accessibilityLabel={`View ${paper.title}`}
-              accessibilityRole="button"
-            >
-              <Text style={styles.viewPapersText}>View Papers</Text>
-              <Icon
-                name="arrow-right"
-                color={colors.text.inverse}
-                width={14}
-                height={14}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-});
-
-// ── Papers Section ────────────────────────────────────────────────
-
-interface PapersSectionProps {
-  papers: PracticePaper[];
-  onPaperPress: (paper: PracticePaper) => void;
-}
-
-const PapersSection = React.memo(function PapersSection({
-  papers,
-  onPaperPress,
-}: PapersSectionProps): React.JSX.Element {
-  if (papers.length === 0) {
-    return (
-      <View style={styles.papersSection}>
-        <Text style={styles.sectionTitle}>Papers</Text>
-        <View style={styles.emptyPapers}>
-          <Text style={styles.emptyPapersText}>
-            No papers available in this package yet.
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.papersSection}>
-      <Text style={styles.sectionTitle}>
-        Papers ({papers.length})
-      </Text>
-      <View style={styles.papersList}>
-        {papers.map((paper) => (
-          <PaperCard
-            key={paper.paperId}
-            paper={paper}
-            onPress={() => onPaperPress(paper)}
-          />
-        ))}
-      </View>
-    </View>
-  );
-});
-
-// ── Loading State ─────────────────────────────────────────────────
-
-const LoadingState = React.memo(function LoadingState(): React.JSX.Element {
-  return (
-    <View style={styles.centerState}>
-      <ActivityIndicator size="large" color={CTA_BLUE} />
-      <Text style={styles.loadingText}>Loading package details...</Text>
-    </View>
-  );
-});
-
-// ── Error State ───────────────────────────────────────────────────
-
-interface ErrorStateProps {
-  message: string;
-}
-
-const ErrorState = React.memo(function ErrorState({
-  message,
-}: ErrorStateProps): React.JSX.Element {
-  return (
-    <View style={styles.centerState}>          <Icon name="bell" color={colors.error} width={40} height={40} />
-      <Text style={styles.errorText}>{message}</Text>
-    </View>
-  );
-});
-
-// ── Sticky Bottom Bar ─────────────────────────────────────────────
-
-interface BottomBarProps {
-  price: number;
-  safeAreaBottom: number;
-  purchaseState: PurchaseStateContext;
-  onBuyNow: () => void;
-  isPurchasing: boolean;
-  buyDisabled: boolean;
-}
-
-const BottomBar = React.memo(function BottomBar({
-  price,
-  safeAreaBottom,
-  purchaseState,
-  onBuyNow,
-  isPurchasing,
-  buyDisabled,
-}: BottomBarProps): React.JSX.Element {
-  const isEnrolled = purchaseState.state === 'enrolled';
-
-  return (
-    <View style={[styles.bottomBar, { paddingBottom: safeAreaBottom + spacing[12] }]}>
-      <View style={styles.bottomBarInner}>
-        <View style={styles.bottomPriceGroup}>
-          {isEnrolled ? (
-            <Text style={styles.bottomEnrolledLabel}>Purchased</Text>
-          ) : (
-            <Text style={styles.bottomPrice}>₹{price}</Text>
-          )}
-        </View>
-        <View style={styles.bottomButtons}>
-          {isEnrolled ? (
-            <TouchableOpacity
-              style={[styles.buyNowButton, styles.enrolledButton]}
-              activeOpacity={0.85}
-              accessibilityLabel="Start practicing"
-              accessibilityRole="button"
-            >
-              <Icon name="play-circle" color={colors.text.inverse} width={16} height={16} />
-              <Text style={styles.buyNowButtonText}>Start Practicing</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              onPress={onBuyNow}
-              style={[styles.buyNowButton, buyDisabled && styles.buyNowButtonDisabled]}
-              activeOpacity={0.85}
-              disabled={buyDisabled}
-              accessibilityLabel={isPurchasing ? 'Processing payment' : 'Buy Now'}
-              accessibilityRole="button"
-            >
-              {isPurchasing ? (
-                <ActivityIndicator size="small" color={colors.text.inverse} />
-              ) : (
-                <>
-                  <Icon name="badge-check" color={colors.text.inverse} width={16} height={16} />
-                  <Text style={styles.buyNowButtonText}>Buy Now</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-    </View>
-  );
-});
-
-// ── Bottom Spacer for list ────────────────────────────────────────
-
-const BottomSpacer = React.memo(function BottomSpacer(): React.JSX.Element {
-  return <View style={styles.scrollBottomSpacer} />;
-});
-
-// ── Format Helper ───────────────────────────────────────────────────
-
+// ─── Format Helpers ─────────────────────────────────────────────────────────
 function formatPrice(amount: number): string {
   return `₹${amount.toLocaleString('en-IN')}`;
 }
 
-// ── Purchase Overlay ────────────────────────────────────────────────
+function formatCount(n: number): string {
+  if (n >= 1000) {
+    return `${(n / 1000).toFixed(1)}k`;
+  }
+  return String(n);
+}
 
-/**
- * Payment Status Overlay shown during the PYQ purchase flow.
- * Mirrors the same states as the Course purchase overlay.
- */
+// ─── Section Card Wrapper ───────────────────────────────────────────────────
+function SectionCard({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return <View style={styles.sectionCard}>{children}</View>;
+}
+
+// ─── Metric Grid Item Component ─────────────────────────────────────────────
+const MetricGridItem = React.memo(function MetricGridItem({
+  metric,
+}: {
+  metric: { key: string; label: string; value: string; iconName: string; accentColor: string; };
+}): React.JSX.Element {
+  return (
+    <View style={styles.metricCard}>
+      <View style={[styles.metricIconWrap, { backgroundColor: metric.accentColor + '15' }]}>
+        <Icon name={metric.iconName as any} color={metric.accentColor} width={20} height={20} />
+      </View>
+      <View style={styles.metricTextWrap}>
+        <Text style={styles.metricValue}>{metric.value}</Text>
+        <Text style={styles.metricLabel}>{metric.label}</Text>
+      </View>
+    </View>
+  );
+});
+
+// ─── Curriculum Accordion Component ─────────────────────────────────────────
+const CurriculumAccordion = React.memo(function CurriculumAccordion({
+  subject,
+}: {
+  subject: {
+    key: string;
+    name: string;
+    chapterCount: string;
+    hours: string;
+    iconName: string;
+    accentColor: string;
+    chapters: Array<{ paperId: string, name: string, isLocked: boolean, duration?: number | null, questions?: number | null }>;
+  };
+}): React.JSX.Element {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <View style={styles.accordionWrap}>
+      <TouchableOpacity
+        onPress={() => setIsOpen((prev) => !prev)}
+        activeOpacity={0.7}
+        style={styles.accordionHeader}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isOpen }}
+      >
+        <View style={styles.accordionHeaderLeft}>
+          <View style={[styles.accordionIcon, { backgroundColor: subject.accentColor + '15' }]}>
+            <Icon name={subject.iconName as any} color={subject.accentColor} width={18} height={18} />
+          </View>
+          <View style={styles.accordionHeaderText}>
+            <Text style={styles.accordionTitle}>{subject.name}</Text>
+            <Text style={styles.accordionSubtitle}>
+              {subject.chapterCount} • {subject.hours}
+            </Text>
+          </View>
+        </View>
+        <View style={isOpen ? styles.chevronRotated : styles.chevronDefault}>
+          <Icon name="chevron-right" color={coursesDark.textMutedOnCard} width={20} height={20} />
+        </View>
+      </TouchableOpacity>
+
+      {isOpen && (
+        <View style={styles.accordionContent}>
+          {subject.chapters.map((ch, chIdx) => (
+            <View
+              key={`${subject.key}-ch-${ch.paperId}`}
+              style={[
+                styles.chapterRow,
+                chIdx < subject.chapters.length - 1 && styles.chapterRowBorder,
+              ]}
+            >
+              <View style={styles.chapterRowLeft}>
+                {ch.isLocked ? (
+                  <Icon name="shield-check" color={coursesDark.textMutedOnCard} width={16} height={16} />
+                ) : (
+                  <Icon name="description" color={coursesDark.accentPrimary} width={16} height={16} />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[styles.chapterName, ch.isLocked && styles.chapterLocked]}
+                    numberOfLines={1}
+                  >
+                    {ch.name}
+                  </Text>
+                  {(ch.duration || ch.questions) && (
+                     <Text style={[styles.chapterMeta, ch.isLocked && styles.chapterLocked]}>
+                       {ch.questions ? `${ch.questions} Qs` : ''}
+                       {ch.questions && ch.duration ? ' • ' : ''}
+                       {ch.duration ? `${ch.duration} mins` : ''}
+                     </Text>
+                   )}
+                </View>
+              </View>
+              {ch.isLocked && (
+                <View style={styles.lockedBadge}>
+                  <Text style={styles.lockedBadgeText}>Locked</Text>
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+});
+
+// ─── Purchase Flow Overlay (Modal) ───────────────────────────────────────────
 function PurchaseOverlay({
   purchaseState,
   onDismiss,
   onRetry,
+  onConfirmPurchase,
 }: {
   purchaseState: PurchaseStateContext;
   onDismiss: () => void;
   onRetry: () => void;
+  onConfirmPurchase: () => void;
 }): React.JSX.Element | null {
   const { state, errorMessage, courseName, formattedAmount } = purchaseState;
 
@@ -436,122 +179,172 @@ function PurchaseOverlay({
     return null;
   }
 
-  const isProcessing =
-    state === 'creating_order' ||
-    state === 'checkout_open' ||
-    state === 'payment_received' ||
-    state === 'polling_enrollment';
+  const isSummary = state === 'order_summary';
+  const isProcessing = state === 'creating_order' || state === 'checkout_open' || state === 'payment_received' || state === 'polling_enrollment';
   const isFailed = state === 'failed';
 
   const getTitle = () => {
+    if (isSummary) return 'Order Summary';
+    if (isFailed) return 'Payment Failed';
     switch (state) {
-      case 'creating_order':
-        return 'Setting up payment…';
-      case 'checkout_open':
-        return 'Complete payment in the checkout';
-      case 'payment_received':
-        return 'Payment received';
-      case 'polling_enrollment':
-        return 'Confirming your purchase…';
-      case 'failed':
-        return 'Payment failed';
-      default:
-        return '';
+      case 'creating_order': return 'Setting up payment…';
+      case 'checkout_open': return 'Complete payment in checkout';
+      case 'payment_received': return 'Payment received';
+      case 'polling_enrollment': return 'Confirming purchase…';
+      default: return 'Processing...';
     }
   };
 
   const getMessage = () => {
+    if (isFailed) return errorMessage ?? 'An unexpected error occurred. Please try again.';
     switch (state) {
-      case 'creating_order':
-        return 'Please wait while we prepare your checkout.';
-      case 'checkout_open':
-        return 'Follow the instructions in the Razorpay checkout to complete your payment.';
-      case 'payment_received':
-        return `We're confirming your purchase${courseName ? ` of ${courseName}` : ''}${formattedAmount ? ` for ${formattedAmount}` : ''}. This usually takes a few seconds.`;
-      case 'polling_enrollment':
-        return `Your payment is being verified by our system${courseName ? ` for ${courseName}` : ''}. You'll get access once the confirmation is complete.`;
-      case 'failed':
-        return errorMessage ?? 'An unexpected error occurred. Please try again.';
-      default:
-        return '';
+      case 'creating_order': return 'Please wait while we prepare your checkout.';
+      case 'checkout_open': return 'Follow instructions in checkout to complete payment.';
+      case 'payment_received': return `Confirming payment${courseName ? ` for ${courseName}` : ''}${formattedAmount ? ` of ${formattedAmount}` : ''}...`;
+      case 'polling_enrollment': return `Verifying your purchase${courseName ? ` for ${courseName}` : ''}. You will get access shortly.`;
+      default: return '';
     }
   };
 
   return (
     <Modal transparent animationType="fade" visible>
-      <View style={styles.overlayBackdrop}>
-        <View style={styles.overlayCard}>
+      <Animated.View style={styles.overlayBackdrop} entering={FadeIn}>
+        <Animated.View 
+          style={styles.checkoutSheet} 
+          entering={SlideInDown.duration(200)} 
+          exiting={SlideOutDown}
+        >
           {isProcessing && (
-            <ActivityIndicator size="large" color={colors.secondary} style={styles.overlaySpinner} />
-          )}
-          {isFailed && (
-            <View style={styles.overlayIconWrap}>
-              <Icon name="x-circle" color="#DC2626" width={40} height={40} />
+            <View style={styles.overlaySpinnerWrap}>
+              <ActivityIndicator size="large" color={coursesDark.accentPrimary} />
             </View>
           )}
-          <Text style={styles.overlayTitle}>{getTitle()}</Text>
-          <Text style={styles.overlayMessage}>{getMessage()}</Text>
+          {isFailed && (
+            <View style={styles.overlaySpinnerWrap}>
+              <Icon name="x-circle" color={coursesDark.categories.law.accent} width={40} height={40} />
+            </View>
+          )}
+          
+          <Text style={styles.checkoutTitle}>{getTitle()}</Text>
+          
+          {isSummary && (
+            <View style={styles.checkoutDetailsBox}>
+              <Text style={styles.checkoutCourseName}>{courseName}</Text>
+              <View style={styles.checkoutDivider} />
+              <View style={styles.checkoutPriceRow}>
+                <Text style={styles.checkoutTotalLabel}>Total to pay</Text>
+                <Text style={styles.checkoutTotalValue}>{formattedAmount}</Text>
+              </View>
+            </View>
+          )}
+          
+          {!isSummary && (
+             <Text style={styles.overlayMessage}>{getMessage()}</Text>
+          )}
 
           {isFailed && (
             <View style={styles.overlayActions}>
               <TouchableOpacity
-                onPress={onRetry}
-                style={styles.overlayRetryButton}
-                activeOpacity={0.85}
+                style={[styles.overlayBtn, styles.overlayBtnOutline]}
+                onPress={onDismiss}
               >
-                <Text style={styles.overlayRetryText}>Try Again</Text>
+                <Text style={styles.overlayBtnOutlineText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={onDismiss}
-                style={styles.overlayDismissButton}
-                activeOpacity={0.7}
+                style={[styles.overlayBtn, styles.overlayBtnPrimary]}
+                onPress={onRetry}
               >
-                <Text style={styles.overlayDismissText}>Close</Text>
+                <Text style={styles.overlayBtnPrimaryText}>Try Again</Text>
               </TouchableOpacity>
             </View>
           )}
-        </View>
-      </View>
+
+          {!isFailed && (
+             <View style={styles.checkoutPayAction}>
+               <TouchableOpacity 
+                 style={[styles.checkoutPayButton, isProcessing && styles.checkoutPayButtonLoading]}
+                 onPress={isSummary ? onConfirmPurchase : undefined}
+                 disabled={isProcessing}
+                 activeOpacity={0.8}
+               >
+                 {isProcessing ? (
+                   <ActivityIndicator color="#FFF" />
+                 ) : (
+                   <Text style={styles.checkoutPayText}>Pay Now</Text>
+                 )}
+               </TouchableOpacity>
+             </View>
+           )}
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  Main Screen
-// ═══════════════════════════════════════════════════════════════════
-
-type NavigationProp = NativeStackNavigationProp<AppStackParamList>;
-
-interface ExamPackDetailScreenProps {
-  route: { params: ExamPackDetailParams };
-  navigation: { goBack: () => void };
-}
-
-export default function ExamPackDetailScreen({
-  route,
-  navigation,
-}: ExamPackDetailScreenProps): React.JSX.Element {
-  const { packageId } = route.params;
+// ─── Main Exam Pack Detail Screen ───────────────────────────────────────────────
+export default function ExamPackDetailScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
-  const stackNavigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation();
+  const route = useRoute<ExamPackDetailRouteProp>();
   const dispatch = useAppDispatch();
 
+  const { packageId } = route.params;
+  const scrollY = useSharedValue(0);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
+
+  // Validate UUID format
+  const isValidUuid = UUID_REGEX.test(packageId);
+  if (!isValidUuid) {
+    console.warn('[PYQ_UI] WARNING: packageId is not a valid UUID:', packageId);
+  }
+
+  // Fetch practice details (package info + papers)
   const {
-    data: detail,
-    isLoading,
-    error,
+    data: packageData,
+    isLoading: packageLoading,
+    error: packageError,
+    refetch: refetchPackage,
   } = usePracticeDetail(packageId);
 
-  // ── Purchase state ────────────────────────────────────────────
+  const packageName = packageData?.package?.name ?? '';
+  const packagePrice = packageData?.package?.price ?? 0;
+  const dbPackageId = packageData?.package?.packageId ?? packageId;
+  const isFree = packagePrice === 0;
+
+  // Purchase State
   const [purchaseState, setPurchaseState] = useState<PurchaseStateContext>({
     state: 'idle',
   });
 
-  // Resolved student ID — stored in state so usePurchaseStatus can
-  // react to it when it changes.
-  const [studentId, setStudentId] = useState<string | null>(null);
+  // Check enrollment/purchase
+  useEffect(() => {
+    if (!isValidUuid || isFree) return;
 
-  // ── Payment hooks ─────────────────────────────────────────────
+    const checkInitialPurchase = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const profileId = sessionData?.session?.user?.id;
+
+        if (!profileId) return;
+
+        const purchased = await checkPyqPurchase(profileId, packageId);
+        if (purchased) {
+          setPurchaseState({ state: 'enrolled' });
+        }
+      } catch (err) {
+        console.log('[PYQ_DETAIL] Purchase check error:', err);
+      }
+    };
+
+    checkInitialPurchase();
+  }, [packageId, isValidUuid, isFree]);
+
+  const [studentId, setStudentId] = useState<string | null>(null);
   const createOrderMutation = useCreatePaymentOrder();
 
   const isPolling =
@@ -560,7 +353,7 @@ export default function ExamPackDetailScreen({
 
   const { pollStatus, reset: resetPoll } = usePurchaseStatus({
     studentId,
-    courseId: packageId,
+    courseId: dbPackageId, // Use courseId for the hook, but it checks purchase
     enabled: isPolling,
     checkFn: checkPyqPurchase,
     config: {
@@ -569,21 +362,18 @@ export default function ExamPackDetailScreen({
     },
   });
 
-  // ── React to poll status changes ──────────────────────────────
   useEffect(() => {
     if (pollStatus.status === 'enrolled') {
-      console.log('[PYQ_POLL] Purchase detected');
       dispatch(setPurchaseInProgress(false));
       setPurchaseState((prev) => ({ ...prev, state: 'enrolled' }));
     } else if (pollStatus.status === 'timeout') {
-      console.log('[PYQ_POLL] Timeout');
       dispatch(setPurchaseInProgress(false));
       setPurchaseState({
         state: 'failed',
         errorMessage:
-          'Payment confirmation is taking longer than expected. Your purchase will be activated shortly. Please check back later or contact support.',
-        courseName: detail?.package.name,
-        formattedAmount: detail ? formatPrice(detail.package.price) : undefined,
+          'Payment confirmation is taking longer than expected. Access will be activated shortly.',
+        courseName: packageName,
+        formattedAmount: formatPrice(packagePrice),
       });
     } else if (pollStatus.status === 'error') {
       dispatch(setPurchaseInProgress(false));
@@ -592,86 +382,58 @@ export default function ExamPackDetailScreen({
         errorMessage: pollStatus.message,
       });
     }
-  }, [pollStatus, detail, dispatch]);
+  }, [pollStatus, packageName, packagePrice]);
 
-  // ── Buy Now handler ───────────────────────────────────────────
-  const handleBuyNow = useCallback(async () => {
-    if (purchaseState.state !== 'idle' && purchaseState.state !== 'failed') {
-      return;
-    }
-
-    if (!detail) {
-      console.log('[PYQ_PAYMENT] No package detail available');
-      return;
-    }
-
-    const pkg = detail.package;
-
-    try {
-      console.log('[PYQ_PAYMENT] Starting purchase');
-      console.log('[PYQ_PAYMENT] Package UUID:', packageId);
-
-      // Verify package ID is valid before proceeding
-      if (!packageId || !UUID_REGEX.test(packageId)) {
-        console.error('[PYQ_PAYMENT] Invalid package UUID:', packageId);
-        setPurchaseState({
-          state: 'failed',
-          errorMessage: 'The package data is not valid. Please go back and try again.',
-        });
-        return;
-      }
-
-      dispatch(setPurchaseInProgress(true));
-
+  const handleEnrollInit = useCallback(() => {
+    if (purchaseState.state !== 'idle' && purchaseState.state !== 'failed') return;
+    
+    if (!dbPackageId || !UUID_REGEX.test(dbPackageId)) {
       setPurchaseState({
-        state: 'creating_order',
-        courseName: pkg.name,
-        formattedAmount: formatPrice(pkg.price),
+        state: 'failed',
+        errorMessage: 'Invalid package data. Please go back and try again.',
       });
+      return;
+    }
+    
+    setPurchaseState({
+      state: 'order_summary',
+      courseName: packageName,
+      formattedAmount: formatPrice(packagePrice),
+    });
+  }, [purchaseState.state, dbPackageId, packageName, packagePrice]);
 
-      // 1. Verify the user is authenticated
-      console.log('[PYQ_PAYMENT] Checking authentication...');
+  const handleConfirmPurchase = useCallback(async () => {
+    try {
+      dispatch(setPurchaseInProgress(true));
+      setPurchaseState((prev) => ({ ...prev, state: 'creating_order' }));
+
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       const profileId = sessionData?.session?.user?.id;
       if (!profileId || sessionError) {
-        console.log('[PYQ_PAYMENT] No authenticated session found');
         setPurchaseState({
           state: 'failed',
-          errorMessage: 'Please sign in to purchase PYQ packages.',
+          errorMessage: 'Please sign in to purchase packages.',
         });
         return;
       }
-      console.log('[PYQ_PAYMENT] Authenticated profile_id:', profileId);
       setStudentId(profileId);
 
-      // 2. Create payment order via Edge Function
-      console.log('[PYQ_PAYMENT] Calling create-payment-order');
       const result = await createOrderMutation.mutateAsync({
-        packageId,
+        packageId: dbPackageId,
         studentId: profileId,
-        instituteId: '', // Resolved server-side by the Edge Function
+        instituteId: '',
       });
 
-      console.log('[PYQ_PAYMENT] Order created');
-      console.log('[PYQ_PAYMENT] Razorpay Order ID:', result.razorpayOrderId);
-
-      // 3. Open Razorpay checkout
       setPurchaseState((prev) => ({
         ...prev,
         state: 'checkout_open',
         razorpayOrderId: result.razorpayOrderId,
         orderId: result.orderId,
       }));
-      console.log('[PYQ_PAYMENT] Opening Razorpay');
 
       const razorpayResult = await openCheckout(result);
 
       if (razorpayResult.success) {
-        console.log('[PYQ_PAYMENT] Razorpay success');
-        console.log('[PYQ_POLL] Starting polling');
-        // Payment received — start polling for purchase record.
-        // The backend webhook handles verification and creates the
-        // student_pyq_purchases row.
         setPurchaseState((prev) => ({
           ...prev,
           state: 'polling_enrollment',
@@ -680,53 +442,31 @@ export default function ExamPackDetailScreen({
         }));
       } else {
         const errorInfo = razorpayResult.error;
-        if (typeof errorInfo === 'string') {
-          console.log('[PYQ_PAYMENT] Razorpay SDK error:', errorInfo);
-          dispatch(setPurchaseInProgress(false));
-          setPurchaseState({
-            state: 'failed',
-            errorMessage: errorInfo,
-            razorpayOrderId: result.razorpayOrderId,
-          });
-        } else {
-          const code = errorInfo.code;
-          const description = errorInfo.description;
-
-          console.log('[PYQ_PAYMENT] Razorpay error:', code, description);
-
-          if (code === 2) {
-            dispatch(setPurchaseInProgress(false));
-            setPurchaseState({
-              state: 'failed',
-              errorMessage:
-                "Payment was cancelled. You can try again whenever you're ready.",
-              razorpayOrderId: result.razorpayOrderId,
-            });
-          } else {
-            dispatch(setPurchaseInProgress(false));
-            setPurchaseState({
-              state: 'failed',
-              errorMessage: description || 'Payment failed. Please try again.',
-              razorpayOrderId: result.razorpayOrderId,
-            });
-          }
-        }
+        const errMsg = typeof errorInfo === 'string' 
+          ? errorInfo 
+          : errorInfo.code === 2 
+            ? 'Payment was cancelled.' 
+            : errorInfo.description || 'Payment failed.';
+            
+        dispatch(setPurchaseInProgress(false));
+        setPurchaseState({
+          state: 'failed',
+          errorMessage: errMsg,
+          razorpayOrderId: result.razorpayOrderId,
+        });
       }
     } catch (err) {
       dispatch(setPurchaseInProgress(false));
-      const message =
-        err instanceof Error ? err.message : 'An unexpected error occurred.';
-      console.log('[PYQ_PAYMENT] Unhandled error:', message);
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
       setPurchaseState({
         state: 'failed',
         errorMessage: message,
-        courseName: detail?.package.name,
-        formattedAmount: detail ? formatPrice(detail.package.price) : undefined,
+        courseName: packageName,
+        formattedAmount: formatPrice(packagePrice),
       });
     }
-  }, [purchaseState.state, createOrderMutation, packageId, detail]);
+  }, [createOrderMutation, dbPackageId, packageName, packagePrice]);
 
-  // ── Reset purchase flow ───────────────────────────────────────
   const resetPurchase = useCallback(() => {
     dispatch(setPurchaseInProgress(false));
     resetPoll();
@@ -734,697 +474,724 @@ export default function ExamPackDetailScreen({
     setPurchaseState({ state: 'idle' });
   }, [resetPoll, dispatch]);
 
-  const handleBackPress = useCallback(() => {
-    navigation.goBack();
-  }, [navigation]);
+  async function handleShare(): Promise<void> {
+    if (!packageData) return;
+    try {
+      await Share.share({
+        title: packageData.package.name,
+        message: `Check out "${packageData.package.name}" PYQs on MockPrep! 🎓
 
-  const handlePaperPress = useCallback(
-    async (paper: PracticePaper) => {
-      try {
-        const result = await getPaperMockMapping(paper.paperId);
+Price: ${formatPrice(packageData.package.price)}
 
-        if (!result.success) {
-          Alert.alert('Error', 'Failed to load mock test details. Please try again.');
-          return;
-        }
+Download now!`,
+      });
+    } catch {}
+  }
 
-        if (!result.data) {
-          // No mock test has been generated for this paper
-          Alert.alert(
-            'Not Available',
-            'This paper does not have a mock test generated yet. Please check back later.',
-          );
-          return;
-        }
+  const isEnrolled = purchaseState.state === 'enrolled' || isFree;
+  const isPurchasing = purchaseState.state !== 'idle' && purchaseState.state !== 'failed' && purchaseState.state !== 'enrolled';
+  const buyDisabled = !packageData || isPurchasing || !!packageError || packageLoading;
 
-        if (!result.data.isPublished) {
-          Alert.alert(
-            'Not Available',
-            'The mock test for this paper is not yet published. Please check back later.',
-          );
-          return;
-        }
+  if (packageLoading) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color={coursesDark.accentPrimary} />
+        <Text style={styles.loadingText}>Loading package details…</Text>
+      </View>
+    );
+  }
 
-        const { testId } = result.data;
+  if (packageError || !packageData) {
+    return (
+      <View style={styles.errorScreen}>
+        <Icon name="alert-triangle" color={coursesDark.categories.law.accent} width={56} height={56} />
+        <Text style={styles.errorTitle}>Could not load details</Text>
+        <Text style={styles.errorText}>
+          {packageError instanceof Error ? packageError.message : 'Please check your connection and try again.'}
+        </Text>
+        <TouchableOpacity onPress={() => refetchPackage()} style={styles.retryButton}>
+          <Text style={styles.retryText}>Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
-        stackNavigation.navigate('TestInstructions', {
-          examTitle: detail?.package.name ?? 'Practice',
-          year: String(paper.examYear),
-          displayLabel: paper.title,
-          durationMin: paper.durationMin ?? 60,
-          questions: paper.totalQuestions,
-          totalMarks: paper.totalMarks ?? paper.totalQuestions * 4,
-          negativeMarking: -1,
-          testId,
-          paperId: paper.paperId,
-        });
-      } catch {
-        Alert.alert('Error', 'Something went wrong. Please try again.');
-      }
+  const info = packageData.package;
+  
+  // Create metrics
+  const totalQuestions = packageData.papers.reduce((sum, p) => sum + (p.totalQuestions || 0), 0);
+  const totalDuration = packageData.papers.reduce((sum, p) => sum + (p.durationMin || 0), 0);
+  const hours = Math.round(totalDuration / 60);
+
+  const metrics: Array<{ key: string; label: string; value: string; iconName: string; accentColor: string; }> = [
+    {
+      key: 'papers',
+      label: 'Total Papers',
+      value: String(info.totalPapers),
+      iconName: 'description',
+      accentColor: coursesDark.accentPrimary,
     },
-    [stackNavigation, detail],
-  );
+    {
+      key: 'questions',
+      label: 'Questions',
+      value: formatCount(totalQuestions),
+      iconName: 'clipboard-list',
+      accentColor: coursesDark.categories.engineering.accent,
+    },
+    {
+      key: 'years',
+      label: 'Year Coverage',
+      value: info.yearFrom && info.yearTo ? `${info.yearFrom}-${info.yearTo}` : (info.yearFrom ? String(info.yearFrom) : 'All Years'),
+      iconName: 'calendar',
+      accentColor: coursesDark.categories.medical.accent,
+    }
+  ];
 
-  // Header height: safeAreaTop + spacing[12] (paddingTop)
-  //                + 40 (back button height)
-  //                + spacing[12] (paddingBottom)
-  //                + 1 (borderBottom)
-  const headerHeight =
-    insets.top + spacing[12] + 40 + spacing[12] + 1;
-
-  // Bottom bar height: spacing[16] (paddingTop) + 24 (price height)
-  //                    + spacing[12] (padding) + safeAreaBottom
-  const bottomBarHeight = spacing[16] + 24 + spacing[12] + insets.bottom;
-
-  // ── Determine button state ────────────────────────────────────
-  const isEnrolled = purchaseState.state === 'enrolled';
-  const isPurchasing =
-    purchaseState.state !== 'idle' &&
-    purchaseState.state !== 'failed' &&
-    purchaseState.state !== 'enrolled';
-  const buyDisabled = !detail || isPurchasing || !!error;
-
-  // ── Loading / Error / Empty ──────────────────────────────────────
-
-  if (isLoading) {
-    return (
-      <View style={styles.screen}>
-        <Header
-          safeAreaTop={insets.top}
-          packageName="Loading..."
-          onBackPress={handleBackPress}
-        />
-        <LoadingState />
-      </View>
-    );
+  if (hours > 0) {
+    metrics.push({
+      key: 'duration',
+      label: 'Total Duration',
+      value: `${hours} hrs`,
+      iconName: 'clock',
+      accentColor: coursesDark.categories.law.accent,
+    });
   }
 
-  if (error || !detail) {
-    return (
-      <View style={styles.screen}>
-        <Header
-          safeAreaTop={insets.top}
-          packageName="Package"
-          onBackPress={handleBackPress}
-        />
-        <ErrorState message={error?.message ?? 'Failed to load package details.'} />
-      </View>
-    );
-  }
+  // Group papers by year
+  const papersByYear = packageData.papers.reduce((acc, paper) => {
+    const year = paper.examYear || 0;
+    if (!acc[year]) acc[year] = [];
+    acc[year].push(paper);
+    return acc;
+  }, {} as Record<number, PracticePaper[]>);
 
-  const { package: pkg, papers } = detail;
-  const yearRange =
-    pkg.yearFrom && pkg.yearTo
-      ? `${pkg.yearFrom}–${pkg.yearTo}`
-      : pkg.yearFrom
-        ? `Since ${pkg.yearFrom}`
-        : null;
+  const curriculum = Object.entries(papersByYear)
+    .sort(([yearA], [yearB]) => Number(yearB) - Number(yearA)) // Latest first
+    .map(([yearStr, papers]) => {
+      const year = Number(yearStr);
+      const isLatest = year === info.yearTo;
+      
+      const yearDuration = papers.reduce((sum, p) => sum + (p.durationMin || 0), 0);
+      const formattedDuration = yearDuration > 60 
+        ? `${Math.floor(yearDuration/60)}h ${yearDuration%60}m` 
+        : `${yearDuration}m`;
+
+      return {
+        key: `year-${year}`,
+        name: year === 0 ? 'General / Misc' : `${year} Papers`,
+        chapterCount: `${papers.length} Papers`,
+        hours: formattedDuration,
+        iconName: 'calendar',
+        accentColor: isLatest ? coursesDark.categories.engineering.accent : coursesDark.accentPrimary,
+        chapters: papers.map(p => ({
+          paperId: p.paperId,
+          name: p.title,
+          isLocked: !isEnrolled,
+          duration: p.durationMin,
+          questions: p.totalQuestions,
+        }))
+      };
+    });
 
   return (
     <View style={styles.screen}>
-      {/* Sticky header */}
-      <Header
-        safeAreaTop={insets.top}
-        packageName={pkg.name}
-        onBackPress={handleBackPress}
-      />
-
-      <ScrollView
+      <Animated.ScrollView
         style={styles.scrollView}
-        contentContainerStyle={{
-          paddingTop: headerHeight,
-          paddingBottom: bottomBarHeight + spacing[16],
-        }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={scrollHandler}
         bounces
-        overScrollMode="never"
       >
-        {/* Hero Section */}
-        <HeroSection
-          packageName={pkg.name}
-          streamName={pkg.streamName}
-          totalPapers={pkg.totalPapers}
-          yearRange={yearRange ?? ''}
-          price={pkg.price}
-          originalPrice={pkg.originalPrice}
-          description={pkg.description}
+        <CourseDetailHero
+          title={info.name}
+          category={info.streamName}
+          instructor="Previous Year Papers"
+          rating={info.rating || 4.8}
+          imageUrl={info.thumbnailUrl}
+          onBackPress={() => navigation.goBack()}
+          onSharePress={handleShare}
+          scrollY={scrollY}
         />
 
-        {/* Papers List */}
-        <PapersSection
-          papers={papers}
-          onPaperPress={handlePaperPress}
-        />
+        <View style={styles.quickInfoCard}>
+          <View style={styles.metricsGrid}>
+            {metrics.slice(0, 4).map((metric) => (
+              <MetricGridItem key={metric.key} metric={metric} />
+            ))}
+          </View>
+        </View>
 
-        {/* Bottom spacer */}
-        <BottomSpacer />
-      </ScrollView>
+        {info.description && (
+          <SectionCard>
+            <Text style={styles.sectionTitle}>Package Description</Text>
+            <Text style={styles.descriptionText}>{info.description}</Text>
+          </SectionCard>
+        )}
 
-      {/* Payment Overlay */}
+        <SectionCard>
+          <Text style={styles.sectionTitle}>Papers Included</Text>
+          <View style={styles.curriculumList}>
+            {curriculum.map((subj) => (
+              <CurriculumAccordion key={subj.key} subject={subj} />
+            ))}
+          </View>
+        </SectionCard>
+      </Animated.ScrollView>
+
       <PurchaseOverlay
         purchaseState={purchaseState}
         onDismiss={resetPurchase}
-        onRetry={handleBuyNow}
+        onRetry={handleConfirmPurchase}
+        onConfirmPurchase={handleConfirmPurchase}
       />
 
-      {/* Sticky bottom bar */}
-      <BottomBar
-        price={pkg.price}
-        safeAreaBottom={insets.bottom}
-        purchaseState={purchaseState}
-        onBuyNow={handleBuyNow}
-        isPurchasing={isPurchasing}
-        buyDisabled={buyDisabled}
-      />
+      <SafeAreaView edges={['bottom']} style={styles.bottomBarContainer}>
+        <View style={styles.bottomBar}>
+          <View style={styles.priceWrap}>
+            {isEnrolled ? (
+              <Text style={styles.enrolledLabel}>Purchased</Text>
+            ) : (
+              <>
+                <View style={styles.bottomPriceRow}>
+                  <Text style={styles.bottomPrice}>{formatPrice(info.price)}</Text>
+                  {info.badgeLabel && (
+                    <View style={styles.discountPill}>
+                      <Text style={styles.discountPillText}>{info.badgeLabel}</Text>
+                    </View>
+                  )}
+                </View>
+                {info.originalPrice && info.originalPrice > info.price && (
+                  <Text style={styles.bottomOriginalPrice}>{formatPrice(info.originalPrice)}</Text>
+                )}
+              </>
+            )}
+          </View>
+
+          <View style={styles.bottomButtons}>
+            {isEnrolled ? (
+              <TouchableOpacity
+                style={[styles.btnEnroll, styles.btnEnrolled]}
+                activeOpacity={0.8}
+              >
+                <Icon name="play-circle" color="#FFFFFF" width={16} height={16} />
+                <Text style={styles.btnEnrollText}>Start Practicing</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.btnEnroll, buyDisabled && styles.btnEnrollDisabled]}
+                onPress={handleEnrollInit}
+                disabled={buyDisabled}
+                activeOpacity={0.9}
+              >
+                {isPurchasing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Icon name="badge-check" color="#FFFFFF" width={16} height={16} />
+                    <Text style={styles.btnEnrollText}>Buy Now</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </SafeAreaView>
     </View>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  Styles
-// ═══════════════════════════════════════════════════════════════════
-
 const styles = StyleSheet.create({
-  // ── Screen ──────────────────────────────────────────────────────
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: coursesDark.base,
+  },
+  loadingScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: coursesDark.base,
+    gap: spacing[12],
+  },
+  loadingText: {
+    ...typography.body,
+    color: coursesDark.textMutedOnDark,
+  },
+  errorScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: coursesDark.base,
+    padding: spacing[32],
+    gap: spacing[12],
+  },
+  errorTitle: {
+    ...typography.sectionTitle,
+    color: coursesDark.textOnDark,
+  },
+  errorText: {
+    ...typography.body,
+    color: coursesDark.textMutedOnDark,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: spacing[12],
+    backgroundColor: coursesDark.accentPrimary,
+    paddingHorizontal: spacing[24],
+    paddingVertical: spacing[12],
+    borderRadius: radius.md,
+  },
+  retryText: {
+    ...typography.button,
+    color: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
   },
-
-  // ── Center State (loading/error) ────────────────────────────────
-  centerState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing[48],
-    paddingHorizontal: spacing[16],
-  },
-  loadingText: {
-    ...typography.body,
-    color: palette.slate500,
-    marginTop: spacing[12],
-  },
-  errorText: {
-    ...typography.body,
-    color: colors.error,
-    marginTop: spacing[12],
-    textAlign: 'center',
-  },
-
-  // ── Sticky Header ───────────────────────────────────────────────
-  header: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    paddingBottom: spacing[12],
-    paddingHorizontal: spacing[16],
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: palette.slate100,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing[12],
-    flexShrink: 0,
-  },
-  headerTitle: {
-    ...typography.title,
-    fontSize: 18,
-    fontWeight: '700',
-    color: CTA_BLUE,
-    lineHeight: 24,
-    flex: 1,
-  },
-
-  // ── Hero Card ───────────────────────────────────────────────────
-  heroCard: {
-    backgroundColor: colors.surface,
+  quickInfoCard: {
     marginHorizontal: spacing[16],
-    marginTop: spacing[16],
-    borderRadius: radius.xl + 4,
-    padding: spacing[20],
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.06,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
-  },
-  bestsellerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[4],
-    backgroundColor: '#E8F0FE',
-    paddingHorizontal: spacing[8],
-    paddingVertical: spacing[4],
-    borderRadius: radius.xxl,
-    alignSelf: 'flex-start',
-    marginBottom: spacing[12],
-  },
-  bestsellerText: {
-    ...typography.labelSmall,
-    fontSize: 12,
-    fontWeight: '600',
-    color: CTA_BLUE,
-  },
-  heroTitle: {
-    ...typography.title,
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    lineHeight: 32,
-    marginBottom: spacing[16],
-  },
-  heroDescription: {
-    ...typography.body,
-    fontSize: 14,
-    color: palette.slate600,
-    lineHeight: 20,
-    marginBottom: spacing[16],
-  },
-
-  // ── Feature Grid ────────────────────────────────────────────────
-  featureGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[12],
-    marginBottom: spacing[20],
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[8],
-    width: '47%',
-  },
-  featureIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F0F4FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  featureTextGroup: {
-    flex: 1,
-  },
-  featureLabel: {
-    ...typography.caption,
-    fontSize: 11,
-    color: palette.slate500,
-    lineHeight: 14,
-  },
-  featureValue: {
-    ...typography.labelSmall,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#111827',
-    lineHeight: 16,
-  },
-
-  // ── Hero CTA Area ───────────────────────────────────────────────
-  heroCtaArea: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: spacing[16],
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[8],
-  },
-  priceCurrent: {
-    ...typography.title,
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
-    lineHeight: 34,
-  },
-  priceOriginal: {
-    ...typography.bodySmall,
-    fontSize: 14,
-    color: palette.slate400,
-    textDecorationLine: 'line-through',
-    lineHeight: 18,
-  },
-  discountBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: spacing[4],
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  discountBadgeText: {
-    ...typography.caption,
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#D97706',
-  },
-
-  // ── Papers Section ──────────────────────────────────────────────
-  papersSection: {
-    marginHorizontal: spacing[16],
-    marginTop: spacing[24],
-  },
-  sectionTitle: {
-    ...typography.title,
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#111827',
-    lineHeight: 28,
-    marginBottom: spacing[16],
-  },
-  papersList: {
-    gap: spacing[12],
-  },
-  emptyPapers: {
-    paddingVertical: spacing[24],
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    alignItems: 'center',
-  },
-  emptyPapersText: {
-    ...typography.body,
-    color: palette.slate400,
-    textAlign: 'center',
-  },
-
-  // ── Paper Card ──────────────────────────────────────────────────
-  paperCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
-    borderRadius: radius.lg + 2,
+    marginTop: -spacing[24],
+    backgroundColor: coursesDark.surfaceCard,
+    borderRadius: radius.xl,
     padding: spacing[16],
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
-  },
-  paperCardInner: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    minHeight: 56,
-  },
-  paperIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.lg,
-    backgroundColor: '#F0F4FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing[16],
-    flexShrink: 0,
-    alignSelf: 'center',
-  },
-  paperRightCol: {
-    flex: 1,
-    justifyContent: 'space-between',
-  },
-  paperContent: {
-    flex: 0,
-  },
-  paperTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  paperTitle: {
-    ...typography.subtitle,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    lineHeight: 22,
-    flex: 1,
-    marginRight: spacing[8],
-  },
-  officialBadgeFlat: {
-    backgroundColor: '#F0FDF4',
-    paddingHorizontal: spacing[8],
-    paddingVertical: 3,
-    borderRadius: radius.sm - 3,
-    flexShrink: 0,
-  },
-  officialBadgeFlatText: {
-    ...typography.caption,
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#008c3a',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  paperYear: {
-    ...typography.bodySmall,
-    fontSize: 13,
-    color: palette.slate500,
-    marginBottom: spacing[8],
-    lineHeight: 18,
-  },
-  paperStatsRow: {
-    flexDirection: 'row',
-    gap: spacing[16],
-    marginBottom: spacing[8],
-  },
-  paperStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  paperStatText: {
-    ...typography.caption,
-    fontSize: 12,
-    color: palette.slate400,
-    lineHeight: 16,
-  },
-  paperActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: spacing[8],
-  },
-  viewPapersButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: CTA_BLUE,
-    paddingHorizontal: spacing[16],
-    paddingVertical: spacing[8],
-    borderRadius: radius.xxl - 2,
-    ...Platform.select({
-      ios: {
-        shadowColor: CTA_BLUE,
+        shadowColor: '#000000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
       },
       android: {
         elevation: 4,
       },
     }),
   },
-  viewPapersText: {
-    ...typography.labelSmall,
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: spacing[12],
+  },
+  metricCard: {
+    width: '50%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[8],
+  },
+  metricIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricTextWrap: {
+    flex: 1,
+  },
+  metricValue: {
+    ...typography.caption,
+    fontSize: 13,
+    fontWeight: '800',
+    color: coursesDark.textOnCard,
+  },
+  metricLabel: {
+    ...typography.caption,
+    fontSize: 10,
+    color: coursesDark.textMutedOnCard,
+  },
+  sectionCard: {
+    marginHorizontal: spacing[16],
+    marginTop: spacing[12],
+    backgroundColor: coursesDark.surfaceCard,
+    borderRadius: radius.xl,
+    padding: spacing[16],
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  sectionTitle: {
+    ...typography.cardTitle,
+    color: coursesDark.textOnCard,
+    marginBottom: spacing[12],
+  },
+  featureGrid: {
+    gap: spacing[8],
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[8],
+  },
+  featureText: {
+    ...typography.bodySmall,
+    fontSize: 13,
+    color: coursesDark.textOnCard,
+  },
+  descriptionText: {
+    ...typography.bodySmall,
+    fontSize: 13,
+    lineHeight: 20,
+    color: coursesDark.textMutedOnCard,
+  },
+  curriculumList: {
+    gap: spacing[8],
+  },
+  accordionWrap: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing[12],
+    backgroundColor: '#F8FAFC',
+  },
+  accordionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[12],
+    flex: 1,
+  },
+  accordionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accordionHeaderText: {
+    flex: 1,
+  },
+  accordionTitle: {
+    ...typography.caption,
     fontSize: 13,
     fontWeight: '700',
-    color: colors.text.inverse,
+    color: coursesDark.textOnCard,
   },
+  accordionSubtitle: {
+    ...typography.caption,
+    fontSize: 10,
+    color: coursesDark.textMutedOnCard,
+  },
+  chevronDefault: {},
+  chevronRotated: {
+    transform: [{ rotate: '180deg' }],
+  },
+  accordionContent: {
+    paddingHorizontal: spacing[12],
+    backgroundColor: '#FFFFFF',
+  },
+  chapterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing[12],
+  },
+  chapterRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EDF2F7',
+  },
+  chapterRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[8],
+    flex: 1,
+  },
+  chapterName: {
 
-  // ── Bottom Sticky Bar ───────────────────────────────────────────
-  bottomBar: {
+    ...typography.caption,
+    fontSize: 12,
+    color: coursesDark.textOnCard,
+    flex: 1,
+  
+  },
+  chapterMeta: {
+    ...typography.caption,
+    fontSize: 10,
+    color: coursesDark.textMutedOnCard,
+    marginTop: 2,
+  },
+  chapterLocked: {
+    color: coursesDark.textMutedOnCard,
+  },
+  lockedBadge: {
+    backgroundColor: '#EDF2F7',
+    paddingHorizontal: spacing[8],
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  lockedBadgeText: {
+    ...typography.caption,
+    fontSize: 9,
+    fontWeight: '700',
+    color: coursesDark.textMutedOnCard,
+  },
+  instructorList: {
+    gap: spacing[12],
+  },
+  instructorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[12],
+  },
+  instructorAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  instructorInitials: {
+    ...typography.caption,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  instructorInfo: {
+    flex: 1,
+  },
+  instructorName: {
+    ...typography.caption,
+    fontSize: 13,
+    fontWeight: '800',
+    color: coursesDark.textOnCard,
+  },
+  instructorCredential: {
+    ...typography.caption,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  instructorExperience: {
+    ...typography.caption,
+    fontSize: 10,
+    color: coursesDark.textMutedOnCard,
+  },
+  faqContainer: {
+    gap: spacing[4],
+  },
+  faqItem: {
+    paddingVertical: spacing[4],
+  },
+  faqItemBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+  },
+  faqQuestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing[12],
+    gap: spacing[8],
+  },
+  faqQuestion: {
+    ...typography.caption,
+    fontSize: 13,
+    fontWeight: '700',
+    color: coursesDark.textOnCard,
+    flex: 1,
+  },
+  faqAnswerWrap: {
+    paddingBottom: spacing[12],
+  },
+  faqAnswer: {
+    ...typography.caption,
+    fontSize: 12,
+    lineHeight: 18,
+    color: coursesDark.textMutedOnCard,
+  },
+  bottomBarContainer: {
+    backgroundColor: '#FFFFFF',
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingTop: spacing[16],
-    paddingHorizontal: spacing[16],
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.08,
-        shadowRadius: 24,
-      },
-      android: {
-        elevation: 12,
-      },
-    }),
+    borderTopColor: coursesDark.dividerOnDark,
   },
-  bottomBarInner: {
+  bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing[12],
+    paddingHorizontal: spacing[16],
+    paddingVertical: spacing[12],
+    backgroundColor: '#FFFFFF',
   },
-  bottomPriceGroup: {
+  priceWrap: {
     flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  bottomPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[8],
   },
   bottomPrice: {
-    ...typography.title,
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    lineHeight: 30,
+    ...typography.priceTag,
+    color: coursesDark.textOnCard,
   },
-  bottomEnrolledLabel: {
-    ...typography.subtitle,
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.primary,
+  discountPill: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    paddingHorizontal: spacing[8],
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  discountPillText: {
+    ...typography.badgeLabelCustom,
+    color: '#059669',
+    fontSize: 8,
+    fontWeight: '800',
+  },
+  bottomOriginalPrice: {
+    ...typography.caption,
+    fontSize: 11,
+    color: coursesDark.textMutedOnCard,
+    textDecorationLine: 'line-through',
+  },
+  enrolledLabel: {
+    ...typography.caption,
+    fontSize: 13,
+    fontWeight: '800',
+    color: coursesDark.accentPrimary,
   },
   bottomButtons: {
-    flexDirection: 'row',
-    gap: spacing[8],
     flex: 1,
-    justifyContent: 'flex-end',
+    alignItems: 'flex-end',
   },
-  buyNowButton: {
+  btnEnroll: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing[4],
-    paddingHorizontal: spacing[16],
+    gap: spacing[8],
+    backgroundColor: coursesDark.accentPrimary,
+    paddingHorizontal: spacing[20],
     paddingVertical: spacing[12],
-    borderRadius: radius.md,
-    backgroundColor: colors.secondary,
+    borderRadius: radius.lg,
     minWidth: 120,
   },
-  buyNowButtonDisabled: {
-    opacity: 0.7,
+  btnEnrolled: {
+    backgroundColor: '#10B981',
   },
-  buyNowButtonText: {
+  btnEnrollDisabled: {
+    opacity: 0.6,
+  },
+  btnEnrollText: {
     ...typography.buttonSmall,
+    color: '#FFFFFF',
+    fontWeight: '800',
     fontSize: 13,
-    fontWeight: '700',
-    color: colors.text.inverse,
   },
-  enrolledButton: {
-    backgroundColor: colors.primary,
-  },
-
-  // ── Scroll Bottom Spacer ────────────────────────────────────────
-  scrollBottomSpacer: {
-    height: spacing[24],
-  },
-
-  // ── Purchase Overlay ─────────────────────────────────────────
   overlayBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing[24],
+    justifyContent: 'flex-end',
   },
-  overlayCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing[24],
-    width: '100%',
-    maxWidth: 340,
-    alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.15,
-        shadowRadius: 24,
-      },
-      android: { elevation: 10 },
-    }),
+  checkoutSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    padding: spacing[20],
+    paddingBottom: spacing[40],
   },
-  overlaySpinner: {
+  overlaySpinnerWrap: {
+    alignItems: 'center',
     marginBottom: spacing[16],
   },
-  overlayIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing[16],
-  },
-  overlayTitle: {
-    ...typography.title,
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text.primary,
+  checkoutTitle: {
+    ...typography.cardTitle,
+    color: coursesDark.textOnCard,
     textAlign: 'center',
+    fontSize: 18,
+    marginBottom: spacing[16],
+  },
+  checkoutDetailsBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: radius.lg,
+    padding: spacing[12],
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: spacing[16],
+  },
+  checkoutCourseName: {
+    ...typography.caption,
+    fontSize: 13,
+    fontWeight: '700',
+    color: coursesDark.textOnCard,
     marginBottom: spacing[8],
   },
-  overlayMessage: {
-    ...typography.body,
+  checkoutDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginBottom: spacing[8],
+  },
+  checkoutPriceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  checkoutTotalLabel: {
+    ...typography.caption,
+    fontSize: 12,
+    color: coursesDark.textMutedOnCard,
+  },
+  checkoutTotalValue: {
+    ...typography.caption,
     fontSize: 14,
-    color: colors.text.secondary,
+    fontWeight: '800',
+    color: coursesDark.accentPrimary,
+  },
+  overlayMessage: {
+    ...typography.bodySmall,
+    color: coursesDark.textMutedOnCard,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: spacing[20],
+    marginBottom: spacing[16],
   },
   overlayActions: {
-    flexDirection: 'column',
-    gap: spacing[8],
-    width: '100%',
-  },
-  overlayRetryButton: {
     flexDirection: 'row',
+    gap: spacing[12],
+  },
+  overlayBtn: {
+    flex: 1,
+    paddingVertical: spacing[12],
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing[8],
-    paddingVertical: spacing[12],
-    borderRadius: radius.md,
-    backgroundColor: colors.secondary,
+    borderRadius: radius.lg,
   },
-  overlayRetryText: {
-    ...typography.button,
-    fontSize: 14,
+  overlayBtnOutline: {
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  overlayBtnOutlineText: {
+    ...typography.buttonSmall,
+    color: coursesDark.textOnCard,
     fontWeight: '700',
-    color: colors.text.inverse,
   },
-  overlayDismissButton: {
-    alignItems: 'center',
+  overlayBtnPrimary: {
+    backgroundColor: coursesDark.accentPrimary,
+  },
+  overlayBtnPrimaryText: {
+    ...typography.buttonSmall,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  checkoutPayAction: {
+    marginTop: spacing[4],
+  },
+  checkoutPayButton: {
+    backgroundColor: coursesDark.accentPrimary,
+    borderRadius: radius.lg,
     paddingVertical: spacing[12],
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  overlayDismissText: {
+  checkoutPayButtonLoading: {
+    opacity: 0.7,
+  },
+  checkoutPayText: {
     ...typography.button,
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text.secondary,
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
 });

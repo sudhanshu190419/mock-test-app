@@ -19,11 +19,11 @@
  */
 
 // ─── Atomic Tokens ──────────────────────────────────────────────
-export { colors, palette } from './colors';
-export type { TextColorKey, TintColorKey } from './colors';
+export { colors, palette, coursesDark, coursesLightM3 } from './colors';
+export type { TextColorKey, TintColorKey, CoursesDark, CoursesLightM3 } from './colors';
 
-export { typography, getFontFamily } from './typography';
-export type { TypographyKey } from './typography';
+export { typography, typographyV5, getFontFamily } from './typography';
+export type { TypographyKey, TypographyV5Key } from './typography';
 
 export { spacing, Spacing } from './spacing';
 export type { SpacingKey } from './spacing';

@@ -179,6 +179,63 @@ export const typography = {
     lineHeight: 16,
     letterSpacing: 0.5,
   } satisfies TextStyle,
+
+  // ── Courses Redesign Custom Styles ──────────────────────────────
+  heroTitle: {
+    fontFamily,
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 34,
+    letterSpacing: -0.5,
+  } satisfies TextStyle,
+
+  sectionTitle: {
+    fontFamily,
+    fontSize: 20,
+    fontWeight: '800',
+    lineHeight: 26,
+    letterSpacing: -0.25,
+  } satisfies TextStyle,
+
+  cardTitle: {
+    fontFamily,
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 22,
+    letterSpacing: 0,
+  } satisfies TextStyle,
+
+  cardTitleCompact: {
+    fontFamily,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+    letterSpacing: 0,
+  } satisfies TextStyle,
+
+  priceTag: {
+    fontFamily,
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 24,
+    letterSpacing: 0,
+  } satisfies TextStyle,
+
+  chipLabel: {
+    fontFamily,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+    letterSpacing: 0.25,
+  } satisfies TextStyle,
+
+  badgeLabelCustom: {
+    fontFamily,
+    fontSize: 10,
+    fontWeight: '800',
+    lineHeight: 14,
+    letterSpacing: 0.5,
+  } satisfies TextStyle,
 } as const;
 
 /** Type helper — extract a typography key. */
@@ -191,3 +248,193 @@ export type TypographyKey = keyof typeof typography;
 export function getFontFamily(): string | undefined {
   return fontFamily;
 }
+
+// ═════════════════════════════════════════════════════════════════
+//  V5 Premium Typography Scale (Geist/Satoshi Stack)
+// ═════════════════════════════════════════════════════════════════
+
+/**
+ * V5 Font Stack — Geist for UI, Geist Mono for numbers, Satoshi for display
+ * Falls back to system fonts if custom fonts not loaded.
+ */
+const fontFamilyV5 = {
+  display: Platform.select({ ios: 'Satoshi-SemiBold', android: 'Satoshi-SemiBold', default: fontFamily }),
+  heading: Platform.select({ ios: 'Geist-SemiBold', android: 'Geist-SemiBold', default: fontFamily }),
+  headingMedium: Platform.select({ ios: 'Geist-Medium', android: 'Geist-Medium', default: fontFamily }),
+  body: Platform.select({ ios: 'Geist-Regular', android: 'Geist-Regular', default: fontFamily }),
+  bodyMedium: Platform.select({ ios: 'Geist-Medium', android: 'Geist-Medium', default: fontFamily }),
+  mono: Platform.select({ ios: 'GeistMono-Regular', android: 'GeistMono-Regular', default: fontFamily }),
+  monoMedium: Platform.select({ ios: 'GeistMono-Medium', android: 'GeistMono-Medium', default: fontFamily }),
+} as const;
+
+export const typographyV5 = {
+  // ── Asymmetric Display — Section headers, hero text ─────────────
+  displayAsymmetric: {
+    fontFamily: fontFamilyV5.display,
+    fontSize: 28,
+    lineHeight: 34,
+    letterSpacing: -0.5,
+    fontWeight: '600',
+  } satisfies TextStyle,
+
+  // ── Card Titles ─────────────────────────────────────────────────
+  cardTitleHero: {
+    fontFamily: fontFamilyV5.heading,
+    fontSize: 20,
+    lineHeight: 26,
+    letterSpacing: -0.3,
+    fontWeight: '600',
+  } satisfies TextStyle,
+
+  cardTitle: {
+    fontFamily: fontFamilyV5.headingMedium,
+    fontSize: 17,
+    lineHeight: 23,
+    letterSpacing: -0.2,
+    fontWeight: '500',
+  } satisfies TextStyle,
+
+  cardTitleCompact: {
+    fontFamily: fontFamilyV5.headingMedium,
+    fontSize: 15,
+    lineHeight: 21,
+    letterSpacing: -0.15,
+    fontWeight: '500',
+  } satisfies TextStyle,
+
+  // ── Metadata / Secondary Text ───────────────────────────────────
+  metadata: {
+    fontFamily: fontFamilyV5.body,
+    fontSize: 12,
+    lineHeight: 17,
+    letterSpacing: 0.1,
+    fontWeight: '400',
+  } satisfies TextStyle,
+
+  metadataSmall: {
+    fontFamily: fontFamilyV5.body,
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 0.2,
+    fontWeight: '400',
+  } satisfies TextStyle,
+
+  metadataStrong: {
+    fontFamily: fontFamilyV5.bodyMedium,
+    fontSize: 12,
+    lineHeight: 17,
+    letterSpacing: 0.1,
+    fontWeight: '500',
+  } satisfies TextStyle,
+
+  // ── Price / Numbers (Tabular Monospace) ─────────────────────────
+  priceCurrent: {
+    fontFamily: fontFamilyV5.monoMedium,
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.3,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  } satisfies TextStyle,
+
+  priceOriginal: {
+    fontFamily: fontFamilyV5.mono,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0,
+    fontWeight: '400',
+    fontVariant: ['tabular-nums'],
+  } satisfies TextStyle,
+
+  enrollmentCount: {
+    fontFamily: fontFamilyV5.mono,
+    fontSize: 12,
+    lineHeight: 17,
+    letterSpacing: 0.1,
+    fontWeight: '400',
+    fontVariant: ['tabular-nums'],
+  } satisfies TextStyle,
+
+  ratingValue: {
+    fontFamily: fontFamilyV5.monoMedium,
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 0,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  } satisfies TextStyle,
+
+  // ── Buttons / CTAs ──────────────────────────────────────────────
+  buttonLabel: {
+    fontFamily: fontFamilyV5.bodyMedium,
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 0.2,
+    fontWeight: '500',
+  } satisfies TextStyle,
+
+  buttonLabelSmall: {
+    fontFamily: fontFamilyV5.bodyMedium,
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 0.3,
+    fontWeight: '500',
+  } satisfies TextStyle,
+
+  // ── Badge / Chip Labels ─────────────────────────────────────────
+  badgeLabel: {
+    fontFamily: fontFamilyV5.bodyMedium,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 0.5,
+    fontWeight: '600',
+    textTransform: 'uppercase' as const,
+  } satisfies TextStyle,
+
+  badgeLabelLarge: {
+    fontFamily: fontFamilyV5.bodyMedium,
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 0.4,
+    fontWeight: '600',
+    textTransform: 'uppercase' as const,
+  } satisfies TextStyle,
+
+  // ── Feature / Benefit Text ──────────────────────────────────────
+  featureText: {
+    fontFamily: fontFamilyV5.body,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.1,
+    fontWeight: '400',
+  } satisfies TextStyle,
+
+  featureTextStrong: {
+    fontFamily: fontFamilyV5.bodyMedium,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.1,
+    fontWeight: '500',
+  } satisfies TextStyle,
+
+  // ── Instructor / Author ─────────────────────────────────────────
+  instructorName: {
+    fontFamily: fontFamilyV5.bodyMedium,
+    fontSize: 12,
+    lineHeight: 17,
+    letterSpacing: 0.1,
+    fontWeight: '500',
+  } satisfies TextStyle,
+
+  // ── Category / Chip ─────────────────────────────────────────────
+  categoryLabel: {
+    fontFamily: fontFamilyV5.bodyMedium,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 0.5,
+    fontWeight: '700',
+    textTransform: 'uppercase' as const,
+  } satisfies TextStyle,
+} as const;
+
+export type TypographyV5Key = keyof typeof typographyV5;

@@ -11,15 +11,7 @@
 
 import React, { useEffect } from 'react';
 import { TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withSequence,
-  withTiming,
-  Easing,
-  cancelAnimation,
-} from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, Easing, cancelAnimation } from 'react-native-reanimated';
 
 import Icon from '../home/Icons';
 import { colors } from '../../theme/colors';

@@ -38,7 +38,6 @@ import type {
   SignInInput,
   SignUpInput,
   UserProfile,
-  UserRole,
   ValidationResult,
   VerifyOtpInput,
 } from '../types/auth';

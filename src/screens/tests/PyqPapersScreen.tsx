@@ -34,7 +34,7 @@ import Icon from '../../components/home/Icons';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
 import { usePracticeDetail } from '../../hooks/practice/usePractice';
 import { getPaperMockMapping } from '../../services/practice/practiceService';
-import { colors, palette } from '../../theme/colors';
+import { coursesDark, colors, palette } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -63,7 +63,7 @@ interface FilterChip {
 //  Constants
 // ═══════════════════════════════════════════════════════════════════
 
-const BRAND_GREEN = '#008c3a';
+const BRAND_GREEN = coursesDark.accentPrimary;
 
 const FILTER_CHIPS: FilterChip[] = [
   { key: 'all', label: 'All' },
@@ -566,7 +566,7 @@ const styles = StyleSheet.create({
   // ── Screen ──────────────────────────────────────────────────────
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: coursesDark.base,
   },
 
   // ── Loading / Error ─────────────────────────────────────────────
@@ -578,7 +578,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     ...typography.body,
-    color: palette.slate500,
+    color: coursesDark.textMutedOnDark,
     marginTop: spacing[12],
   },
   errorText: {
@@ -598,9 +598,9 @@ const styles = StyleSheet.create({
     zIndex: 100,
     paddingBottom: spacing[12],
     paddingHorizontal: spacing[16],
-    backgroundColor: colors.surface,
+    backgroundColor: coursesDark.surfaceCard,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: coursesDark.dividerOnDark,
   },
   headerRow: {
     flexDirection: 'row',
@@ -610,11 +610,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: palette.slate100,
+    backgroundColor: coursesDark.surfaceCardDark,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing[12],
     flexShrink: 0,
+    borderWidth: 1,
+    borderColor: coursesDark.dividerOnDark,
   },
   headerTextGroup: {
     flex: 1,
@@ -623,13 +625,13 @@ const styles = StyleSheet.create({
     ...typography.title,
     fontSize: 20,
     fontWeight: '700',
-    color: '#111827',
+    color: coursesDark.textOnDark,
     lineHeight: 28,
   },
   headerSubtitle: {
     ...typography.bodySmall,
     fontSize: 13,
-    color: palette.slate500,
+    color: coursesDark.textMutedOnDark,
     lineHeight: 20,
     marginTop: 1,
   },
@@ -649,9 +651,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing[16],
     height: 48,
-    backgroundColor: '#F3F4F6',
-    borderRadius: radius.lg,
+    backgroundColor: coursesDark.surfaceElevated,
+    borderRadius: radius.full,
     marginBottom: spacing[16],
+    borderWidth: 1.5,
+    borderColor: coursesDark.dividerOnDark,
   },
   searchIconWrapper: {
     marginRight: spacing[12],
@@ -660,7 +664,7 @@ const styles = StyleSheet.create({
     flex: 1,
     ...typography.body,
     fontSize: 14,
-    color: '#111827',
+    color: coursesDark.textOnDark,
     paddingVertical: 0,
     lineHeight: 20,
   },
@@ -674,10 +678,10 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: spacing[20],
     paddingVertical: spacing[8],
-    borderRadius: radius.xxl,
-    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    backgroundColor: coursesDark.surfaceCard,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: coursesDark.dividerOnDark,
   },
   chipActive: {
     backgroundColor: BRAND_GREEN,
@@ -687,29 +691,29 @@ const styles = StyleSheet.create({
     ...typography.labelSmall,
     fontSize: 13,
     fontWeight: '500',
-    color: palette.slate500,
+    color: coursesDark.textMutedOnDark,
   },
   chipTextActive: {
-    color: colors.text.inverse,
+    color: '#FFFFFF',
   },
 
   // ── Card ────────────────────────────────────────────────────────
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: coursesDark.surfaceCard,
     borderWidth: 1,
-    borderColor: '#F0F0F0',
-    borderRadius: radius.lg + 2,
+    borderColor: coursesDark.dividerOnDark,
+    borderRadius: radius.xl,
     padding: spacing[16],
     marginBottom: spacing[16],
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.04,
+        shadowRadius: 10,
       },
       android: {
-        elevation: 1,
+        elevation: 2,
       },
     }),
   },
@@ -722,7 +726,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: radius.lg,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: coursesDark.surfaceCardDark,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing[16],
@@ -740,7 +744,7 @@ const styles = StyleSheet.create({
     ...typography.subtitle,
     fontSize: 17,
     fontWeight: '700',
-    color: '#111827',
+    color: coursesDark.textOnDark,
     lineHeight: 22,
   },
   cardYearRow: {
@@ -752,14 +756,14 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     fontSize: 14,
     fontWeight: '700',
-    color: '#111827',
+    color: coursesDark.textOnDark,
     lineHeight: 18,
   },
   officialBadge: {
     position: 'absolute',
     top: spacing[12],
     right: spacing[12],
-    backgroundColor: '#F0FDF4',
+    backgroundColor: coursesDark.surfaceCardDark,
     paddingHorizontal: spacing[8],
     paddingVertical: 3,
     borderRadius: radius.sm - 3,
@@ -787,7 +791,7 @@ const styles = StyleSheet.create({
   cardStatText: {
     ...typography.caption,
     fontSize: 12,
-    color: palette.slate400,
+    color: coursesDark.textMutedOnDark,
     lineHeight: 16,
   },
   cardActionRow: {
@@ -803,16 +807,16 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND_GREEN,
     paddingHorizontal: spacing[16],
     paddingVertical: spacing[8],
-    borderRadius: radius.xxl - 2,
+    borderRadius: radius.full,
     ...Platform.select({
       ios: {
         shadowColor: BRAND_GREEN,
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        shadowOpacity: 0.2,
+        shadowRadius: 6,
       },
       android: {
-        elevation: 4,
+        elevation: 3,
       },
     }),
   },
@@ -820,17 +824,17 @@ const styles = StyleSheet.create({
     ...typography.labelSmall,
     fontSize: 13,
     fontWeight: '700',
-    color: colors.text.inverse,
+    color: '#FFFFFF',
   },
 
   // ── Info Footer ─────────────────────────────────────────────────
   infoFooter: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#F4FAF6',
+    backgroundColor: coursesDark.surfaceCardDark,
     borderWidth: 1,
-    borderColor: '#D1FAE5',
-    borderRadius: radius.lg,
+    borderColor: coursesDark.dividerOnDark,
+    borderRadius: radius.xl,
     padding: spacing[16],
     gap: spacing[12],
   },
@@ -838,11 +842,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: radius.sm,
-    backgroundColor: colors.surface,
+    backgroundColor: coursesDark.surfaceCard,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#D1FAE5',
+    borderColor: coursesDark.dividerOnDark,
     marginTop: 1,
     flexShrink: 0,
     ...Platform.select({
@@ -864,14 +868,14 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     fontSize: 13,
     fontWeight: '700',
-    color: '#111827',
+    color: coursesDark.textOnDark,
     lineHeight: 18,
     marginBottom: 2,
   },
   infoSubtitle: {
     ...typography.caption,
     fontSize: 12,
-    color: palette.slate500,
+    color: coursesDark.textMutedOnDark,
     lineHeight: 16,
   },
 
@@ -887,6 +891,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     ...typography.body,
-    color: palette.slate400,
+    color: coursesDark.textMutedOnDark,
   },
 });

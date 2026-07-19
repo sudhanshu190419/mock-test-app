@@ -10,8 +10,11 @@
  */
 
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { shadows } from '../../theme/shadows';
+import { coursesLightM3 } from '../../theme/colors';
+import { typographyV5 } from '../../theme/typography';
+import AnimatedPressable from '../AnimatedPressable';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -51,15 +54,14 @@ const LatestResultCard = React.memo(function LatestResultCard({
       {/* Header */}
       <View style={styles.headerRow}>
         <Text style={styles.sectionTitle}>Latest Result</Text>
-        <TouchableOpacity
+        <AnimatedPressable
           onPress={onViewAllPress}
-          activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
           accessibilityLabel="View All Results"
           accessibilityRole="button"
         >
           <Text style={styles.viewAllText}>View All Results</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
 
       {/* Card */}
@@ -112,15 +114,14 @@ const LatestResultCard = React.memo(function LatestResultCard({
             </View>
 
             {/* View Result button */}
-            <TouchableOpacity
+            <AnimatedPressable
               style={styles.viewResultButton}
               onPress={onViewResult}
-              activeOpacity={0.7}
               accessibilityLabel="View Result"
               accessibilityRole="button"
             >
               <Text style={styles.viewResultText}>View Result</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </View>
       </View>
@@ -144,30 +145,28 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1E293B',
+    ...typographyV5.cardTitleHero,
+    color: coursesLightM3.textOnDark,
   },
   viewAllText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0F5132',
+    ...typographyV5.buttonLabel,
+    color: coursesLightM3.accentPrimary,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: coursesLightM3.surfaceCard,
     borderRadius: 16,
     padding: 16,
     flexDirection: 'row',
     gap: 16,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: coursesLightM3.dividerOnDark,
     ...shadows.small,
   },
   iconCircle: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#E8F5E9',
+    backgroundColor: coursesLightM3.surfaceCardDark,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -185,7 +184,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 2,
     right: 2,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: coursesLightM3.surfaceCard,
     borderRadius: 12,
     padding: 2,
     shadowColor: '#000',
@@ -203,10 +202,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   testName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-    lineHeight: 20,
+    ...typographyV5.cardTitleCompact,
+    color: coursesLightM3.textOnCard,
   },
   dateRow: {
     flexDirection: 'row',
@@ -219,9 +216,8 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   dateText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#64748B',
+    ...typographyV5.metadata,
+    color: coursesLightM3.textMutedOnCard,
   },
   statsRow: {
     flexDirection: 'row',
@@ -232,42 +228,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: '#64748B',
+    ...typographyV5.metadataSmall,
+    color: coursesLightM3.textMutedOnCard,
     marginBottom: 2,
   },
   statValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F5132',
+    ...typographyV5.ratingValue,
+    color: coursesLightM3.accentPrimary,
   },
   statValueLarge: {
+    ...typographyV5.ratingValue,
     fontSize: 14,
-    fontWeight: '700',
-    color: '#0F5132',
-    lineHeight: 18,
+    color: coursesLightM3.accentPrimary,
   },
   statValueDivider: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#94A3B8',
+    ...typographyV5.metadataSmall,
+    color: coursesLightM3.textMutedOnCard,
   },
   divider: {
     width: 1,
     height: 32,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: coursesLightM3.dividerOnDark,
   },
   viewResultButton: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: coursesLightM3.surfaceCardDark,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
     marginLeft: 'auto',
   },
   viewResultText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0F5132',
+    ...typographyV5.buttonLabelSmall,
+    color: coursesLightM3.accentPrimary,
   },
 });

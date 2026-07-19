@@ -1,107 +1,88 @@
-/**
- * CoursesScreen
- *
- * Production-optimised Courses page — loads all published courses from
- * Supabase via the `usePublishedCourses` hook.
- *
- * Search and category filtering are applied client-side on the loaded data.
- *
- * @module screens/courses/CoursesScreen
- */
-
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import {
-  View,
-  Text,
+  Dimensions,
+  Platform,
+  RefreshControl,
   ScrollView,
+  StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  Platform,
-  ActivityIndicator,
+  View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-
-import CourseCard from '../../components/courses/CourseCard';
-import Icon from '../../components/home/Icons';
-import { usePublishedCourses } from '../../hooks/home/useCourses';
-import type { CourseItem, CourseCategory, CourseBadgeType, CourseStats } from '../../components/home/types';
-import type { TrendingCourse } from '../../types/home';
-import type { AppStackParamList } from '../../navigation/AppNavigator';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors } from '../../theme/colors';
+import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, withTiming, FadeInDown, Layout } from 'react-native-reanimated';
+
+// Component imports
+import CategoryChipStrip from '../../components/courses/CategoryChipStrip';
+import SortPillsRow, { type SortOptionValue } from '../../components/courses/SortPillsRow';
+import CoursesSectionHeader from '../../components/courses/CoursesSectionHeader';
+import CourseCard from '../../components/courses/CourseCard';
+import CourseCardCompact from '../../components/courses/CourseCardCompact';
+import EnrolledCourseCard from '../../components/courses/EnrolledCourseCard';
+import CourseHeroCarousel from '../../components/courses/CourseHeroCarousel';
+import CoursesSkeleton from '../../components/courses/CoursesSkeleton';
+import CoursesEmptyState from '../../components/courses/CoursesEmptyState';
+import Icon from '../../components/home/Icons';
+
+// Theme imports
+import { coursesDark } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 
-// ─── Constants ──────────────────────────────────────────────────────────────
+// Auth and Service hooks
+import { useAppSelector } from '../../store/hooks';
+import { selectUser } from '../../store/authSlice';
+import { usePublishedCourses } from '../../hooks/home/useCourses';
+import { useEnrolledCourses } from '../../hooks/home/useEnrolledCourses';
+import { getCourseProgress } from '../../utils/courseProgress';
+import type { TrendingCourse } from '../../types/home';
+import type { AppStackParamList } from '../../navigation/AppNavigator';
 
-interface CategoryChip {
-  key: string;
-  label: string;
-  filterCategory: CourseCategory | null;
+const { width } = Dimensions.get('window');
+
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+
+// Category mapping helper (maps chip group filterValues to course category field values)
+function matchesCategoryFilter(courseCategory: string, filterValue: string | null): boolean {
+  if (!filterValue) return true;
+  const courseCat = courseCategory.toLowerCase();
+  const filter = filterValue.toLowerCase();
+  
+  if (filter === 'school') {
+    return courseCat.includes('class') || courseCat.includes('school');
+  }
+  return courseCat.includes(filter);
 }
-
-const CATEGORIES: CategoryChip[] = [
-  { key: 'all', label: 'All', filterCategory: null },
-  { key: 'engineering', label: 'Engineering', filterCategory: 'JEE' },
-  { key: 'medical', label: 'Medical', filterCategory: 'NEET' },
-  { key: 'school', label: 'School', filterCategory: 'Class 10' },
-  { key: 'law-others', label: 'Law & Others', filterCategory: 'CLAT' },
-];
-
-// ─── Mapping Helper ─────────────────────────────────────────────────────────
-
-/**
- * Map a backend `TrendingCourse` to the UI-facing `CourseItem`.
- */
-function mapTrendingCourseToCourseItem(course: TrendingCourse): CourseItem {
-  const hasDiscount = course.originalPrice > course.price;
-  const discountPercent = hasDiscount
-    ? Math.round((1 - course.price / course.originalPrice) * 100)
-    : 0;
-
-  const stats: CourseStats = {
-    duration: course.duration ? `${course.duration} Days` : 'Self-paced',
-    hasLiveClasses: false,
-    hasRecorded: false,
-  };
-
-  const badgeType: CourseBadgeType = course.isBestSeller
-    ? 'Best Seller'
-    : 'Popular';
-
-  return {
-    key: course.courseId,
-    title: course.title,
-    subtitle: course.category,
-    description: course.description,
-    category: course.category as CourseCategory,
-    badgeLabel: course.isBestSeller ? 'Best Seller' : 'Featured',
-    badgeType,
-    stats,
-    price: course.price,
-    originalPrice: course.originalPrice > course.price ? course.originalPrice : undefined,
-    discountLabel: hasDiscount ? `${discountPercent}% Off` : undefined,
-  };
-}
-
-// ─── Reusable hitSlop objects ───────────────────────────────────────────────
-
-const CLEAR_BUTTON_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 } as const;
-
-// ─── Screen ─────────────────────────────────────────────────────────────────
 
 export default function CoursesScreen(): React.JSX.Element {
-  const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
-  const [activeCategory, setActiveCategory] = useState<CourseCategory | null>(null);
+  const user = useAppSelector(selectUser);
+
+  // States
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeSort, setActiveSort] = useState<SortOptionValue>('popular');
   const [searchText, setSearchText] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isFilterPanelExpanded, setIsFilterPanelExpanded] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
 
-  // ── Fetch courses from Supabase ───────────────────────────────
+  // Reanimated Shared Values
+  const scrollY = useSharedValue(0);
+  const filterHeight = useSharedValue(0);
+  const filterOpacity = useSharedValue(0);
+
+  // Toggle collapsible filter panel
+  useEffect(() => {
+    filterHeight.value = withTiming(isFilterPanelExpanded ? 112 : 0, { duration: 200 });
+    filterOpacity.value = withTiming(isFilterPanelExpanded ? 1 : 0, { duration: 200 });
+  }, [isFilterPanelExpanded]);
+
+  // Data fetching
   const {
     data: coursesData,
     isLoading,
@@ -109,20 +90,56 @@ export default function CoursesScreen(): React.JSX.Element {
     refetch,
   } = usePublishedCourses({ page: 1, pageSize: 50 });
 
-  console.log('[COURSES_SCREEN] Courses loaded:', coursesData?.data?.length ?? 0);
+  const { data: enrolledCourses, refetch: refetchEnrolled } = useEnrolledCourses(user?.id);
 
-  // ── Map to CourseItem[] once ──────────────────────────────────
-  const allCourses = useMemo<CourseItem[]>(() => {
-    const backendData = coursesData?.data ?? [];
-    return backendData.map((course) => mapTrendingCourseToCourseItem(course));
+  // Handle manual pull-to-refresh
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refetch(), refetchEnrolled()]);
+    setRefreshing(false);
+  }, [refetch, refetchEnrolled]);
+
+  const allCourses = useMemo<TrendingCourse[]>(() => {
+    return coursesData?.data ?? [];
   }, [coursesData]);
 
-  // ── Derived data ─────────────────────────────────────────────
-  const filteredCourses = useMemo(() => {
-    let list = allCourses;
+  // Enrolled courses progress states
+  const [enrolledWithProgress, setEnrolledWithProgress] = useState<Array<TrendingCourse & { progress: number }>>([]);
+
+  useEffect(() => {
+    if (user?.id && enrolledCourses && enrolledCourses.length > 0) {
+      let active = true;
+      const fetchProgresses = async () => {
+        const enriched = await Promise.all(
+          enrolledCourses.map(async (course) => {
+            const p = await getCourseProgress(user.id, course.courseId);
+            return { ...course, progress: p || 15 };
+          })
+        );
+        if (active) {
+          setEnrolledWithProgress(enriched);
+        }
+      };
+      fetchProgresses();
+      return () => {
+        active = false;
+      };
+    } else {
+      setEnrolledWithProgress([]);
+    }
+  }, [user?.id, enrolledCourses]);
+
+  // 1. Featured Courses
+  const featuredCourses = useMemo(() => {
+    return allCourses.filter((c) => c.isBestSeller);
+  }, [allCourses]);
+
+  // 2. Filter & Sort Main courses
+  const processedCourses = useMemo(() => {
+    let list = [...allCourses];
 
     if (activeCategory) {
-      list = list.filter((c) => c.category === activeCategory);
+      list = list.filter((c) => matchesCategoryFilter(c.category, activeCategory));
     }
 
     if (searchText.trim()) {
@@ -130,446 +147,500 @@ export default function CoursesScreen(): React.JSX.Element {
       list = list.filter(
         (c) =>
           c.title.toLowerCase().includes(query) ||
-          c.subtitle.toLowerCase().includes(query) ||
           c.description.toLowerCase().includes(query) ||
-          c.category.toLowerCase().includes(query),
+          c.category.toLowerCase().includes(query) ||
+          (c.instructor && c.instructor.toLowerCase().includes(query))
       );
     }
 
-    return list;
-  }, [allCourses, activeCategory, searchText]);
+    list.sort((a, b) => {
+      switch (activeSort) {
+        case 'price_asc':
+          return a.price - b.price;
+        case 'price_desc':
+          return b.price - a.price;
+        case 'newest':
+          return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+        case 'duration':
+          return (b.duration || 0) - (a.duration || 0);
+        case 'popular':
+        default:
+          return b.totalStudents - a.totalStudents;
+      }
+    });
 
-  // ── Navigation helper ────────────────────────────────────────
-  const navigateToDetail = useCallback(
+    return list;
+  }, [allCourses, activeCategory, searchText, activeSort]);
+
+  // Spotlight card is the first item of processed list
+  const spotlightCourse = useMemo(() => {
+    return processedCourses.length > 0 ? processedCourses[0] : null;
+  }, [processedCourses]);
+
+  // Grid courses are the remaining items
+  const gridCourses = useMemo(() => {
+    return processedCourses.length > 1 ? processedCourses.slice(1) : [];
+  }, [processedCourses]);
+
+  // Recommended courses
+  const recommendedCourses = useMemo(() => {
+    if (!user || !user.id) return [];
+    const enrolledIds = new Set((enrolledCourses || []).map((c) => c.courseId));
+    return allCourses.filter((c) => !enrolledIds.has(c.courseId)).slice(0, 5);
+  }, [allCourses, enrolledCourses, user]);
+
+  const handleCoursePress = useCallback(
     (courseId: string) => {
-      console.log('[COURSES_SCREEN] Navigating to course detail:', courseId);
       navigation.navigate('CourseDetail', { courseId });
     },
-    [navigation],
+    [navigation]
   );
-
-  // ── Stable handlers ──────────────────────────────────────────
-  const handleSearchFocus = useCallback(() => setIsSearchFocused(true), []);
-  const handleSearchBlur = useCallback(() => setIsSearchFocused(false), []);
 
   const handleClearSearch = useCallback(() => {
     setSearchText('');
     searchInputRef.current?.blur();
   }, []);
 
-  const handleCategoryPress = useCallback(
-    (category: CourseCategory | null) =>
-      setActiveCategory((prev) => (prev === category ? null : category)),
-    [],
-  );
+  // Reanimated Scroll Handler
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+    },
+  });
 
-  // ── Stable content container style ───────────────────────────
-  const contentContainerStyle = useMemo(
-    () => ({
-      paddingBottom: insets.bottom + spacing[24],
-    }),
-    [insets.bottom],
-  );
+  const baseColor = coursesDark.base;
+  const dividerColor = coursesDark.dividerOnDark;
+
+  // Animated styles for sticky header wrapper shadow and color
+  const stickyHeaderAnimatedStyle = useAnimatedStyle(() => {
+    const isScrolled = scrollY.value > 50;
+    return {
+      backgroundColor: withTiming(isScrolled ? '#FFFFFF' : baseColor, { duration: 150 }),
+      borderBottomWidth: withTiming(isScrolled ? 1 : 0, { duration: 150 }),
+      borderBottomColor: dividerColor,
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: withTiming(isScrolled ? 0.05 : 0, { duration: 150 }),
+      shadowRadius: 8,
+      elevation: withTiming(isScrolled ? 3 : 0, { duration: 150 }),
+    };
+  });
+
+  // Collapsible panel heights/opacities
+  const filterPanelAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      height: filterHeight.value,
+      opacity: filterOpacity.value,
+    };
+  });
 
   return (
     <SafeAreaView edges={['top']} style={styles.screen}>
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         stickyHeaderIndices={[1]}
-        contentContainerStyle={contentContainerStyle}
-        bounces
-        overScrollMode="never"
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={coursesDark.accentPrimary}
+            colors={[coursesDark.accentPrimary]}
+          />
+        }
       >
-        {/* ═══ Index 0: App Bar ═══ */}
-        <View style={styles.appBar}>
-          <TouchableOpacity
-            onPress={navigation.goBack}
-            style={styles.appBarLeft}
-            activeOpacity={0.7}
-            accessibilityLabel="Go back"
-            accessibilityRole="button"
-          >
-            <Icon name="arrow-left" color={colors.text.primary} width={22} height={22} />
-          </TouchableOpacity>
-
-          <View style={styles.appBarCenter}>
-            <Text style={styles.appBarTitle}>Courses</Text>
-            <Text style={styles.appBarSubtitle} numberOfLines={1}>
-              Explore courses and find the perfect batch for your goals.
-            </Text>
-          </View>
-
-          <View style={styles.myLearningButton}>
-            <Icon name="bookmark" color={colors.secondary} width={18} height={18} />
-            <Text style={styles.myLearningText}>My Learning</Text>
-          </View>
+        {/* ═══ Header Title Zone (Scrolls away) ═══ */}
+        <View style={styles.staticHeader}>
+          <Text style={styles.headerTitle}>Courses</Text>
+          <Text style={styles.headerSubtitle}>Find your perfect prep batch</Text>
         </View>
 
-        {/* ═══ Index 1: Search + Chips — sticky ═══ */}
+        {/* ═══ Unified Sticky Search & Collapsible Panel Wrapper ═══ */}
         <View style={styles.stickyHeaderWrapper}>
-          {/* Search Row */}
-          <View style={styles.searchRow}>
-            <View
-              style={[
-                styles.searchContainer,
-                isSearchFocused && styles.searchContainerFocused,
-              ]}
-            >
-              <Icon
-                name="search"
-                color={isSearchFocused ? colors.secondary : colors.text.secondary}
-                width={18}
-                height={18}
+          <Animated.View style={[styles.stickyHeaderInner, stickyHeaderAnimatedStyle]}>
+            <View style={styles.searchRow}>
+              {/* Unified Search Input */}
+              <View
+                style={[
+                  styles.searchContainer,
+                  isSearchFocused && styles.searchContainerFocused,
+                ]}
+              >
+                <Icon
+                  name="search"
+                  color={isSearchFocused ? coursesDark.accentPrimary : coursesDark.textMutedOnDark}
+                  width={18}
+                  height={18}
+                />
+                <TextInput
+                  ref={searchInputRef}
+                  style={styles.searchInput}
+                  placeholder="Search courses, subjects, tutors..."
+                  placeholderTextColor={coursesDark.textMutedOnDark}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
+                  returnKeyType="search"
+                  autoCorrect={false}
+                />
+                {searchText.length > 0 && (
+                  <TouchableOpacity
+                    onPress={handleClearSearch}
+                    style={styles.clearButton}
+                  >
+                    <Icon name="x-circle" color={coursesDark.textMutedOnDark} width={16} height={16} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Unified Collapsible Panel Toggle Button */}
+              <TouchableOpacity
+                style={[
+                  styles.filterButtonInline,
+                  isFilterPanelExpanded && styles.filterButtonInlineActive,
+                ]}
+                activeOpacity={0.8}
+                onPress={() => setIsFilterPanelExpanded(!isFilterPanelExpanded)}
+              >
+                <Icon
+                  name="filter"
+                  color={isFilterPanelExpanded ? '#FFFFFF' : coursesDark.accentPrimary}
+                  width={18}
+                  height={18}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Collapsible Panel */}
+            <Animated.View style={[styles.filterPanel, filterPanelAnimatedStyle]}>
+              <CategoryChipStrip
+                activeCategory={activeCategory}
+                onCategorySelect={setActiveCategory}
               />
-              <TextInput
-                ref={searchInputRef}
-                style={styles.searchInput}
-                placeholder="Search courses, subjects..."
-                placeholderTextColor={colors.text.secondary}
-                value={searchText}
-                onChangeText={setSearchText}
-                onFocus={handleSearchFocus}
-                onBlur={handleSearchBlur}
-                returnKeyType="search"
-                autoCorrect={false}
-                accessibilityLabel="Search courses and subjects"
+              <SortPillsRow
+                activeSort={activeSort}
+                onSortSelect={setActiveSort}
               />
-              {searchText.length > 0 && (
-                <TouchableOpacity
-                  onPress={handleClearSearch}
-                  style={styles.clearButton}
-                  activeOpacity={0.7}
-                  hitSlop={CLEAR_BUTTON_HIT_SLOP}
-                  accessibilityLabel="Clear search"
-                  accessibilityRole="button"
+            </Animated.View>
+          </Animated.View>
+        </View>
+
+        {/* ═══ Content loading / empty / main view ═══ */}
+        {isLoading ? (
+          <CoursesSkeleton variant="all" />
+        ) : error ? (
+          <CoursesEmptyState
+            variant="error"
+            title="Unable to load courses"
+            description="There was a connection issue loading the course catalog. Please check your network and try again."
+            buttonText="Try Again"
+            onButtonPress={handleRefresh}
+          />
+        ) : allCourses.length === 0 ? (
+          <CoursesEmptyState
+            title="No Courses Available"
+            description="Check back later! We are currently uploading awesome new test preparation programs."
+          />
+        ) : (
+          <View style={styles.contentContainer}>
+            {/* 1. Hero Carousel (Featured courses) */}
+            {featuredCourses.length > 0 && !searchText && !activeCategory && (
+              <View style={styles.sectionContainer}>
+                <CoursesSectionHeader title="Spotlight Batches" emoji="🔥" />
+                <CourseHeroCarousel
+                  courses={featuredCourses}
+                  onCoursePress={handleCoursePress}
+                />
+              </View>
+            )}
+
+            {/* 2. My Courses row (Enrolled) */}
+            {enrolledWithProgress.length > 0 && !searchText && !activeCategory && (
+              <View style={styles.sectionContainer}>
+                <CoursesSectionHeader title="My Active Batches" emoji="⚡" />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.enrolledScroll}
                 >
-                  <View style={styles.clearIcon}>
-                    <Text style={styles.clearIconText}>✕</Text>
-                  </View>
-                </TouchableOpacity>
+                  {enrolledWithProgress.map((course) => (
+                    <EnrolledCourseCard
+                      key={course.courseId}
+                      courseId={course.courseId}
+                      title={course.title}
+                      category={course.category}
+                      progressPercent={course.progress}
+                      onPress={() => handleCoursePress(course.courseId)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* 3. Recommended for you */}
+            {recommendedCourses.length > 0 && !searchText && !activeCategory && (
+              <View style={styles.sectionContainer}>
+                <CoursesSectionHeader title="Recommended Prep" emoji="🎯" />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.recommendedScroll}
+                >
+                  {recommendedCourses.map((item) => (
+                    <View key={item.courseId} style={styles.gridCardWrapper}>
+                      <CourseCardCompact
+                        courseId={item.courseId}
+                        title={item.title}
+                        category={item.category}
+                        price={item.price}
+                        originalPrice={item.originalPrice}
+                        imageUrl={item.imageUrl}
+                        onPress={() => handleCoursePress(item.courseId)}
+                      />
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* 4. All Courses catalog */}
+            <View style={styles.sectionContainer}>
+              <CoursesSectionHeader
+                title={searchText || activeCategory ? 'Filtered Batches' : 'Browse All Batches'}
+                emoji="📚"
+              />
+
+              {processedCourses.length === 0 ? (
+                <CoursesEmptyState
+                  title="No matches found"
+                  description="We couldn't find any batches matching your criteria. Try resetting your search query or filters."
+                  buttonText="Clear Filters"
+                  onButtonPress={() => {
+                    setActiveCategory(null);
+                    setSearchText('');
+                  }}
+                />
+              ) : (
+                <View style={styles.catalogContainer}>
+                  {/* Spotlight Large Card */}
+                  {spotlightCourse && (
+                    <Animated.View layout={Layout.duration(200)}>
+                      <CourseCard
+                        key={spotlightCourse.courseId}
+                        courseId={spotlightCourse.courseId}
+                        title={spotlightCourse.title}
+                        description={spotlightCourse.description}
+                        category={spotlightCourse.category}
+                        instructor={spotlightCourse.instructor}
+                        rating={spotlightCourse.rating || 4.8}
+                        totalStudents={spotlightCourse.totalStudents}
+                        price={spotlightCourse.price}
+                        originalPrice={spotlightCourse.originalPrice}
+                        duration={spotlightCourse.duration}
+                        imageUrl={spotlightCourse.imageUrl}
+                        onPress={() => handleCoursePress(spotlightCourse.courseId)}
+                      />
+                    </Animated.View>
+                  )}
+
+                  {/* Dynamic 2-column grid of compact cards */}
+                  {gridCourses.length > 0 && (
+                    <View style={styles.gridCatalog}>
+                      {gridCourses.map((course, idx) => (
+                        <Animated.View
+                          key={course.courseId}
+                          entering={FadeInDown.delay(idx * 50).duration(200)}
+                          layout={Layout.duration(200)}
+                          style={styles.gridCardWrapper}
+                        >
+                          <CourseCardCompact
+                            courseId={course.courseId}
+                            title={course.title}
+                            category={course.category}
+                            price={course.price}
+                            originalPrice={course.originalPrice}
+                            imageUrl={course.imageUrl}
+                            onPress={() => handleCoursePress(course.courseId)}
+                          />
+                        </Animated.View>
+                      ))}
+                    </View>
+                  )}
+                </View>
               )}
             </View>
-
-            <TouchableOpacity
-              style={styles.filterButton}
-              activeOpacity={0.7}
-              accessibilityLabel="Filter courses"
-              accessibilityRole="button"
-            >
-              <Icon name="filter" color={colors.text.inverse} width={18} height={18} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Category Chips */}
-          <View style={styles.chipsContent}>
-            {CATEGORIES.map((item) => {
-              const isActive = activeCategory === item.filterCategory;
-              return (
-                <TouchableOpacity
-                  key={item.key}
-                  onPress={() => handleCategoryPress(item.filterCategory)}
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  activeOpacity={0.75}
-                  accessibilityLabel={`${item.label} courses`}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isActive }}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* ═══ Index 2+: Loading / Error / Course Cards ═══ */}
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.secondary} />
-            <Text style={styles.loadingText}>Loading courses…</Text>
-          </View>
-        ) : error ? (
-          <View style={styles.errorContainer}>
-            <View style={styles.errorIconWrap}>
-              <Icon name="alert-triangle" color="#DC2626" width={40} height={40} />
-            </View>
-            <Text style={styles.errorTitle}>Could not load courses</Text>
-            <Text style={styles.errorText}>
-              {error instanceof Error ? error.message : 'An error occurred while loading courses.'}
-            </Text>
-            <TouchableOpacity
-              onPress={() => refetch()}
-              style={styles.retryButton}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.retryButtonText}>Try Again</Text>
-            </TouchableOpacity>
-          </View>
-        ) : filteredCourses.length > 0 ? (
-          filteredCourses.map((item) => {
-            const { key, ...courseProps } = item;
-            return (
-              <CourseCard
-                key={key}
-                {...courseProps}
-                onPress={() => navigateToDetail(key)}
-              />
-            );
-          })
-        ) : (
-          <View style={styles.emptyState}>
-            <Icon name="book-open" color={colors.disabled} width={48} height={48} />
-            <Text style={styles.emptyTitle}>No courses found</Text>
-            <Text style={styles.emptyText}>
-              Try adjusting your search or filter to discover courses.
-            </Text>
           </View>
         )}
-      </ScrollView>
+        <View style={styles.bottomSpacer} />
+      </Animated.ScrollView>
+
+      {/* Floating My Learning Action FAB Button */}
+      {enrolledWithProgress.length > 0 && (
+        <AnimatedTouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => {
+            refetchEnrolled();
+          }}
+          style={styles.floatingFab}
+          entering={FadeInDown.delay(400).duration(200)}
+        >
+          <Icon name="bookmark" color="#FFFFFF" width={16} height={16} />
+          <Text style={styles.fabText}>My Learning</Text>
+        </AnimatedTouchableOpacity>
+      )}
     </SafeAreaView>
   );
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: coursesDark.base,
   },
-
-  // ── App Bar ──────────────────────────────────────────────────
-  appBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  staticHeader: {
     paddingHorizontal: spacing[16],
-    paddingTop: spacing[8],
-    paddingBottom: spacing[16],
-  },
-  appBarLeft: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing[12],
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 4,
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  appBarCenter: {
-    flex: 1,
-  },
-  appBarTitle: {
-    ...typography.title,
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.text.primary,
-    lineHeight: 28,
-  },
-  appBarSubtitle: {
-    ...typography.bodySmall,
-    fontSize: 12,
-    color: colors.text.secondary,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-  myLearningButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[4],
-    backgroundColor: colors.tint.blue,
-    paddingHorizontal: spacing[12],
-    paddingVertical: spacing[8],
-    borderRadius: radius.xxl,
-    marginLeft: spacing[8],
-  },
-  myLearningText: {
-    ...typography.labelSmall,
-    fontSize: 11,
-    color: colors.secondary,
-    fontWeight: '600',
-  },
-
-  // ── Loading ──────────────────────────────────────────────────
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: spacing[48],
-    gap: spacing[12],
-  },
-  loadingText: {
-    ...typography.body,
-    fontSize: 14,
-    color: colors.text.secondary,
-  },
-
-  // ── Error ────────────────────────────────────────────────────
-  errorContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: spacing[48],
-    paddingHorizontal: spacing[32],
-    gap: spacing[8],
-  },
-  errorIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing[8],
-  },
-  errorTitle: {
-    ...typography.title,
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text.primary,
-    textAlign: 'center',
-  },
-  errorText: {
-    ...typography.body,
-    fontSize: 14,
-    color: colors.text.secondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing[24],
-    paddingVertical: spacing[12],
-    borderRadius: radius.md,
-    backgroundColor: colors.secondary,
-    marginTop: spacing[8],
-  },
-  retryButtonText: {
-    ...typography.button,
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text.inverse,
-  },
-
-  // ── Sticky Header Wrapper ────────────────────────────────────
-  stickyHeaderWrapper: {
-    backgroundColor: colors.background,
+    paddingTop: spacing[16],
     paddingBottom: spacing[12],
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    marginBottom: spacing[8],
+    backgroundColor: coursesDark.base,
   },
-
-  // ── Search ───────────────────────────────────────────────────
+  headerTitle: {
+    ...typography.heroTitle,
+    color: coursesDark.textOnDark,
+    lineHeight: 34,
+  },
+  headerSubtitle: {
+    ...typography.bodySmall,
+    color: coursesDark.textMutedOnDark,
+    fontSize: 13,
+    marginTop: spacing[4],
+  },
+  stickyHeaderWrapper: {
+    backgroundColor: 'transparent',
+  },
+  stickyHeaderInner: {
+    paddingVertical: spacing[8],
+    backgroundColor: coursesDark.base,
+  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing[16],
-    paddingBottom: spacing[12],
-    gap: spacing[12],
+    gap: spacing[8],
+  },
+  backButtonInline: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.full,
+    backgroundColor: coursesDark.surfaceCardDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: coursesDark.dividerOnDark,
   },
   searchContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    paddingHorizontal: spacing[16],
-    paddingVertical: spacing[12],
+    backgroundColor: coursesDark.surfaceElevated,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing[12],
+    height: 42,
     borderWidth: 1.5,
-    borderColor: colors.border,
-    gap: spacing[12],
+    borderColor: coursesDark.dividerOnDark,
+    gap: spacing[8],
   },
   searchContainerFocused: {
-    borderColor: colors.secondary,
+    borderColor: coursesDark.accentPrimary,
   },
   searchInput: {
     ...typography.body,
     flex: 1,
-    color: colors.text.primary,
+    color: coursesDark.textOnDark,
     paddingVertical: 0,
     fontSize: 14,
   },
   clearButton: {
-    padding: 2,
+    padding: spacing[4],
   },
-  clearIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.border,
+  filterButtonInline: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.full,
+    backgroundColor: coursesDark.surfaceCardDark,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: coursesDark.dividerOnDark,
   },
-  clearIconText: {
-    fontSize: 10,
-    color: colors.text.secondary,
-    fontWeight: '700',
+  filterButtonInlineActive: {
+    backgroundColor: coursesDark.accentPrimary,
+    borderColor: coursesDark.accentPrimary,
   },
-  filterButton: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.xl,
-    backgroundColor: colors.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
+  filterPanel: {
+    overflow: 'hidden',
+    marginTop: spacing[4],
   },
-
-  // ── Category Chips ───────────────────────────────────────────
-  chipsContent: {
-    flexDirection: 'row',
+  contentContainer: {
+    paddingBottom: spacing[24],
+  },
+  sectionContainer: {
+    marginBottom: spacing[8],
+  },
+  enrolledScroll: {
     paddingHorizontal: spacing[16],
     gap: spacing[8],
+    paddingBottom: spacing[8],
   },
-  chip: {
+  recommendedScroll: {
+    paddingHorizontal: spacing[16],
+    gap: spacing[8],
+    paddingBottom: spacing[8],
+  },
+  gridCardWrapper: {
+    width: (width - 16 - 16 - 12) / 2,
+  },
+  catalogContainer: {
+    marginTop: spacing[4],
+  },
+  gridCatalog: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: spacing[16],
+    justifyContent: 'space-between',
+    rowGap: spacing[12],
+  },
+  bottomSpacer: {
+    height: 100,
+  },
+  floatingFab: {
+    position: 'absolute',
+    bottom: spacing[24],
+    right: spacing[16],
+    backgroundColor: coursesDark.accentPrimary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[8],
     paddingHorizontal: spacing[16],
     paddingVertical: spacing[12],
-    borderRadius: radius.xxl,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+    borderRadius: radius.full,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  chipActive: {
-    backgroundColor: colors.secondary,
-    borderColor: colors.secondary,
-  },
-  chipText: {
-    ...typography.labelSmall,
-    fontSize: 13,
-    color: colors.text.secondary,
-    fontWeight: '600',
-  },
-  chipTextActive: {
-    color: colors.text.inverse,
+  fabText: {
+    ...typography.caption,
+    color: '#FFFFFF',
     fontWeight: '700',
-  },
-
-  // ── Empty State ──────────────────────────────────────────────
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: spacing[48],
-    paddingHorizontal: spacing[32],
-  },
-  emptyTitle: {
-    ...typography.subtitle,
-    color: colors.text.primary,
-    marginTop: spacing[16],
-    fontWeight: '700',
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.text.secondary,
-    textAlign: 'center',
-    marginTop: spacing[8],
+    fontSize: 11,
   },
 });

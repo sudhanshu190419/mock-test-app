@@ -19,6 +19,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import MainTabNavigator from './MainTabNavigator';
 import TestDashboardScreen from '../screens/tests/TestDashboardScreen';
 import CourseDetailScreen from '../screens/courses/CourseDetailScreen';
+import CoursesScreen from '../screens/courses/CoursesScreen';
 import MyStreamCoursesScreen from '../screens/courses/MyStreamCoursesScreen';
 import PyqPapersScreen from '../screens/tests/PyqPapersScreen';
 import ExamPackDetailScreen from '../screens/tests/ExamPackDetailScreen';
@@ -30,6 +31,14 @@ import MyResultsScreen from '../screens/tests/MyResultsScreen';
 import AnswerReviewScreen from '../screens/tests/AnswerReviewScreen';
 import AnswerReviewDetailScreen from '../screens/tests/AnswerReviewDetailScreen';
 import NotificationScreen from '../screens/NotificationScreen';
+import CalendarScreen from '../screens/home/CalendarScreen';
+import DetailedAnalyticsScreen from '../screens/profile/DetailedAnalyticsScreen';
+import PersonalInfoScreen from '../screens/profile/PersonalInfoScreen';
+import PaymentHistoryScreen from '../screens/profile/PaymentHistoryScreen';
+import DownloadsScreen from '../screens/profile/DownloadsScreen';
+import NotificationSettingsModal from '../screens/profile/NotificationSettingsModal';
+import HelpSupportModal from '../screens/profile/HelpSupportModal';
+import TimetableScreen from '../screens/home/TimetableScreen';
 
 // DEV ONLY - Remove after frontend integration
 import DevNavigator from './DevNavigator';
@@ -72,6 +81,14 @@ export type AppStackParamList = {
   MyResults: undefined;
   AnswerReview: AnswerReviewParams;
   AnswerReviewDetail: AnswerReviewDetailParams;
+  Calendar: undefined;
+  DetailedAnalytics: undefined;
+  PersonalInfo: undefined;
+  PaymentHistory: undefined;
+  Downloads: undefined;
+  NotificationSettings: undefined;
+  HelpSupport: undefined;
+  Timetable: undefined;
   // DEV ONLY - Remove after frontend integration
   DevHub: undefined;
 };
@@ -224,6 +241,71 @@ export default function AppNavigator(): React.JSX.Element {
           animationDuration: SCREEN_TRANSITION_DURATION,
         }}
       />
+
+      <Stack.Screen
+        name="Calendar"
+        component={CalendarScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="DetailedAnalytics"
+        component={DetailedAnalyticsScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="PersonalInfo"
+        component={PersonalInfoScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="PaymentHistory"
+        component={PaymentHistoryScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="Downloads"
+        component={DownloadsScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="NotificationSettings"
+        component={NotificationSettingsModal}
+        options={{
+          headerShown: false,
+          presentation: 'modal',
+        }}
+      />
+
+      <Stack.Screen
+        name="HelpSupport"
+        component={HelpSupportModal}
+        options={{
+          headerShown: false,
+          presentation: 'modal',
+        }}
+      />
+
+      <Stack.Screen name="Timetable" component={TimetableScreen} />
 
       {/* DEV ONLY - Remove after frontend integration */}
       <Stack.Screen

@@ -73,3 +73,8 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+app_layer.docx
+
+PRODUCT.md 
+docs/

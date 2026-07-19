@@ -129,4 +129,8 @@ export interface CourseDetail {
   difficultyLevel?: string;
   /** Course duration in days. */
   duration?: number | null;
+  /** Course thumbnail image path/url */
+  imageUrl?: string | null;
+  /** Course banner image path/url */
+  bannerPath?: string | null;
 }

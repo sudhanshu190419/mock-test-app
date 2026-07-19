@@ -25,7 +25,7 @@
  */
 
 import { Platform } from 'react-native';
-import messaging from '@react-native-firebase/messaging';
+import messaging, { onTokenRefresh } from '@react-native-firebase/messaging';
 import { supabase } from '../../config/supabase';
 import { getToken } from './fcmService';
 
@@ -179,7 +179,7 @@ export async function deactivateDeviceToken(profileId: string): Promise<void> {
  * ```
  */
 export function setupTokenRefresh(profileId: string): () => void {
-  const unsubscribe = messaging().onTokenRefresh(async (newToken: string) => {
+  const unsubscribe = onTokenRefresh(messaging(), async (newToken: string) => {
     console.log(`${TAG} Token refreshed`);
 
     try {
