@@ -2,36 +2,56 @@
  * LiveClassesTabScreen
  *
  * Placeholder screen for the Live Classes tab.
- * Will be replaced with the full implementation later.
+ * Will be replaced with the full Live Classes implementation later.
+ *
+ * For Phase 1 POC, provides a button to join a LiveKit test room.
  *
  * @module screens/tabs/LiveClassesTabScreen
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Icon from '../../components/home/Icons';
+import type { AppStackParamList } from '../../navigation/AppNavigator';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
+import { radius } from '../../theme/radius';
+
+type LiveTabNavProp = NativeStackNavigationProp<AppStackParamList>;
 
 export default function LiveClassesTabScreen(): React.JSX.Element {
-  const handleNotifyPress = () => {
-    Alert.alert('Live Classes', 'We will notify you when Live Classes are launched!');
+  const navigation = useNavigation<LiveTabNavProp>();
+
+  const handleJoinRoom = () => {
+    navigation.navigate('JoinRoom');
   };
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.content}>
-        <View style={styles.iconCircle}>
-          <Icon name="video" color={colors.sky.primary} width={40} height={40} />
-        </View>
-        <Text style={styles.title}>Live Interactive Classes</Text>
-        <Text style={styles.subtitle}>
-          Interactive live sessions with top educators and real-time doubt solving are coming soon!
+        <Icon name="play-circle" color={colors.disabled} width={48} height={48} />
+        <Text style={styles.title}>Live Classes</Text>
+        <Text style={styles.subtitle}>Coming soon</Text>
+
+        {/* LiveKit POC — Phase 1 entry point */}
+        <View style={styles.divider} />
+
+        <Text style={styles.pocLabel}>📡 LiveKit POC</Text>
+        <Text style={styles.pocDescription}>
+          Test audio/video streaming by joining a room with another device.
         </Text>
-        <TouchableOpacity style={styles.button} onPress={handleNotifyPress} activeOpacity={0.8}>
-          <Text style={styles.buttonText}>Notify Me</Text>
+
+        <TouchableOpacity
+          style={styles.joinButton}
+          onPress={handleJoinRoom}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.joinButtonIcon}>🎥</Text>
+          <Text style={styles.joinButtonText}>Join LiveKit Room</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -47,45 +67,59 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing[32],
-    gap: spacing[16],
-  },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.sky.tint,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing[8],
+    gap: spacing[12],
+    paddingHorizontal: spacing[24],
   },
   title: {
     ...typography.title,
     color: colors.text.primary,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontWeight: '700',
   },
   subtitle: {
     ...typography.body,
     color: colors.text.secondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: spacing[8],
   },
-  button: {
-    backgroundColor: colors.sky.primary,
-    paddingVertical: spacing[12],
-    paddingHorizontal: spacing[24],
-    borderRadius: 24,
-    shadowColor: colors.sky.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+  divider: {
+    width: '60%',
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing[8],
   },
-  buttonText: {
-    ...typography.button,
-    color: colors.text.inverse,
+  pocLabel: {
+    fontSize: 14,
     fontWeight: '700',
+    color: '#6C63FF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  pocDescription: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  joinButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[8],
+    backgroundColor: '#6C63FF',
+    borderRadius: radius.md,
+    paddingVertical: spacing[16],
+    paddingHorizontal: spacing[24],
+    width: '100%',
+    shadowColor: '#6C63FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  joinButtonIcon: {
+    fontSize: 18,
+  },
+  joinButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

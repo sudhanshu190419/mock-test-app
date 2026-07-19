@@ -40,6 +40,11 @@ import NotificationSettingsModal from '../screens/profile/NotificationSettingsMo
 import HelpSupportModal from '../screens/profile/HelpSupportModal';
 import TimetableScreen from '../screens/home/TimetableScreen';
 
+// LiveKit POC screens
+import JoinRoomScreen from '../features/livekit/screens/JoinRoomScreen';
+import LiveRoomScreen from '../features/livekit/screens/LiveRoomScreen';
+import type { LiveKitRole } from '../features/livekit/types';
+
 // DEV ONLY - Remove after frontend integration
 import DevNavigator from './DevNavigator';
 import { colors } from '../theme/colors';
@@ -89,8 +94,22 @@ export type AppStackParamList = {
   NotificationSettings: undefined;
   HelpSupport: undefined;
   Timetable: undefined;
+  // LiveKit POC screens
+  JoinRoom: undefined;
+  LiveRoom: LiveKitStackParamList['LiveRoom'];
   // DEV ONLY - Remove after frontend integration
   DevHub: undefined;
+};
+
+export type LiveKitStackParamList = {
+  JoinRoom: undefined;
+  LiveRoom: {
+    url: string;
+    token: string;
+    roomName: string;
+    participantName: string;
+    role: LiveKitRole;
+  };
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -306,6 +325,28 @@ export default function AppNavigator(): React.JSX.Element {
       />
 
       <Stack.Screen name="Timetable" component={TimetableScreen} />
+
+      {/* LiveKit POC — Phase 1 screens */}
+      <Stack.Screen
+        name="JoinRoom"
+        component={JoinRoomScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+      <Stack.Screen
+        name="LiveRoom"
+        component={LiveRoomScreen}
+        options={{
+          headerShown: false,
+          // Use slide from bottom for room entry (immersive feel)
+          animation: 'slide_from_bottom',
+          animationDuration: 300,
+          // Prevent gesture back — user must press Leave button
+          gestureEnabled: false,
+        }}
+      />
 
       {/* DEV ONLY - Remove after frontend integration */}
       <Stack.Screen

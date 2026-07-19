@@ -6,6 +6,7 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
+import com.livekit.reactnative.LiveKitReactNative
 
 class MainApplication : Application(), ReactApplication {
 
@@ -14,14 +15,18 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
+          // ── Audio Diagnostics (read-only, no behaviour changes) ──
+          add(AudioDiagnosticsPackage())
         },
     )
   }
 
   override fun onCreate() {
     super.onCreate()
+    // Initializes the LiveKit audio device module, video encoder/decoder
+    // factories, and hardware audio processing (AEC/NS on Android 10+).
+    // Must be called *before* any other React Native initialization.
+    LiveKitReactNative.setup(this)
     loadReactNative(this)
   }
 }
