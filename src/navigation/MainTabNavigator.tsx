@@ -18,10 +18,8 @@ import {
   Platform,
   View,
 } from 'react-native';
-import { createBottomTabNavigator, BottomTabBar, BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
-import { TabScrollProvider, useTabScrollContext } from '../context/TabScrollContext';
 
 import HomeScreen from '../screens/home/HomeScreen';
 import CoursesScreen from '../screens/courses/CoursesScreen';
@@ -101,65 +99,50 @@ function TabLabel({
   );
 }
 
-// ─── Animated Tab Bar ────────────────────────────────────────────────────────
-function AnimatedTabBar(props: BottomTabBarProps) {
-  const context = useTabScrollContext();
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ translateY: context?.tabBarTranslateY?.value ?? 0 }],
-    };
-  });
-
-  return (
-    <Animated.View style={animatedStyle}>
-      <BottomTabBar {...props} />
-    </Animated.View>
-  );
-}
-
 // ─── Navigator ──────────────────────────────────────────────────────────────
 
 export default function MainTabNavigator(): React.JSX.Element {
   const insets = useSafeAreaInsets();
 
   return (
-    <TabScrollProvider>
-      <Tab.Navigator
-        tabBar={(props) => <AnimatedTabBar {...props} />}
-        screenOptions={({ route }) => ({
-          headerShown: false,
-          lazy: true,
-          freezeOnBlur: true,
-          tabBarIcon: ({ focused, color, size }) => (
-            <TabIcon
-              routeName={route.name as keyof MainTabParamList}
-              focused={focused}
-              color={color}
-              size={size}
-            />
-          ),
-          tabBarLabel: ({ focused, color }) => (
-            <TabLabel
-              routeName={route.name as keyof MainTabParamList}
-              focused={focused}
-              color={color}
-            />
-          ),
-          tabBarActiveTintColor: '#0284C7',
-          tabBarInactiveTintColor: '#94A3B8',
-          tabBarStyle: styles.tabBar,
-          tabBarItemStyle: styles.tabBarItem,
-          tabBarShowLabel: true,
-          tabBarHideOnKeyboard: true,
-        })}
-      >
-        <Tab.Screen name="Home" component={HomeScreen} />
-        <Tab.Screen name="Courses" component={CoursesScreen} />
-        <Tab.Screen name="MockTests" component={MockTestsTabScreen} />
-        <Tab.Screen name="LiveClasses" component={LiveClassesTabScreen} />
-        <Tab.Screen name="Profile" component={ProfileTabScreen} />
-      </Tab.Navigator>
-    </TabScrollProvider>
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        lazy: true,
+        freezeOnBlur: true,
+        tabBarIcon: ({ focused, color, size }) => (
+          <TabIcon
+            routeName={route.name as keyof MainTabParamList}
+            focused={focused}
+            color={color}
+            size={size}
+          />
+        ),
+        tabBarLabel: ({ focused, color }) => (
+          <TabLabel
+            routeName={route.name as keyof MainTabParamList}
+            focused={focused}
+            color={color}
+          />
+        ),
+        tabBarActiveTintColor: colors.secondary,
+        tabBarInactiveTintColor: colors.text.secondary,
+        tabBarStyle: {
+          ...styles.tabBar,
+          paddingBottom: insets.bottom > 0 ? insets.bottom - 4 : spacing[8],
+          height: insets.bottom > 0 ? 64 + insets.bottom - 4 : 64,
+        },
+        tabBarItemStyle: styles.tabBarItem,
+        tabBarShowLabel: true,
+        tabBarHideOnKeyboard: true,
+      })}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Courses" component={CoursesScreen} />
+      <Tab.Screen name="MockTests" component={MockTestsTabScreen} />
+      <Tab.Screen name="LiveClasses" component={LiveClassesTabScreen} />
+      <Tab.Screen name="Profile" component={ProfileTabScreen} />
+    </Tab.Navigator>
   );
 }
 
@@ -167,23 +150,17 @@ export default function MainTabNavigator(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   tabBar: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    height: 72,
-    borderRadius: 28,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 0,
-    paddingTop: spacing[12],
-    paddingBottom: spacing[12],
-    paddingHorizontal: spacing[4],
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing[4],
+    paddingHorizontal: spacing[8],
     ...Platform.select({
       ios: {
-        shadowColor: '#000000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.08,
-        shadowRadius: 32,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
       },
       android: {
         elevation: 8,
@@ -198,8 +175,8 @@ const styles = StyleSheet.create({
     padding: spacing[4],
   },
   activeIconContainer: {
-    backgroundColor: colors.sky.tint,
-    borderRadius: 16,
+    backgroundColor: colors.highlight,
+    borderRadius: 12,
     paddingHorizontal: spacing[12],
     paddingVertical: spacing[4],
   },

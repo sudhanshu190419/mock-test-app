@@ -48,32 +48,103 @@ import type { TokenRequest, TokenResponse } from '../types';
 export async function getLiveKitToken(
   request: TokenRequest,
 ): Promise<TokenResponse> {
-  console.log('[LiveKit] Requesting token from Edge Function:', {
+  // ═══════════════════════════════════════════════════════════════════
+  //  [DEBUG] PART 1 — Diagnose missing Authorization header
+  // ═══════════════════════════════════════════════════════════════════
+  const dbgTs = (): string => new Date().toISOString();
+
+  console.log(`[${dbgTs()}] [LK-DIAG] ===== getLiveKitToken() called =====`);
+  console.log(`[${dbgTs()}] [LK-DIAG] Request params:`, {
     roomName: request.roomName,
     participantName: request.participantName,
     role: request.role,
   });
 
-  const { data, error } = await supabase.functions.invoke(
-    'livekit-token',
-    {
-      body: request,
-    },
-  );
+  // ── 1. Check Supabase session ─────────────────────────────────────
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData?.session;
+    console.log(`[${dbgTs()}] [LK-DIAG] getSession():`);
+    console.log(`[${dbgTs()}] [LK-DIAG]   session exists        =`, !!session);
+    if (session) {
+      console.log(`[${dbgTs()}] [LK-DIAG]   user.id               =`, session.user.id);
+      console.log(`[${dbgTs()}] [LK-DIAG]   email                 =`, session.user.email);
+      console.log(`[${dbgTs()}] [LK-DIAG]   access token length   =`, session.access_token?.length ?? 0);
+      console.log(`[${dbgTs()}] [LK-DIAG]   access token (1st 20) =`, session.access_token?.substring(0, 20) ?? 'N/A');
+      console.log(`[${dbgTs()}] [LK-DIAG]   expires_at            =`, session.expires_at ?? 'N/A');
+    }
+  } catch (sessionErr) {
+    console.error(`[${dbgTs()}] [LK-DIAG]   getSession() THREW:`, sessionErr);
+  }
 
+  // ── 2. Check Supabase user ────────────────────────────────────────
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    console.log(`[${dbgTs()}] [LK-DIAG] getUser():`);
+    console.log(`[${dbgTs()}] [LK-DIAG]   user exists  =`, !!user);
+    if (user) {
+      console.log(`[${dbgTs()}] [LK-DIAG]   user.id      =`, user.id);
+      console.log(`[${dbgTs()}] [LK-DIAG]   email        =`, user.email);
+    }
+  } catch (userErr) {
+    console.error(`[${dbgTs()}] [LK-DIAG]   getUser() THREW:`, userErr);
+  }
+
+  // ── 3. Log the invoke call ────────────────────────────────────────
+  const functionName = 'livekit-token';
+  const invokeBody = request;
+  console.log(`[${dbgTs()}] [LK-DIAG] Calling supabase.functions.invoke():`);
+  console.log(`[${dbgTs()}] [LK-DIAG]   functionName =`, functionName);
+  console.log(`[${dbgTs()}] [LK-DIAG]   body         =`, JSON.stringify(invokeBody));
+  console.log(`[${dbgTs()}] [LK-DIAG]   timestamp    =`, dbgTs());
+
+  // ── 4. Wrap invoke in try/catch ──────────────────────────────────
+  let invokeResult: { data: unknown; error: unknown } | null = null;
+  try {
+    invokeResult = await supabase.functions.invoke(
+      functionName,
+      { body: invokeBody },
+    );
+  } catch (invokeException: unknown) {
+    console.error(`[${dbgTs()}] [LK-DIAG] invoke() EXCEPTION (threw before returning):`);
+    console.error(`[${dbgTs()}] [LK-DIAG]   name       =`, (invokeException as Error)?.name ?? 'N/A');
+    console.error(`[${dbgTs()}] [LK-DIAG]   message    =`, (invokeException as Error)?.message ?? 'N/A');
+    console.error(`[${dbgTs()}] [LK-DIAG]   stack      =`, (invokeException as Error)?.stack ?? 'N/A');
+    console.error(`[${dbgTs()}] [LK-DIAG]   complete   =`, invokeException);
+    throw invokeException;
+  }
+
+  const { data, error } = invokeResult;
+
+  // ── 5. If invoke returned an error (FunctionsHttpError) ───────────
   if (error) {
-    console.error('[LiveKit] Edge Function invocation failed:', error.message);
-    throw new Error(`Failed to fetch LiveKit token: ${error.message}`);
+    console.error(`[${dbgTs()}] [LK-DIAG] invoke() returned an error (FunctionsHttpError):`);
+    // Log every accessible property of the error
+    const errRecord = error as Record<string, unknown>;
+    const errProps = [
+      'error',
+      'status',
+      'context',
+      'response',
+      'message',
+      'name',
+    ];
+    for (const key of errProps) {
+      console.error(`[${dbgTs()}] [LK-DIAG]   ${key} =`, errRecord[key] ?? 'N/A');
+    }
+    console.error(`[${dbgTs()}] [LK-DIAG]   All enumerable properties:`, JSON.stringify(error, null, 2));
+    throw new Error(`Failed to fetch LiveKit token: ${(error as Error).message}`);
   }
 
   const response = data as TokenResponse;
 
   if (!response.token || !response.url) {
-    console.error('[LiveKit] Edge Function returned incomplete response:', JSON.stringify(response));
+    console.error(`[${dbgTs()}] [LK-DIAG] Edge Function returned incomplete response:`, JSON.stringify(response));
     throw new Error('LiveKit token service returned an invalid response.');
   }
 
-  console.log('[LiveKit] Token fetched successfully:', {
+  console.log(`[${dbgTs()}] [LK-DIAG] Token fetched successfully:`, {
     roomName: request.roomName,
     participantName: request.participantName,
     url: response.url,

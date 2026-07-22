@@ -21,6 +21,10 @@ import TestDashboardScreen from '../screens/tests/TestDashboardScreen';
 import CourseDetailScreen from '../screens/courses/CourseDetailScreen';
 import CoursesScreen from '../screens/courses/CoursesScreen';
 import MyStreamCoursesScreen from '../screens/courses/MyStreamCoursesScreen';
+import MyCoursesScreen from '../screens/courses/MyCoursesScreen';
+import CourseBatchDetailScreen from '../screens/courses/CourseBatchDetailScreen';
+import SubjectDashboardScreen from '../screens/courses/SubjectDashboardScreen';
+import StudentLiveClassRoomScreen from '../screens/liveClasses/StudentLiveClassRoomScreen';
 import PyqPapersScreen from '../screens/tests/PyqPapersScreen';
 import ExamPackDetailScreen from '../screens/tests/ExamPackDetailScreen';
 import TestInstructionsScreen from '../screens/tests/TestInstructionsScreen';
@@ -97,6 +101,24 @@ export type AppStackParamList = {
   // LiveKit POC screens
   JoinRoom: undefined;
   LiveRoom: LiveKitStackParamList['LiveRoom'];
+  // Phase 4 — Student Live Classes
+  StudentLiveClassRoom: {
+    classId: string;
+    roomName: string;
+    className: string;
+    teacherName: string;
+    studentName: string;
+  };
+
+  // Phase 3 — My Courses / Subject Batches
+  MyCourses: undefined;
+  CourseBatchDetail: { courseId: string };
+  SubjectDashboard: {
+    courseId: string;
+    subjectId: string;
+    subjectName: string;
+  };
+
   // DEV ONLY - Remove after frontend integration
   DevHub: undefined;
 };
@@ -345,6 +367,46 @@ export default function AppNavigator(): React.JSX.Element {
           animationDuration: 300,
           // Prevent gesture back — user must press Leave button
           gestureEnabled: false,
+        }}
+      />
+
+      {/* Phase 4 — Student Live Class Room */}
+      <Stack.Screen
+        name="StudentLiveClassRoom"
+        component={StudentLiveClassRoomScreen}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_bottom',
+          animationDuration: 300,
+          gestureEnabled: false,
+        }}
+      />
+
+      {/* Phase 3 — My Courses / Subject Batches */}
+      <Stack.Screen
+        name="MyCourses"
+        component={MyCoursesScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="CourseBatchDetail"
+        component={CourseBatchDetailScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      <Stack.Screen
+        name="SubjectDashboard"
+        component={SubjectDashboardScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
         }}
       />
 

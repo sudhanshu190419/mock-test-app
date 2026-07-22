@@ -125,7 +125,7 @@ export function validateOtpInput(input: VerifyOtpInput): ValidationResult {
  * @param userId - The `auth.users.id` (matches `profiles.profile_id`).
  * @returns The profile row, or `null` when the row doesn't exist.
  */
-async function fetchProfile(userId: string): Promise<DbProfile | null> {
+export async function fetchProfile(userId: string): Promise<DbProfile | null> {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')

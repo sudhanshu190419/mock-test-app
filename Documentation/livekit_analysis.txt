@@ -1,0 +1,552 @@
+Here is the comprehensive architecture analysis report based on the complete codebase examination.
+────────────────────────────────────────────────────────────────────────────────
+Live Class Architecture — Comprehensive Analysis Report
+1. Current Architecture Diagram
+┌─────────────────────────────────────────────────────────────────────┐
+│                        TEACHER WEBSITE                             │
+│                    (Next.js - mocktest-admin)                       │
+│                                                                     │
+│  ┌───────────┐  ┌─────────────┐  ┌──────────────────────────────┐  │
+│  │ Overview  │  │ Schedule    │  │ LIVE STUDIO MODAL             │  │
+│  │ View      │  │ View        │  │ (raw getUserMedia WebRTC)     │  │
+│  │           │  │             │  │                                │  │
+│  │ nextClass │  │ startBroad- │  │ - Local camera/mic preview    │  │
+│  │ info      │  │ cast button │  │ - Start/End broadcast         │  │
+│  │ launchLive│  │ launchLive  │  │ - Simulated student count     │  │
+│  └───────────┘  └─────────────┘  │ - Q&A chat panel              │  │
+│                    │             │ - NO LiveKit connection       │  │
+│                    ▼             └──────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │              Service Layer (teacherService)              │      │
+│  │  getOrCreateActiveLiveClass → startLiveClass → endLiveClass │   │
+│  │         ↓ DB: live_classes → live_sessions               │      │
+│  └─────────────────────────────────────────────────────────┘      │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                       SUPABASE (Backend)                            │
+│                                                                     │
+│  ┌─────────────────────────────────┐  ┌─────────────────────────┐  │
+│  │  Database Schema (Domain 04)    │  │  Edge Functions          │  │
+│  │                                 │  │                          │  │
+│  │  live_classes (lifecycle)       │  │  livekit-token           │  │
+│  │  live_sessions (provider-       │  │  (generates LiveKit JWT) │  │
+│  │    agnostic session records)    │  └─────────────────────────┘  │
+│  │  live_class_batch (junction)    │                               │
+│  │  session_participants (log)     │  ┌─────────────────────────┐  │
+│  │  recordings (metadata)          │  │  RLS Policies            │  │
+│  │  attendance (summary)           │  │  (institute_id-based     │  │
+│  │  attendance_events (log)        │  │   multi-tenant)          │  │
+│  └─────────────────────────────────┘  └─────────────────────────┘  │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                   LIVEKIT CLOUD / SERVER                            │
+│                                                                     │
+│  - Room hosting & WebRTC SFU                                       │
+│  - Token-based authentication (JWT)                                 │
+│  - Audio/video forwarding                                           │
+│  - Recording (Egress)                                               │
+│  - Webhooks for session events                                      │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     STUDENT MOBILE APP                              │
+│               (React Native - MockTestApp)                          │
+│                                                                     │
+│  ┌─────────────────┐  ┌─────────────────────────────────────────┐  │
+│  │ Live Classes Tab│  │ LiveKit POC Module (features/livekit/)  │  │
+│  │ (placeholder)   │  │                                         │  │
+│  │                 │  │  JoinRoomScreen → LiveRoomScreen         │  │
+│  │ "Coming Soon"   │  │  useLiveKit hook (Room management)       │  │
+│  │ + LiveKit POC   │  │  VideoView (participant video)           │  │
+│  │ entry button    │  │  ControlBar (mic/cam/leave)              │  │
+│  └─────────────────┘  │  tokenService → supabase Edge Function   │  │
+│                       └─────────────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │  ConnectLiveClassBanner (home screen)                    │      │
+│  │  "You have a class in 15 mins" / timetable link          │      │
+│  └─────────────────────────────────────────────────────────┘      │
+└──────────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────
+2. Teacher Website Architecture
+Current Live Class Implementation
+Status: SIMULATION-ONLY. No LiveKit client integration.
+The teacher website has a Live Studio Modal inside  FacultyDashboard.tsx  that:
+1. Opens when user clicks "Enter Live Studio" or "Start Broadcast"
+2. Captures local camera/mic via  navigator.mediaDevices.getUserMedia() 
+3. Simulates broadcasting with a student counter incrementing every 3 seconds
+4. Calls  teacherService.startLiveClass(classId)  to update DB status
+5. Calls  teacherService.endLiveClass(classId)  to mark class completed
+Key Files:
+┌───────────────────────────────────────────────┬──────────────────────────────────────────────────────────────┐
+│ File                                          │ Role                                                         │
+├───────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+│ src/components/dashboard/FacultyDashboard.tsx │ Main app shell with Live Studio modal, broadcast controls    │
+│ src/services/teacherService.ts                │ getOrCreateActiveLiveClass(), startLiveClass(),              │
+│                                               │ endLiveClass()                                               │
+│ src/views/OverviewView.tsx                    │ Shows next class info with "Enter Live Studio" button        │
+│ src/views/ScheduleView.tsx                    │ Shows upcoming classes and "Start Live Broadcast" button     │
+│ src/data/mockData.ts                          │ MOCK_LIVE_CLASSES mock data (1 upcoming + 1 completed)       │
+└───────────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
+Navigation & Entry Points
+- Sidebar tabs: Overview, Schedule, Assessments, HR Portal
+- Header has "Enter Live Studio" button that triggers the modal
+- Both Overview and Schedule views have the same  onLaunchLive  callback
+Critical Gap
+The teacher website has no LiveKit SDK installed. It uses only raw browser WebRTC. The database lifecycle methods exist but there is no:
+- LiveKit room creation
+- Token generation for the teacher
+- Connection to LiveKit as a publisher
+- Screen sharing
+- Recording integration
+────────────────────────────────────────────────────────────────────────────────
+3. Student Mobile App Architecture
+LiveKit Implementation: POC Phase (Working But Not Integrated)
+The student app has a fully functional LiveKit POC under  src/features/livekit/ .
+LiveKit Module Structure
+src/features/livekit/
+├── types/index.ts           # LiveKitRoomState, TokenRequest, TokenResponse, etc.
+├── services/tokenService.ts # getLiveKitToken() → supabase Edge Function
+├── hooks/
+│   ├── useLiveKit.ts        # Room lifecycle, connect/disconnect, cam/mic toggles
+│   ├── useMediaPermissions.ts # Camera/mic permission requests
+│   └── index.ts
+├── components/
+│   ├── VideoView.tsx        # Renders participant video or avatar fallback
+│   ├── ControlBar.tsx       # Camera/Mic/Leave button bar
+│   └── index.ts
+├── screens/
+│   ├── JoinRoomScreen.tsx   # Room name input + role selection
+│   ├── LiveRoomScreen.tsx   # Full room UI with video grid + controls
+│   └── index.ts
+├── diagnostics/
+│   ├── index.ts
+│   └── audioDiagnostics.ts  # Android audio debugging utilities
+└── index.ts                 # Barrel exports
+Key Dependencies
+-  @livekit/react-native  — Native WebRTC + audio session management
+-  livekit-client  — Core Room, Participant, Track APIs
+-  react-native-incall-manager  — Android audio routing (loudspeaker)
+Connection Flow
+1. User taps "Join LiveKit Room" on LiveClassesTabScreen
+2. Navigates to JoinRoomScreen → enters room name, selects role, requests permissions
+3. Calls  getLiveKitToken()  → invokes supabase  livekit-token  Edge Function
+4. Receives  { token, url }  from Edge Function
+5. Navigates to LiveRoomScreen with token + URL params
+6. LiveRoomScreen calls  useLiveKit().connect(url, token) 
+7.  useLiveKit  configures Android audio, creates  Room  instance, connects
+8. Enables camera + mic automatically
+Navigation Structure
+- Tab navigator includes "LiveClasses" tab (placeholder with POC entry)
+- Stack navigator has  JoinRoom  and  LiveRoom  screens
+Critical Gap
+The POC joins arbitrary room names. It is not integrated with the actual class system:
+- No connection to  live_classes  table
+- No student identity integration
+- No automatic class discovery via timetable
+- No attendance tracking
+- No recording lifecycle
+────────────────────────────────────────────────────────────────────────────────
+4. LiveKit Architecture
+Token Generation Flow
+Client → supabase.functions.invoke('livekit-token') → Edge Function
+  ↓ Validate caller JWT (Supabase auth)
+  ↓ Extract: roomName, participantName, role
+  ↓ Generate LiveKit AccessToken with LiveKit Server SDK
+  ↓ Return { token: "eyJ...", url: "wss://project.livekit.cloud" }
+Client → LiveKit Room.connect(url, token)
+Edge Function Details
+- Location:  supabase/functions/livekit-token/ 
+- Environment: Supabase Edge Function (Deno runtime)
+- Required Env Vars:  LIVEKIT_API_KEY ,  LIVEKIT_API_SECRET ,  LIVEKIT_URL 
+- Accepts:  { roomName, participantName, role }  from client
+- Returns:  { token, url }  with LiveKit JWT
+- Security: Validates caller's Supabase auth JWT + injects caller metadata
+LiveKit Module Design (Student App - POC)
+// typescript
+// Registration (index.js)
+registerGlobals({ autoConfigureAudioSession: false });
+ 
+// Audio Configuration (useLiveKit.ts)
+await AudioSession.configureAudio({
+  android: {
+    preferredOutputList: ['speaker', 'bluetooth', 'headset', 'earpiece'],
+    audioTypeOptions: AndroidAudioTypePresets.communication,
+  },
+});
+ 
+// Room Creation
+const room = new Room({ adaptiveStream: true, dynacast: true });
+ 
+// Event Subscriptions
+RoomEvent.ParticipantConnected
+RoomEvent.ParticipantDisconnected
+RoomEvent.ConnectionStateChanged
+RoomEvent.TrackSubscribed
+RoomEvent.TrackUnsubscribed
+RoomEvent.ActiveSpeakersChanged
+RoomEvent.ParticipantAttributesChanged
+ 
+// Connection Timeout: 30 seconds
+Key Findings
+1. Room lifecyle is per-hook, not provider-based. Each screen creates its own  Room  instance.
+2. No LiveKitProvider context — Room state is managed locally in  useLiveKit  hook.
+3. Audio configuration is comprehensive for Android (VoIP quality, loudspeaker routing).
+4. Diagnostics module is extensive — logs audio state, Room state, WebRTC internals.
+5. Reconnection logic: Built into  livekit-client  (Room handles auto-reconnect). UI tracks  reconnecting  state but has no explicit reconnection UI.
+────────────────────────────────────────────────────────────────────────────────
+5. Database Audit
+Domain 04: Live Learning — All Tables
+┌──────────┬─────────────────────────────┬─────────────────────────┬─────────────────┬─────────────────────────┐
+│ Table    │ Purpose                     │ Relationships           │ Reuse?          │ Needs Change?           │
+├──────────┼─────────────────────────────┼─────────────────────────┼─────────────────┼─────────────────────────┤
+│ live_cla │ Schedulable unit of live    │ → teacher_details (FK), │ ✅ YES - Core   │ Minor: Add room_name    │
+│ sses     │ teaching. One teacher, one  │ subjects (FK), chapters │ table           │ for LiveKit room name   │
+│          │ time slot, one topic.       │ (FK, nullable)          │                 │ strategy                │
+│ live_ses │ Active provider session     │ → live_classes (FK,     │ ✅ YES -        │ Optionally add          │
+│ sions    │ (1:1 with live_classes).    │ UNIQUE)                 │ Provider        │ LiveKit-specific        │
+│          │ Provider-agnostic.          │                         │ session record  │ metadata columns        │
+│ live_cla │ Junction: live_classes ↔   │ → live_classes (FK      │ ✅ YES -        │ None needed             │
+│ ss_batch │ batches (M:N)               │ CASCADE), batches (FK)  │ Already used by │                         │
+│          │                             │                         │ batch           │                         │
+│          │                             │                         │ management      │                         │
+│ recordin │ Recording metadata          │ → live_classes (FK)     │ ✅ YES -        │ None needed             │
+│ gs       │ (multiple segments per      │                         │ Recording       │                         │
+│          │ class)                      │                         │ lifecycle       │                         │
+│ session_ │ Real-time join/leave event  │ → live_sessions (FK),   │ ✅ YES -        │ Add profile_id for      │
+│ particip │ log                         │ live_classes (FK),      │ Participant     │ non-student             │
+│ ants     │                             │ student_details (FK)    │ tracking        │ participants (teachers, │
+│          │                             │                         │                 │ admins)                 │
+│ attendan │ Per-student per-class       │ → live_classes (FK),    │ ✅ YES -        │ None needed             │
+│ ce       │ summary                     │ student_details (FK)    │ Attendance      │                         │
+│          │                             │                         │ tracking        │                         │
+│ attendan │ Raw join/leave event log    │ → attendance (FK),      │ ✅ YES - Event  │ None needed             │
+│ ce_event │ (event sourcing)            │ live_classes (FK),      │ audit trail     │                         │
+│ s        │                             │ student_details (FK)    │                 │                         │
+└──────────┴─────────────────────────────┴─────────────────────────┴─────────────────┴─────────────────────────┘
+Supporting Tables (Other Domains)
+┌─────────────────┬────────┬────────────────────────────────────────────────────────────────────┐
+│ Table           │ Domain │ Relevance                                                          │
+├─────────────────┼────────┼────────────────────────────────────────────────────────────────────┤
+│ profiles        │ 01     │ Central identity (profile_id = auth.users.id)                      │
+│ teacher_details │ 01     │ Teacher-specific profile extension referenced by live_classes      │
+│ student_details │ 01     │ Student-specific profile, used by session_participants, attendance │
+│ batches         │ 02     │ Groups of students, linked via live_class_batch                    │
+│ batch_students  │ 02     │ Students within batches (determines class roster)                  │
+│ subjects        │ 02     │ Subject FK on live_classes                                         │
+│ chapters        │ 02     │ Optional chapter FK on live_classes                                │
+│ institutes      │ 01     │ Multi-tenant root entity - all tables have institute_id            │
+└─────────────────┴────────┴────────────────────────────────────────────────────────────────────┘
+Missing Tables
+┌─────────────────────┬─────────────────────────────────────────────────────┬──────────────────────────────────┐
+│ Missing Table       │ Purpose                                             │ Priority                         │
+├─────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────────┤
+│ live_class_students │ Direct M:N mapping of students to live classes (for │ Medium - Only needed if students │
+│                     │ courses/purchased classes)                          │ aren't in batches                │
+│ user_device_tokens  │ FCM/APNS push notification tokens for live class    │ High - Already partially in      │
+│                     │ reminders                                           │ 048_device_tokens.sql            │
+│ poll_questions /    │ In-class polling/quiz feature                       │ Low (Phase 2)                    │
+│ live_polls          │                                                     │                                  │
+└─────────────────────┴─────────────────────────────────────────────────────┴──────────────────────────────────┘
+Assessment: No new tables needed for Phase 1
+The existing Domain 04 schema is remarkably comprehensive. The core tables ( live_classes ,  live_sessions ,  live_class_batch ,  session_participants ,  attendance ) support the full live class lifecycle. The only additions might be:
+- A  room_name  column on  live_classes  or a naming convention
+- A  profile_id  on  session_participants  for non-student participants
+────────────────────────────────────────────────────────────────────────────────
+6. Authentication & Authorization
+Authentication Flow
+Teacher Website:
+  Phone/Password → Supabase Auth → session/user → loadTeacherProfileDetails()
+  Fallback: Demo mode with localStorage mock
+ 
+Student App:
+  Phone OTP → Supabase Auth → auth state listener → profile load
+Role Detection
+-  profiles.role  enum:  admin  |  teacher  |  student  (+  user  added in migration 045)
+- Role checked on profile load, drives UI rendering
+- Teacher website checks  role === 'teacher'  vs  role === 'admin' 
+Institute (Tenant) Isolation
+-  get_my_institute_id()  function returns institute_id for current user
+- Every domain table has  institute_id  column
+- RLS policies filter by  institute_id = get_my_institute_id() 
+RLS Policies for Live Tables
+- Currently NO explicit RLS policies for live tables in migration 021
+- Live tables have  institute_id  columns but lack granular RLS
+- RISK: Without explicit policies, default Supabase RLS blocks all access or allows all
+Required for Live Classes
+- Teacher should only see/modify their own  live_classes  (filter by  teacher_id )
+- Students should only see  live_classes  linked to their batches
+- Student access to  live_sessions  should only return  participant_token , never  host_token 
+────────────────────────────────────────────────────────────────────────────────
+7. Existing Services & APIs
+Teacher Website Services
+┌────────────────────┬─────────────────────────────────────┬───────────────────────────────────────────────────┐
+│ Service            │ File                                │ Live Class Methods                                │
+├────────────────────┼─────────────────────────────────────┼───────────────────────────────────────────────────┤
+│ teacherService     │ src/services/teacherService.ts      │ getOrCreateActiveLiveClass(), startLiveClass(),   │
+│                    │                                     │ endLiveClass()                                    │
+│ adminService       │ src/services/adminService.ts        │ stats.liveNow count query                         │
+│ adminDashboardServ │ src/services/admin/dashboardService │ Lists upcoming live classes                       │
+│ ice                │ .ts                                 │                                                   │
+│ batchManagementSer │ src/services/admin/batchManagementS │ Checks live_class_batch before batch deletion     │
+│ vice               │ ervice.ts                           │                                                   │
+└────────────────────┴─────────────────────────────────────┴───────────────────────────────────────────────────┘
+Student App Services
+┌─────────────────────┬──────────────────────────────────────────────┬─────────────────────────────────────────┐
+│ Service             │ File                                         │ Live Class Relevance                    │
+├─────────────────────┼──────────────────────────────────────────────┼─────────────────────────────────────────┤
+│ tokenService        │ src/features/livekit/services/tokenService.t │ LiveKit token via Edge Function         │
+│                     │ s                                            │                                         │
+│ notificationService │ src/services/notificationService.ts          │ Has live_class_reminder notification    │
+│                     │                                              │ type                                    │
+│ fcmService          │ src/services/fcm/fcmService.ts               │ Push notifications (foreground          │
+│                     │                                              │ handling)                               │
+└─────────────────────┴──────────────────────────────────────────────┴─────────────────────────────────────────┘
+Supabase Edge Functions
+┌─────────────────┬───────────────────────────┬────────────┐
+│ Function        │ Purpose                   │ Status     │
+├─────────────────┼───────────────────────────┼────────────┤
+│ livekit-token   │ Generates LiveKit JWT     │ ✅ Written │
+│ handle_new_user │ Creates profile on signup │ ✅ Written │
+└─────────────────┴───────────────────────────┴────────────┘
+Reusable Modules
+┌────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────┐
+│ Module                                         │ What It Provides                                            │
+├────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤
+│ teacherService.getOrCreateActiveLiveClass()    │ Class lifecycle management ✅                               │
+│ teacherService.startLiveClass() /              │ Status transitions ✅                                       │
+│ endLiveClass()                                 │                                                             │
+│ useLiveKit() hook (student app)                │ Room connection, media management ✅ (needs extraction for  │
+│                                                │ web)                                                        │
+│ getLiveKitToken() + Edge Function              │ Token generation ✅                                         │
+│ notificationService.live_class_reminder        │ Notifications ✅                                            │
+└────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────
+8. Missing Modules (Complete Categorized List)
+Database
+[ ]  room_name  strategy/column for live_classes (or deterministic naming)
+[ ]  profile_id  on  session_participants  for teacher participants
+[ ] RLS policies specific to live_* tables
+Backend / Edge Functions
+[ ]  livekit-webhook  Edge Function — handles LiveKit egress/webhook events (recording complete, participant join/leave)
+[ ] Attendance computation RPC — function that computes  attendance  summary from  session_participants  at end of class
+[ ] Analytics aggregation — update  teacher_analytics  after class ends
+Services
+[ ]  liveClassService  — Dedicated service for live class operations (separate from  teacherService )
+[ ]  liveSessionService  — Handles provider session creation, token distribution
+[ ]  attendanceService  — Computes and manages attendance records
+[ ]  recordingService  — Manages recording lifecycle (after webhook callback)
+Provider Layer (Web - Teacher Website)
+[ ]  LiveKitClient  — Provider-agnostic interface for video provider
+[ ]  LiveKitVideoProvider  — LiveKit implementation of the provider interface
+[ ]  useVideoProvider  — Hook that abstracts provider selection
+Provider Layer (Mobile - Student App) — already exists but needs refactoring
+[ ] Abstract  useLiveKit  into a  useVideoProvider  interface
+[ ] Add provider configuration/enum
+UI Components - Teacher Website
+[ ] LiveClassDashboard — Today's scheduled classes
+[ ] LiveStudioView — Full LiveKit-connected studio (replace current modal)
+[ ] VideoStage — Teacher's video + screen share area
+[ ] ParticipantGrid — Student video tiles (gallery view)
+[ ] ControlBar — Camera/mic/screen share/end call controls
+[ ] AttendancePanel — Live attendance list with join/leave times
+[ ] ChatPanel — Text chat during class
+UI Components - Student App (production version)
+[ ] LiveClassScreen — Production version (replace POC screens)
+[ ] WaitingRoomScreen — Pre-class waiting with class info
+[ ] ClassDashboard — Today's class list with join buttons
+[ ] AttendanceIndicator — Connection quality, recording status
+Realtime / Notifications
+[ ] Live class start notification — Push notification to students when teacher starts class
+[ ] Live class reminder — 5-min/15-min reminder before scheduled class
+[ ] Recording available — Push notification when recording is processed
+Features (Phase 2)
+[ ] Screen sharing (both teacher → student and student → teacher)
+[ ] Raise hand
+[ ] In-class polling
+[ ] Breakout rooms
+[ ] Whiteboard / annotation
+[ ] Recording playback
+[ ] Live analytics dashboard (peak participants, engagement metrics)
+────────────────────────────────────────────────────────────────────────────────
+9. Recommended Architecture
+Provider Interface (Replaceable Video Provider)
+// typescript
+// src/lib/video/types.ts — Shared interface for any video provider
+ 
+interface VideoProvider {
+  // Lifecycle
+  initialize(config: ProviderConfig): Promise<void>;
+  createRoom(options: CreateRoomOptions): Promise<RoomInfo>;
+  joinRoom(roomName: string, token: string): Promise<void>;
+  leaveRoom(): Promise<void>;
+  
+  // Media
+  toggleCamera(enabled: boolean): Promise<boolean>;
+  toggleMicrophone(enabled: boolean): Promise<boolean>;
+  startScreenShare(): Promise<void>;
+  stopScreenShare(): Promise<void>;
+  
+  // State
+  onRoomStateChange(callback: (state: RoomState) => void): void;
+  onParticipantChange(callback: (participants: Participant[]) => void): void;
+  
+  // Events
+  getRoomInfo(): RoomInfo | null;
+  getParticipants(): Participant[];
+}
+Proposed File Structure
+Teacher Website:
+src/
+├── lib/
+│   └── video/
+│       ├── types.ts              # VideoProvider interface (provider-agnostic)
+│       ├── LiveKitProvider.ts    # LiveKit implementation
+│       └── index.ts
+├── services/
+│   ├── liveClassService.ts       # New: dedicated live class service
+│   ├── liveSessionService.ts     # New: provider session management
+│   └── attendanceService.ts      # New: attendance computation
+├── hooks/
+│   └── useVideoClass.ts          # New: wraps VideoProvider for React
+├── components/
+│   ├── live-studio/
+│   │   ├── LiveStudioView.tsx    # Main studio container
+│   │   ├── VideoStage.tsx        # Teacher video + screen share
+│   │   ├── ParticipantGrid.tsx   # Student video tiles
+│   │   ├── ControlBar.tsx        # Camera/mic/leave/screen
+│   │   ├── ChatPanel.tsx         # Text chat
+│   │   └── AttendancePanel.tsx   # Live attendance list
+│   └── live-dashboard/
+│       ├── TodayLiveClasses.tsx   # Today's class list
+│       └── LiveClassCard.tsx     # Single class card
+└── app/
+    └── live-classes/
+        └── page.tsx              # Live classes page (existing/dedicated)
+ 
+Student App:
+src/
+├── lib/
+│   └── video/                    # Same interface as web
+│       ├── types.ts
+│       ├── LiveKitProvider.ts    # React Native implementation
+│       └── index.ts
+├── screens/
+│   ├── live/
+│   │   ├── LiveClassScreen.tsx   # Production live class screen
+│   │   ├── WaitingRoomScreen.tsx # Pre-class waiting
+│   │   └── LiveClassListScreen.tsx # Today's classes
+│   └── [existing LiveKit POC screens can be repurposed]
+└── components/
+    └── live/
+        ├── VideoGrid.tsx
+        ├── ControlBar.tsx
+        └── AttendanceBadge.tsx
+Service Layer (Backend-Agnostic)
+// typescript
+interface LiveClassService {
+  getTodayClasses(teacherId: string): Promise<LiveClass[]>;
+  getClassById(classId: string): Promise<LiveClass>;
+  createClass(data: CreateClassData): Promise<string>;
+  updateClass(classId: string, data: Partial<LiveClass>): Promise<void>;
+  startClass(classId: string): Promise<{ roomName: string; token: string; url: string }>;
+  endClass(classId: string): Promise<void>;
+  getClassAttendance(classId: string): Promise<Attendance[]>;
+}
+────────────────────────────────────────────────────────────────────────────────
+10. Risks
+Critical Risks
+┌─────────────────────────────┬──────────────────────────────────────┬─────────────────────────────────────────┐
+│ Risk                        │ Impact                               │ Mitigation                              │
+├─────────────────────────────┼──────────────────────────────────────┼─────────────────────────────────────────┤
+│ Direct LiveKit dependency   │ Cannot switch to Agora/Daily/etc.    │ ✅ Add VideoProvider abstraction layer  │
+│ in UI                       │ without rewriting UI                 │ BEFORE implementing                     │
+│ Missing RLS on live tables  │ Students could access teacher tokens │ Write RLS policies before going live    │
+│ Teacher token exposed in DB │ host_token stored in plaintext       │ Encrypt or use short-lived tokens,      │
+│                             │                                      │ never return via API                    │
+│ No provider abstraction in  │ useLiveKit is tightly coupled to     │ Refactor to useVideoProvider before     │
+│ student app                 │ LiveKit                              │ production                              │
+└─────────────────────────────┴──────────────────────────────────────┴─────────────────────────────────────────┘
+Medium Risks
+┌────────────────────────────────┬────────────────────────────────┬────────────────────────────────────────────┐
+│ Risk                           │ Impact                         │ Mitigation                                 │
+├────────────────────────────────┼────────────────────────────────┼────────────────────────────────────────────┤
+│ Duplicate live_classes vs      │ Could create conflicting       │ Tie live class creation to timetable slots │
+│ timetable                      │ scheduling systems             │                                            │
+│ Session participant table uses │ Teachers/hosts can't be logged │ Add profile_id or make student_id nullable │
+│ student_id                     │                                │ with a type field                          │
+│ No live class → student direct │ Students not in batches can't  │ Use live_class_students junction or course │
+│ link                           │ access classes                 │ enrollment                                 │
+│ Web live studio has no LiveKit │ Major rework needed            │ Keep current modal for now, replace with   │
+│                                │                                │ LiveKit in Phase 1                         │
+└────────────────────────────────┴────────────────────────────────┴────────────────────────────────────────────┘
+Low Risks
+┌─────────────────────────────────┬─────────────────────────────┬──────────────────────────────────────────────┐
+│ Risk                            │ Impact                      │ Mitigation                                   │
+├─────────────────────────────────┼─────────────────────────────┼──────────────────────────────────────────────┤
+│ POC screens not removed         │ Users find unfinished UI    │ Remove after integration                     │
+│ Diagnostics code in production  │ Console noise, bundle size  │ Strip in production build                    │
+│ session_participants            │ High write volume during    │ Current indexes are good; add partitioning   │
+│ scalability                     │ class                       │ later                                        │
+└─────────────────────────────────┴─────────────────────────────┴──────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────
+11. Recommended Implementation Roadmap
+Phase 0 (Prerequisite — Database & Backend)
+1. Write RLS policies for all live tables
+2. Add  room_name  to  live_classes  (or define naming convention)
+3. Create  livekit-webhook  Edge Function for recording/event handling
+4. Create attendance computation RPC
+Phase 1 (Teacher Website — LiveKit Integration)
+1. Install  livekit-client  on teacher website ( npm install livekit-client @livekit/components-react )
+2. Create  src/lib/video/  — Provider abstraction layer
+3. Create  src/services/liveClassService.ts  — Dedicated live class operations
+4. Replace Live Studio modal — Connect to LiveKit as publisher
+5. Add ControlBar — Camera, mic, screen share, end class
+6. Integrate with timetable — "Start Class" from today's schedule
+Phase 1 (Student App — Production Integration)
+1. Refactor  useLiveKit  → Abstract behind  useVideoProvider  interface
+2. Create  LiveClassListScreen  — Today's classes from timetable/batches
+3. Create  WaitingRoomScreen  — Pre-class info display
+4. Create  LiveClassScreen  (production) — Replace POC LiveRoom
+5. Add attendance tracking — Record join/leave events to  session_participants 
+6. Remove POC screens — Remove JoinRoomScreen, LiveClassesTabScreen placeholder
+Phase 1 (Cross-Platform)
+1. Auto-discovery of classes via timetable/batch enrollment
+2. Push notifications (class starting, class reminder)
+3. Recording lifecycle (egress → webhook → storage → playback)
+Phase 2 (Features)
+1. Screen sharing
+2. Raise hand
+3. In-class chat
+4. Polls & quizzes
+5. Breakout rooms
+6. Recording playback UI
+7. Attendance reporting & analytics
+8. Student website support (future)
+────────────────────────────────────────────────────────────────────────────────
+Summary
+The architecture is solid at the database level — Domain 04's schema is production-ready with proper relationships, indexes, and constraints. The backend Edge Function for LiveKit tokens is implemented. The student app has a working LiveKit POC that can be refactored into production code.
+The single biggest gap is the teacher website, which has no LiveKit client integration at all. It simulates a live class using raw browser WebRTC without connecting to any video provider. The  live_classes  lifecycle methods exist but don't create LiveKit rooms or generate tokens.
+The second gap is the missing abstraction layer — both the teacher website (when it's built) and the student app would benefit from a  VideoProvider  interface that allows swapping LiveKit for another provider without UI changes.
+No new database tables are needed for Phase 1. The existing Domain 04 schema supports the full live class lifecycle. The implementation effort is primarily in the service/UI layer.
+• TODOs
+✓  Explore teacher website project structure (mocktest-admin)
+✓  Explore student mobile app project structure (MockTestApp)
+✓  Analyze supabase migrations and database schema
+✓  Find all LiveKit-related implementations
+✓  Analyze teacher website architecture (services, hooks, providers, types)
+✓  Analyze student mobile app architecture
+✓  Analyze authentication flow and RLS policies
+✓  Analyze timetable, batch, course relationships
+✓  Compile comprehensive architecture report
+The comprehensive analysis is complete. The report above covers all 12 analysis objectives across both codebases and the backend infrastructure.
+Key findings:
+- Database: Domain 04 schema is production-ready — no new tables needed
+- Teacher Website: Has lifecycle methods but ZERO LiveKit integration — uses raw browser WebRTC simulation
+- Student App: Has a fully functional LiveKit POC that needs refactoring into production code
+- Missing Provider Abstraction: Both platforms need a  VideoProvider  interface to avoid vendor lock-in
+- Missing RLS: No explicit RLS policies for live tables yet

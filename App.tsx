@@ -20,6 +20,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { store } from './src/store/store';
 import { AuthProvider } from './src/providers/AuthProvider';
+import { DashboardProvider } from './src/providers/DashboardProvider';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import { ToastProvider } from './src/components/Toast';
 import { colors } from './src/theme/colors';
@@ -57,9 +58,11 @@ export default function App(): React.JSX.Element {
         />
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
+            <DashboardProvider>
             <ToastProvider>
               <AuthNavigator />
             </ToastProvider>
+            </DashboardProvider>
           </AuthProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

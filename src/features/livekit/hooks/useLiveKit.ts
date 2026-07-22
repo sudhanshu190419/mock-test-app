@@ -113,6 +113,10 @@ export function useLiveKit() {
 
   const roomRef = useRef<Room | null>(null);
   const isMountedRef = useRef(true);
+  /** Prevents double-disconnect: set to `true` when the user manually calls
+   *  `disconnect()`, allowing the cleanup effect to skip its own disconnect
+   *  call. This avoids "cannot send signal request before connected" errors. */
+  const disconnectRequestedRef = useRef(false);
 
   // ── Room Event Handlers ─────────────────────────────────────────────
 
@@ -271,9 +275,14 @@ try {
       } catch (err) {
         // quiet catch
       }
+      // Only disconnect if the user hasn't already requested a manual
+      // disconnect (via the disconnect() function). This prevents
+      // double-disconnect errors like "cannot send signal request before
+      // connected" and "TypeError: right operand of 'in' is not an object".
       if (
-        room.state === LKConnectionState.Connected ||
-        room.state === LKConnectionState.Reconnecting
+        !disconnectRequestedRef.current &&
+        (room.state === LKConnectionState.Connected ||
+          room.state === LKConnectionState.Reconnecting)
       ) {
         room.disconnect();
       }
@@ -290,10 +299,23 @@ try {
     handleParticipantAttributesChanged,
   ]);
 
-  // ── Connect Handler (with timeout) ───────────────────────────────
-
+  /**
+   * Connect to a LiveKit room.
+   *
+   * @param url  - LiveKit WebSocket URL.
+   * @param token - LiveKit access token JWT.
+   * @param options - Optional settings.
+   * @param options.autoPublish - When `true` (default), automatically enables
+   *   camera and microphone and publishes tracks after connecting. Set to
+   *   `false` for viewer-only participants who should only subscribe to
+   *   remote tracks without publishing any media (e.g. students).
+   */
   const connect = useCallback(
-    async (url: string, token: string): Promise<void> => {
+    async (
+      url: string,
+      token: string,
+      options?: { autoPublish?: boolean },
+    ): Promise<void> => {
       const room = roomRef.current;
       if (!room) {
         throw new Error('LiveKit room not initialized.');
@@ -375,46 +397,70 @@ try {
 
         console.log('[LiveKit] Connected successfully.');
 
-        // ── Diagnostics: BEFORE enableCameraAndMicrophone ──────────
-        console.log('[AUDIO_DIAG] [Lifecycle] BEFORE enableCameraAndMicrophone()');
-
-        // Publish camera and microphone tracks automatically
-        // Publish camera and microphone tracks automatically
-        await room.localParticipant.enableCameraAndMicrophone();
-
-        // 🚨 ADD THIS BLOCK TO FORCE LOUDSPEAKER
+        // ── Route audio to loudspeaker ────────────────────────────────
+        // This must run for BOTH publisher and viewer mode. On Android,
+        // AudioSession.configureAudio() with
+        // AndroidAudioTypePresets.communication sets MODE_IN_COMMUNICATION,
+        // which routes audio to the earpiece by default. We force the
+        // speakerphone so students hear the teacher through the loudspeaker.
+        //
+        // Bluetooth and wired headsets are handled by the OS — when a
+        // headset is plugged in, Android routes audio to it regardless of
+        // the speakerphone setting.
         try {
           console.log('[LiveKit] Forcing audio routing via InCallManager...');
-          // Using 'video' media type natively signals to Android that this is a 
-          // conference/loudspeaker call rather than a standard handset call.
           InCallManager.start({ media: 'video' });
           InCallManager.setForceSpeakerphoneOn(true);
-          InCallManager.setKeepScreenOn(true); // Optional: keeps screen awake during class
+          InCallManager.setKeepScreenOn(true);
         } catch (audioErr) {
           console.warn('[LiveKit] InCallManager setup failed:', audioErr);
         }
 
-        
+        // ── Determine publish mode ───────────────────────────────────
+        const autoPublish = options?.autoPublish !== false; // defaults to true
 
-        // ── Diagnostics: AFTER enableCameraAndMicrophone ───────────
-        logFullDiagnostics('AFTER enableCameraAndMicrophone', room).catch(
-          () => {},
-        );
+        if (autoPublish) {
+          // ── PUBLISHER MODE: enable camera + mic ───────────────────
+          console.log('[AUDIO_DIAG] [Lifecycle] BEFORE enableCameraAndMicrophone()');
 
-        const localInfo = toParticipantInfo(
-          room.localParticipant as Participant,
-          true,
-        );
+          await room.localParticipant.enableCameraAndMicrophone();
 
-        setRoomState({
-          connectionState: 'connected',
-          participants: [localInfo],
-          isCameraEnabled: true,
-          isMicrophoneEnabled: true,
-          error: null,
-        });
+          // ── Diagnostics: AFTER enableCameraAndMicrophone ───────────
+          logFullDiagnostics('AFTER enableCameraAndMicrophone', room).catch(
+            () => {},
+          );
 
-        // List existing remote participants
+          const localInfo = toParticipantInfo(
+            room.localParticipant as Participant,
+            true,
+          );
+
+          setRoomState({
+            connectionState: 'connected',
+            participants: [localInfo],
+            isCameraEnabled: true,
+            isMicrophoneEnabled: true,
+            error: null,
+          });
+        } else {
+          // ── VIEWER MODE: subscribe only, no publish ────────────────
+          console.log('[LiveKit] Connected in viewer mode (no publish).');
+
+          const localInfo = toParticipantInfo(
+            room.localParticipant as Participant,
+            true,
+          );
+
+          setRoomState({
+            connectionState: 'connected',
+            participants: [localInfo],
+            isCameraEnabled: false,
+            isMicrophoneEnabled: false,
+            error: null,
+          });
+        }
+
+        // List existing remote participants (common to both modes)
         const remoteParticipants: ParticipantInfo[] = [];
         room.remoteParticipants.forEach(
           (participant: RemoteParticipant) => {
@@ -452,8 +498,6 @@ try {
 
   // ── Disconnect Handler ──────────────────────────────────────────
 
-  // ── Disconnect Handler ──────────────────────────────────────────
-
   const disconnect = useCallback(() => {
     const room = roomRef.current;
     if (!room) return;
@@ -461,7 +505,11 @@ try {
     console.log('[LiveKit] Leaving room...');
     console.log('[AUDIO_DIAG] [Lifecycle] Disconnecting from room...');
     
-    // 🚨 ADD THIS LINE TO RELEASE HARDWARE CONTROL
+    // Mark that a manual disconnect has been requested so the cleanup
+    // effect knows not to call disconnect() again.
+    disconnectRequestedRef.current = true;
+
+    // Release hardware control
     try {
       InCallManager.stop();
     } catch (err) {

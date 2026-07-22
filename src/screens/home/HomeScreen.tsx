@@ -31,13 +31,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, interpolate, Extrapolate, FadeInUp, withTiming } from 'react-native-reanimated';
-import { useTabScrollContext } from '../../context/TabScrollContext';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { selectUser, selectSelectedStreamId } from '../../store/authSlice';
 import { useHomeDashboard } from '../../hooks/home/useHome';
 import { useTrendingCourses } from '../../hooks/home/useCourses';
 import { useFeaturedPractice } from '../../hooks/practice/usePractice';
 import { useEnrolledCourses } from '../../hooks/home/useEnrolledCourses';
+import { useDashboard } from '../../hooks/useDashboard';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
 import type { TrendingCourse } from '../../types/home';
 import Icon from '../../components/home/Icons';
@@ -50,9 +50,11 @@ import SectionHeader from '../../components/home/SectionHeader';
 import PopularExamCard from '../../components/home/PopularExamCard';
 import CTASection from '../../components/home/CTASection';
 import ConnectLiveClassBanner from '../../components/home/ConnectLiveClassBanner';
+import HeroBanner from '../../components/home/HeroBanner';
 import ActiveCoursesCarousel from '../../components/home/ActiveCoursesCarousel';
-import TrendingCoursesSectionV5 from '../../components/home/TrendingCoursesSectionV5';
-import PyqPracticeSectionV5 from '../../components/home/PyqPracticeSectionV5';
+import TrendingCoursesSection from '../../components/home/TrendingCoursesSection';
+import PyqPracticeSection from '../../components/home/PyqPracticeSection';
+import MyBatchSection from '../../components/home/MyBatchSection';
 
 // ─── Utilities ───────────────────────────────────────────────
 import { getCourseProgress } from '../../utils/courseProgress';
@@ -261,6 +263,7 @@ function mapTrendingCourseToItem(
 
 type SectionId =
   | 'greeting'
+  | 'my-batch'
   | 'hero'
   | 'trending-courses'
   | 'pyq-practice'
@@ -273,7 +276,7 @@ interface Section {
 
 const SECTIONS: Section[] = [
   { id: 'greeting' },
-
+  { id: 'my-batch' },
   { id: 'trending-courses' },
   { id: 'pyq-practice' },
   { id: 'popular-exams' },
@@ -282,7 +285,7 @@ const SECTIONS: Section[] = [
 
 const USER_SECTIONS: Section[] = [
   { id: 'greeting' },
-
+  { id: 'my-batch' },
   { id: 'trending-courses' },
   { id: 'pyq-practice' },
   { id: 'popular-exams' },
@@ -326,28 +329,10 @@ export default function HomeScreen(): React.JSX.Element {
 
   // Reanimated scroll tracking
   const scrollY = useSharedValue(0);
-  const lastScrollY = useSharedValue(0);
-  const scrollContext = useTabScrollContext();
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
-      const currentY = event.contentOffset.y;
-      const diff = currentY - lastScrollY.value;
-
-      if (scrollContext?.tabBarTranslateY) {
-        if (currentY <= 0) {
-          scrollContext.tabBarTranslateY.value = withTiming(0, { duration: 200 });
-        } else if (diff > 5 && currentY > 50) {
-          // Scrolling down -> hide tab bar (move it out of view)
-          scrollContext.tabBarTranslateY.value = withTiming(120, { duration: 250 });
-        } else if (diff < -5) {
-          // Scrolling up -> show tab bar
-          scrollContext.tabBarTranslateY.value = withTiming(0, { duration: 250 });
-        }
-      }
-
-      lastScrollY.value = currentY;
-      scrollY.value = currentY;
+      scrollY.value = event.contentOffset.y;
     },
   });
 
@@ -378,19 +363,38 @@ export default function HomeScreen(): React.JSX.Element {
     };
   });
 
-  // ── Greeting: live authenticated user data ────────────────────────────
+  // ── Dashboard context: batch resolution (Phase 1 foundation) ─────────
   const {
-    data: dashboard,
-    error: dashboardError,
-  } = useHomeDashboard(user?.id);
+    data: studentDashboard,
+    isLoading: dashboardLoading,
+  } = useDashboard();
 
-  if (dashboardError) {
-    console.warn('[HomeScreen] Dashboard fetch failed:', dashboardError);
+  // Log the resolved batches for debugging
+  const batches = studentDashboard?.batches ?? [];
+  if (batches.length > 0) {
+    console.log(
+      '[HomeScreen] Active batches resolved:',
+      batches.map((b) => `${b.batch.name} (${b.streamName})`).join(', '),
+    );
+  } else if (dashboardLoading) {
+    console.log('[HomeScreen] Resolving dashboard...');
+  } else if (studentDashboard) {
+    console.log('[HomeScreen] No active batch found — showing generic catalog');
   }
 
-  const greetingUserName = dashboard?.userName ?? user?.name ?? 'Learner';
-  const greetingAvatarUrl = dashboard?.avatarUrl ?? user?.avatarUrl ?? null;
-  const greetingUnreadCount = dashboard?.unreadCount ?? 0;
+  // ── Greeting: live authenticated user data ────────────────────────────
+  const {
+    data: homeDashboard,
+    error: homeDashboardError,
+  } = useHomeDashboard(user?.id);
+
+  if (homeDashboardError) {
+    console.warn('[HomeScreen] Home dashboard fetch failed:', homeDashboardError);
+  }
+
+  const greetingUserName = homeDashboard?.userName ?? user?.name ?? 'Learner';
+  const greetingAvatarUrl = homeDashboard?.avatarUrl ?? user?.avatarUrl ?? null;
+  const greetingUnreadCount = homeDashboard?.unreadCount ?? 0;
   const hasUnreadNotifications = greetingUnreadCount > 0;
 
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
@@ -429,6 +433,19 @@ export default function HomeScreen(): React.JSX.Element {
     },
     [navigation],
   );
+
+  // Batch-assigned course navigation — opens the subject batch selector
+  const handleBatchCoursePress = useCallback(
+    (courseId: string) => {
+      navigation.navigate('CourseBatchDetail', { courseId });
+    },
+    [navigation],
+  );
+
+  // View all batch courses — opens the MyCourses list screen
+  const handleViewAllCourses = useCallback(() => {
+    navigation.navigate('MyCourses');
+  }, [navigation]);
   const handleHeroExplorePress = useCallback(
     (courseId: string) => {
       navigation.navigate('CourseDetail', { courseId });
@@ -579,9 +596,30 @@ export default function HomeScreen(): React.JSX.Element {
     }
   }, [activeCourse, trendingCourses, handleCoursePress, handleExplorePress]);
 
+  // ── Batch data for MyBatchSection (stable references) ───────
+  const batchCourses = useMemo(
+    () => studentDashboard?.assignedCourses ?? [],
+    [studentDashboard?.assignedCourses],
+  );
+  const hasBatch = batches.length > 0;
+
   const renderSection = useCallback(
     ({ item }: { item: Section }) => {
       switch (item.id) {
+        case 'my-batch':
+          if (!hasBatch) return null;
+          return (
+            <View style={styles.myBatchSectionWrapper}>
+              <MyBatchSection
+                batches={batches}
+                courses={batchCourses}
+                isLoading={dashboardLoading}
+                onCoursePress={handleBatchCoursePress}
+                onViewAllCourses={handleViewAllCourses}
+              />
+            </View>
+          );
+
         case 'trending-courses':
           if (trendingData?.data && trendingData.data.length === 0) {
             return (
@@ -607,7 +645,7 @@ export default function HomeScreen(): React.JSX.Element {
           }
 
           return (
-            <TrendingCoursesSectionV5
+            <TrendingCoursesSection
               courses={trendingCourses}
               onViewAllPress={handleViewAllTrending}
               onCoursePress={handleCoursePress}
@@ -618,7 +656,7 @@ export default function HomeScreen(): React.JSX.Element {
 
         case 'pyq-practice':
           return (
-            <PyqPracticeSectionV5
+            <PyqPracticeSection
               items={pyqItems}
               onViewAllPress={handleViewAllPyq}
               onItemPress={handlePyqItemPress}
@@ -672,6 +710,7 @@ export default function HomeScreen(): React.JSX.Element {
       handleViewAllTrending, handleCoursePress, handleHeroExplorePress, handleHeroEnrollPress,
       handleViewAllPyq, handlePyqItemPress, handlePyqPreviewPress, handlePyqStartPracticePress,
       handleExploreGlobalPress, trendingData,
+      hasBatch, batches, batchCourses, dashboardLoading, handleBatchCoursePress, handleViewAllCourses,
     ],
   );
 
@@ -714,6 +753,7 @@ export default function HomeScreen(): React.JSX.Element {
               <ConnectLiveClassBanner />
               <ActiveCoursesCarousel courses={enrolledCourses || []} />
             </Animated.View>
+            <HeroBanner onExplorePress={handleExplorePress} />
           </View>
         </Animated.View>
       </View>
@@ -827,6 +867,9 @@ const styles = StyleSheet.create({
   sectionWrapper: {
     paddingHorizontal: spacing[16],
     marginTop: spacing[20],
+  },
+  myBatchSectionWrapper: {
+    marginTop: spacing[8],
   },
   ctaWrapper: {
     marginTop: spacing[24],
