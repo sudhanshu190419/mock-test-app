@@ -25,6 +25,7 @@ import MyCoursesScreen from '../screens/courses/MyCoursesScreen';
 import CourseBatchDetailScreen from '../screens/courses/CourseBatchDetailScreen';
 import SubjectDashboardScreen from '../screens/courses/SubjectDashboardScreen';
 import StudentLiveClassRoomScreen from '../screens/liveClasses/StudentLiveClassRoomScreen';
+import StudentChatScreen from '../screens/liveClasses/StudentChatScreen';
 import PyqPapersScreen from '../screens/tests/PyqPapersScreen';
 import ExamPackDetailScreen from '../screens/tests/ExamPackDetailScreen';
 import TestInstructionsScreen from '../screens/tests/TestInstructionsScreen';
@@ -101,6 +102,13 @@ export type AppStackParamList = {
   // LiveKit POC screens
   JoinRoom: undefined;
   LiveRoom: LiveKitStackParamList['LiveRoom'];
+  StudentChat: {
+    classId: string;
+    className: string;
+    teacherName: string;
+    batchName: string;
+  };
+
   // Phase 4 — Student Live Classes
   StudentLiveClassRoom: {
     classId: string;
@@ -108,6 +116,10 @@ export type AppStackParamList = {
     className: string;
     teacherName: string;
     studentName: string;
+    batchName?: string;
+    currentTopic?: string;
+    scheduledAt?: string;
+    durationMin?: number;
   };
 
   // Phase 3 — My Courses / Subject Batches
@@ -367,6 +379,17 @@ export default function AppNavigator(): React.JSX.Element {
           animationDuration: 300,
           // Prevent gesture back — user must press Leave button
           gestureEnabled: false,
+        }}
+      />
+
+      {/* Phase 4 — Student Chat */}
+      <Stack.Screen
+        name="StudentChat"
+        component={StudentChatScreen}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 250,
         }}
       />
 

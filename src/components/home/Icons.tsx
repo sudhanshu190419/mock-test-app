@@ -33,13 +33,16 @@ export type IconName =
   | 'check-circle'
   | 'chevron-left'
   | 'chevron-right'
+  | 'chevron-down'
   | 'clipboard-list'
+  | 'clock'
   | 'description'
   | 'delete'
   | 'download'
   | 'eye'
   | 'filter'
   | 'graduation-cap'
+  | 'hand'
   | 'headphones'
   | 'home'
   | 'info'
@@ -47,8 +50,10 @@ export type IconName =
   | 'layout-grid'
   | 'list'
   | 'log-out'
+  | 'maximize'
   | 'menu'
   | 'menu-book'
+  | 'message-square'
   | 'minus'
   | 'minus-circle'
   | 'monitor'
@@ -68,6 +73,7 @@ export type IconName =
   | 'user'
   | 'users'
   | 'video'
+  | 'wifi'
   | 'x'
   | 'x-circle';
 
@@ -160,6 +166,17 @@ const PATHS: Record<IconName, React.JSX.Element> = {
   'chevron-right': (
     <Path
       d="M9 18l6-6-6-6"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2.5}
+    />
+  ),
+
+  'chevron-down': (
+    <Path
+      d="M6 9l6 6 6-6"
       fill="none"
       stroke="currentColor"
       strokeLinecap="round"
@@ -341,6 +358,19 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     />
   ),
 
+  clock: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Circle cx={12} cy={12} r={10} />
+      <Path d="M12 6v6l4 2" />
+    </G>
+  ),
+
   timer: (
     <G
       fill="none"
@@ -356,6 +386,60 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     </G>
   ),
 
+  hand: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.85}
+    >
+      <Path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0" />
+      <Path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2" />
+      <Path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8" />
+      <Path d="M18 8a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2" />
+      <Path d="M4 11.5a2 2 0 0 0-2 2V15c0 5 3 7 7 7h4c4 0 5-2 5-4v-4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2" />
+    </G>
+  ),
+
+  maximize: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+    </G>
+  ),
+
+  'message-square': (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </G>
+  ),
+
+  wifi: (
+    <G
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+    >
+      <Path d="M5 12.55a11 11 0 0 1 14.08 0" />
+      <Path d="M1.42 9a16 16 0 0 1 21.16 0" />
+      <Path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+      <Circle cx={12} cy={20} r={1} />
+    </G>
+  ),
 
   'alert-triangle': (
     <G
