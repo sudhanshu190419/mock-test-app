@@ -694,13 +694,34 @@ export async function generateSignedUrl(
   try {
     const expiry = expiresIn ?? getSignedUrlExpiry(contentType);
 
+    // ── [DIAGNOSTIC] Log before calling createSignedUrl ───────────────────
+    console.log('[StorageService] generateSignedUrl called');
+    console.log('[StorageService]   Bucket:', bucket);
+    console.log('[StorageService]   Path:', storagePath);
+    console.log('[StorageService]   ContentType:', contentType);
+    console.log('[StorageService]   Expiry (seconds):', expiry);
+
     const { data, error } = await supabase.storage
       .from(bucket)
       .createSignedUrl(storagePath, expiry);
 
     if (error) {
+      // ── [DIAGNOSTIC] Log the full error object ─────────────────────────
+      console.error('[StorageService] createSignedUrl FAILED');
+      console.error('[StorageService]   Full error object:');
+      console.error('[StorageService]   message:', error.message);
+      if (typeof (error as any).statusCode !== 'undefined') {
+        console.error('[StorageService]   statusCode:', (error as any).statusCode);
+      }
+      console.error('[StorageService]   error (raw):', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+
       return { success: false, error: extractStorageError(error) };
     }
+
+    // ── [DIAGNOSTIC] Log the signed URL response (truncated for readability) ─
+    console.log('[StorageService] createSignedUrl SUCCEEDED');
+    console.log('[StorageService]   signedUrl (first 80 chars):', data.signedUrl.substring(0, 80) + '...');
+    console.log('[StorageService]   signedUrl (full length):', data.signedUrl.length);
 
     // Compute the absolute expiry timestamp (epoch seconds)
     const expiresAt = Math.floor(Date.now() / 1000) + expiry;
@@ -710,6 +731,12 @@ export async function generateSignedUrl(
       data: { signedUrl: data.signedUrl, expiresAt },
     };
   } catch (err) {
+    // ── [DIAGNOSTIC] Log the full caught exception ───────────────────────
+    console.error('[StorageService] generateSignedUrl threw EXCEPTION:');
+    console.error('[StorageService]   Error name:', err instanceof Error ? err.name : typeof err);
+    console.error('[StorageService]   Error message:', err instanceof Error ? err.message : String(err));
+    console.error('[StorageService]   Error stack:', err instanceof Error ? err.stack : '(no stack)');
+
     return { success: false, error: extractStorageError(err) };
   }
 }

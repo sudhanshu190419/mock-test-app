@@ -42,6 +42,7 @@ import {
   selectSelectedStreamId,
   setOnboardingCompleted,
 } from '../store/authSlice';
+import { navigationRef } from '../services/navigation/navigationService';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
@@ -116,7 +117,7 @@ export default function AuthNavigator(): React.JSX.Element {
   const selectedStreamId = useAppSelector(selectSelectedStreamId);
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {!initialized ? (
         <SplashScreen />
       ) : !onboardingCompleted ? (

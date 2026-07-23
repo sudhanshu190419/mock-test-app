@@ -19,8 +19,16 @@ import { AppRegistry, Platform } from 'react-native';
 import { registerGlobals } from '@livekit/react-native';
 registerGlobals({ autoConfigureAudioSession: false });
 
+import notifee from '@notifee/react-native';
+import { handleNotifeeBackgroundEvent } from './src/services/fcm/fcmService';
 import App from './App';
 import { name as appName } from './app.json';
+
+// ─── Notifee Background Event Handler ───────────────────────────────
+// Must be registered BEFORE AppRegistry.registerComponent().
+// Handles taps on Notifee notifications while the app is in the
+// background (including terminated state).
+notifee.onBackgroundEvent(handleNotifeeBackgroundEvent);
 
 /**
  * Android Audio Diagnostics — app launch.

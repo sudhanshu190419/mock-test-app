@@ -24,6 +24,7 @@ import MyStreamCoursesScreen from '../screens/courses/MyStreamCoursesScreen';
 import MyCoursesScreen from '../screens/courses/MyCoursesScreen';
 import CourseBatchDetailScreen from '../screens/courses/CourseBatchDetailScreen';
 import SubjectDashboardScreen from '../screens/courses/SubjectDashboardScreen';
+import ContentViewerScreen from '../screens/courses/ContentViewerScreen';
 import StudentLiveClassRoomScreen from '../screens/liveClasses/StudentLiveClassRoomScreen';
 import StudentChatScreen from '../screens/liveClasses/StudentChatScreen';
 import PyqPapersScreen from '../screens/tests/PyqPapersScreen';
@@ -129,6 +130,15 @@ export type AppStackParamList = {
     courseId: string;
     subjectId: string;
     subjectName: string;
+  };
+
+  // Phase 5 — Content Viewer
+  ContentViewer: {
+    contentId: string;
+    contentType: 'pdf' | 'video' | 'notes' | 'assignment';
+    storageBucket: string;
+    storagePath: string;
+    title: string;
   };
 
   // DEV ONLY - Remove after frontend integration
@@ -427,6 +437,16 @@ export default function AppNavigator(): React.JSX.Element {
       <Stack.Screen
         name="SubjectDashboard"
         component={SubjectDashboardScreen}
+        options={{
+          headerShown: false,
+          ...slideFromRight,
+        }}
+      />
+
+      {/* Phase 5 — Content Viewer */}
+      <Stack.Screen
+        name="ContentViewer"
+        component={ContentViewerScreen}
         options={{
           headerShown: false,
           ...slideFromRight,

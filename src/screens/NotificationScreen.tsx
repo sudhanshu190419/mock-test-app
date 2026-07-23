@@ -45,6 +45,7 @@ import { ListItemSkeleton } from '../components/SkeletonLoader';
 import { useNotifications, FILTER_TYPES, FILTER_LABELS } from '../hooks/useNotifications';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { navigateFromNotification } from '../services/navigation/navigationService';
 import type { Notification, NotificationGroup } from '../types/notification';
 
 // ═════════════════════════════════════════════════════════════════
@@ -120,6 +121,18 @@ export default function NotificationScreen({
   }, [showContent, groups, isEmpty]);
 
   // ── Navigation handler ──────────────────────────────────────
+  //
+  // Delegates ALL navigation to navigationService.ts which uses the
+  // shared navigationRef (from AuthNavigator) for type-safe navigation.
+  //
+  // This is the SINGLE source of truth for notification-driven navigation.
+  // Both push notifications (FCM handlers) and in-app notifications
+  // (this handler) call navigateFromNotification() with the same args.
+  //
+  // To add a new notification type:
+  //   1. Add the mapping in notificationService.ts (mapReferenceType)
+  //   2. Add a case in navigationService.ts (navigateFromNotification)
+  //   3. No changes needed here.
 
   const handleNotificationPress = useCallback(
     (notification: Notification) => {
@@ -127,41 +140,9 @@ export default function NotificationScreen({
         markAsRead(notification.id);
       }
 
-      switch (notification.actionType) {
-        case 'mockTestDetails':
-          navigation?.navigate?.('TestDashboard');
-          break;
-        case 'testResult':
-          navigation?.navigate?.('TestResult', {
-            testId: notification.actionId ?? '',
-            attemptId: notification.actionId ?? '',
-          });
-          break;
-        case 'courseDetails':
-          navigation?.navigate?.('CourseDetail', {
-            courseId: notification.actionId ?? '',
-          });
-          break;
-        case 'liveClassDetails':
-          navigation?.navigate?.('LiveClasses');
-          break;
-        case 'paymentDetails':
-          navigation?.navigate?.('Profile');
-          break;
-        case 'announcementDetails':
-          navigation?.navigate?.('Home');
-          break;
-        case 'profile':
-        case 'systemAlert':
-          navigation?.navigate?.('Profile');
-          break;
-        case 'deepLink':
-          break;
-        default:
-          break;
-      }
+      navigateFromNotification(notification.actionType, notification.actionId);
     },
-    [navigation, markAsRead],
+    [markAsRead],
   );
 
   // ── Handlers ────────────────────────────────────────────────

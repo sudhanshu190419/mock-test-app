@@ -24,13 +24,14 @@ import { DashboardProvider } from './src/providers/DashboardProvider';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import { ToastProvider } from './src/components/Toast';
 import { colors } from './src/theme/colors';
-import { initializeFCM } from './src/services/fcm/fcmService';
+import { initializeFCM, setupNotificationTapHandlers } from './src/services/fcm/fcmService';
 
 const queryClient = new QueryClient();
 
 export default function App(): React.JSX.Element {
   useEffect(() => {
     initializeFCM();
+    setupNotificationTapHandlers();
   }, []);
 
   return (

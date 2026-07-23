@@ -94,8 +94,9 @@ interface DbBatchStudentWithBatch {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Raw snake_case shape of a `courses` row joined with course_batches,
- * instructors, and content counts.
+ * Raw snake_case shape of a `courses` row joined with course_batches
+ * and instructors. Module counts are now resolved separately from
+ * `batch_contents` (see getAssignedCourses step 2).
  */
 interface DbAssignedCourse {
   course_id: string;
@@ -114,15 +115,20 @@ interface DbAssignedCourse {
       profile: { name: string } | null;
     } | null;
   }>;
-  /** Content count for this course (from course_content). */
-  course_content: Array<{ content_id: string }>;
 }
 
 /**
- * Fetch all published, non-deleted courses assigned across the given batches.
+ * Fetch all published, non-deleted courses assigned across the given batches,
+ * with module counts resolved from `batch_contents` instead of the legacy
+ * `course_content` table.
  *
  * Execution flow:
  *   batch_ids → course_batches → courses (published, non-deleted)
+ *   batch_ids → batch_contents → content_id (deduplicated per course)
+ *
+ * Content visibility is now batch-driven: a student sees content assigned to
+ * their batches via `batch_contents`, not content assigned to the course
+ * directly via `course_content`.
  *
  * Results are NOT deduplicated here — the caller (getStudentDashboard)
  * handles deduplication after merging results from all batches.
@@ -140,6 +146,7 @@ export async function getAssignedCourses(
   if (batchIds.length === 0) return [];
 
   try {
+    // ── 1. Fetch assigned courses ──────────────────────────────────────
     const { data, error } = await supabase
       .from('course_batches')
       .select(
@@ -160,8 +167,7 @@ export async function getAssignedCourses(
             teacher:teacher_id (
               profile:profile_id (name)
             )
-          ),
-          course_content (content_id)
+          )
         )
       `,
       )
@@ -182,14 +188,53 @@ export async function getAssignedCourses(
       return [];
     }
 
-    // Map raw DB rows to AssignedCourse interface
+    // ── 2. Resolve module counts from batch_contents ───────────────────
+    //    Content is now assigned to batches (not courses). We need to count
+    //    distinct content_ids per course by going through the course→batch
+    //    →batch_contents relationship.
+
+    // 2a. Get course-to-batch mapping (which batches belong to which courses)
+    const { data: courseBatchRows } = await supabase
+      .from('course_batches')
+      .select('course_id, batch_id')
+      .in('batch_id', batchIds);
+
+    // 2b. Get all content_ids from batch_contents for these batches
+    const { data: batchContentRows } = await supabase
+      .from('batch_contents')
+      .select('batch_id, content_id')
+      .in('batch_id', batchIds);
+
+    // 2c. Build a map: course_id → Set<content_id>
+    const courseContentIds = new Map<string, Set<string>>();
+
+    // First, index batches by course
+    const batchToCourses = new Map<string, string[]>();
+    for (const cb of courseBatchRows ?? []) {
+      const existing = batchToCourses.get(cb.batch_id) ?? [];
+      existing.push(cb.course_id);
+      batchToCourses.set(cb.batch_id, existing);
+    }
+
+    // Then, for each batch_content, add its content_id to each linked course
+    for (const bc of batchContentRows ?? []) {
+      const linkedCourseIds = batchToCourses.get(bc.batch_id) ?? [];
+      for (const courseId of linkedCourseIds) {
+        if (!courseContentIds.has(courseId)) {
+          courseContentIds.set(courseId, new Set());
+        }
+        courseContentIds.get(courseId)!.add(bc.content_id);
+      }
+    }
+
+    // ── 3. Map raw DB rows to AssignedCourse interface ─────────────────
     const courses: AssignedCourse[] = data.map((row: any) => {
       const c = row.courses;
       const streamName = c.stream?.name ?? '';
       const firstTeacher = c.course_teachers?.[0];
       const instructorName =
         firstTeacher?.teacher?.profile?.name ?? null;
-      const moduleCount = c.course_content?.length ?? 0;
+      const moduleCount = courseContentIds.get(c.course_id)?.size ?? 0;
       const imageUrl =
         c.thumbnail_bucket && c.thumbnail_path
           ? `${c.thumbnail_bucket}/${c.thumbnail_path}`
@@ -400,6 +445,137 @@ export async function getAssignedMockTests(
     return [];
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  getBatchContent() — fetch content assigned to a batch
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * A content item assigned to a batch, as displayed in the student dashboard.
+ */
+export interface BatchContentItem {
+  contentId: string;
+  title: string;
+  description: string | null;
+  contentType: 'pdf' | 'video' | 'notes' | 'assignment';
+  /** Supabase Storage bucket (e.g. 'content-pdfs'). Used to generate signed URLs. */
+  storageBucket: string;
+  /** Full storage path within the bucket. Used to generate signed URLs. */
+  storagePath: string;
+  /** IANA media type (e.g. 'application/pdf'). */
+  mimeType: string;
+  durationSeconds: number | null;
+  pageCount: number | null;
+  fileSizeBytes: number | null;
+  thumbnailBucket: string | null;
+  thumbnailPath: string | null;
+  publishedAt: string | null;
+  orderSequence: number;
+  sectionName: string | null;
+  isOptional: boolean;
+  assignedAt: string;
+}
+
+/**
+ * Fetch all approved content items assigned to a specific batch.
+ *
+ * Execution flow:
+ *   batch_id → batch_contents → content (only 'approved' status)
+ *
+ * Results are ordered by `order_sequence` (curriculum order).
+ * Only returns content with `status = 'approved'` — draft or rejected
+ * content is invisible to students.
+ *
+ * Returns an empty array when no content is assigned to the batch.
+ *
+ * @param batchId - The UUID of the batch (subject batch).
+ *
+ * @example
+ * const items = await getBatchContent('batch-uuid');
+ * items.forEach(c => console.log(c.title, c.contentType));
+ */
+export async function getBatchContent(
+  batchId: string,
+): Promise<BatchContentItem[]> {
+  try {
+    const { data, error } = await supabase
+      .from('batch_contents')
+      .select(
+        `
+        order_sequence,
+        section_name,
+        is_optional,
+        assigned_at,
+        content!inner (
+          content_id,
+          title,
+          description,
+          content_type,
+          storage_bucket,
+          storage_path,
+          mime_type,
+          duration_seconds,
+          page_count,
+          thumbnail_bucket,
+          thumbnail_path,
+          file_size_bytes,
+          published_at
+        )
+      `,
+      )
+      .eq('batch_id', batchId)
+      .eq('content.status', 'approved')
+      .order('order_sequence', { ascending: true });
+
+    if (error) {
+      console.error(
+        '[StudentDashboard] Error fetching batch content:',
+        error.code,
+        error.message,
+      );
+      return [];
+    }
+
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    const items: BatchContentItem[] = data.map((row: any) => {
+      const c = row.content ?? {};
+      return {
+        contentId: c.content_id ?? row.content_id,
+        title: c.title ?? 'Untitled Content',
+        description: c.description ?? null,
+        contentType: c.content_type ?? 'notes',
+        storageBucket: c.storage_bucket ?? '',
+        storagePath: c.storage_path ?? '',
+        mimeType: c.mime_type ?? 'application/pdf',
+        durationSeconds: c.duration_seconds ?? null,
+        pageCount: c.page_count ?? null,
+        fileSizeBytes: c.file_size_bytes ?? null,
+        thumbnailBucket: c.thumbnail_bucket ?? null,
+        thumbnailPath: c.thumbnail_path ?? null,
+        publishedAt: c.published_at ?? null,
+        orderSequence: row.order_sequence ?? 1,
+        sectionName: row.section_name ?? null,
+        isOptional: row.is_optional ?? false,
+        assignedAt: row.assigned_at ?? '',
+      };
+    });
+
+    return items;
+  } catch (err) {
+    console.error(
+      '[StudentDashboard] Unexpected error fetching batch content:',
+      err,
+    );
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  getCourseBatches() — get actual batches assigned to a course
+// ═══════════════════════════════════════════════════════════════════════════
 
 export async function getCourseBatches(
   courseId: string,

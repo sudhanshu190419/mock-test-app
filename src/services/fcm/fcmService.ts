@@ -49,6 +49,8 @@ import { Platform, PermissionsAndroid } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
 import notifee, { AndroidImportance } from '@notifee/react-native';
 import { store } from '../../store/store';
+import { mapReferenceType } from '../notificationService';
+import { navigateFromNotification } from '../navigation/navigationService';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -64,6 +66,139 @@ const TAG = '[FCM]';
  */
 const DEFAULT_CHANNEL_ID = 'fcm_foreground';
 const DEFAULT_CHANNEL_NAME = 'Notifications';
+
+// ═════════════════════════════════════════════════════════════════
+//  Notification Tap Handlers
+// ═════════════════════════════════════════════════════════════════
+//
+// These handlers extract `referenceType` and `referenceId` from the
+// notification data payload and navigate to the appropriate screen.
+//
+// ## Supported scenarios
+//
+// | App State    | Handler                                                       |
+// |--------------|---------------------------------------------------------------|
+// | Foreground   | `notifee.onForegroundEvent` (PRESS)                            |
+// | Background   | `messaging().onNotificationOpenedApp()`                        |
+// | Terminated   | `messaging().getInitialNotification()` (checked at startup)     |
+
+/**
+ * Extract reference_type and reference_id from an FCM data payload
+ * and navigate to the correct screen.
+ *
+ * The backend sends the FCM push notification with:
+ *   data.type          → event_type (e.g. "mock_test_assigned")
+ *   data.referenceType → reference_type (e.g. "mock_test")
+ *   data.referenceId   → reference_id (e.g. the mock test UUID)
+ *
+ * @param data - The FCM data payload (key-value pairs of strings).
+ */
+async function handleNotificationTap(
+  data?: Record<string, string>,
+): Promise<void> {
+  if (!data) return;
+
+  const referenceType = data.referenceType;
+  const referenceId = data.referenceId;
+
+  if (!referenceType) {
+    console.log(`${TAG} Tap handler: no referenceType in data payload`);
+    return;
+  }
+
+  console.log(`${TAG} Tap handler: referenceType=${referenceType}, referenceId=${referenceId}`);
+
+  const actionType = mapReferenceType(referenceType);
+  await navigateFromNotification(actionType, referenceId);
+}
+
+/**
+ * Set up notification tap handlers for all app states.
+ *
+ * Registers:
+ * 1. Notifee foreground event handler (tap on manually displayed notification)
+ * 2. FCM notification opened handler (app opened from notification in background)
+ * 3. Checks for initial notification (app launched from terminated state)
+ *
+ * Call this once at app startup, after `initializeFCM()`.
+ */
+export function setupNotificationTapHandlers(): void {
+  // ── 1. Notifee foreground event handler ────────────────────────
+  // Handles taps on notifications displayed via Notifee while the
+  // app is in the foreground.
+  notifee.onForegroundEvent(async ({ type, detail }) => {
+    if (type === 0 /** EventType.PRESS */) {
+      console.log(`${TAG} Notifee foreground press:`, detail.notification?.data);
+      const data = detail.notification?.data as Record<string, string> | undefined;
+      await handleNotificationTap(data);
+    }
+  });
+
+  // ── 2. FCM onNotificationOpenedApp ────────────────────────────
+  // Handles when the user taps a system notification tray entry
+  // and the app transitions from background to foreground.
+  messaging().onNotificationOpenedApp(async (remoteMessage) => {
+    console.log(`${TAG} App opened from notification:`, remoteMessage.data);
+    const data = remoteMessage.data as Record<string, string> | undefined;
+    await handleNotificationTap(data);
+  });
+
+  // ── 3. Get initial notification (app launched from terminated) ─
+  // Handles when the user taps a notification while the app was
+  // terminated, causing the app to launch.
+  // Waits for the navigation container to be ready before navigating.
+  messaging()
+    .getInitialNotification()
+    .then(async (remoteMessage) => {
+      if (remoteMessage) {
+        console.log(`${TAG} Initial notification (terminated launch):`, remoteMessage.data);
+        const data = remoteMessage.data as Record<string, string> | undefined;
+
+        // Wait for navigation container to be ready with retries
+        const maxRetries = 20;
+        for (let i = 0; i < maxRetries; i++) {
+          const { navigationRef } = require('../navigation/navigationService');
+          if (navigationRef.isReady()) {
+            await handleNotificationTap(data);
+            return;
+          }
+          // Wait 250ms between retries (total max wait: 5 seconds)
+          await new Promise<void>((r) => setTimeout(r, 250));
+        }
+
+        console.warn(
+          `${TAG} Navigation container not ready after ${maxRetries} retries — skipping initial notification navigation`,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(`${TAG} Failed to check initial notification:`, error);
+    });
+}
+
+/**
+ * Background event handler for Notifee (registered in index.js).
+ *
+ * This runs in a separate JS context outside of React. It must be
+ * registered at the top level of the app (index.js) before
+ * AppRegistry.registerComponent().
+ *
+ * Handles taps on Notifee notifications when the app is in the
+ * background or terminated.
+ */
+export async function handleNotifeeBackgroundEvent({
+  type,
+  detail,
+}: {
+  type: number;
+  detail: { notification?: { data?: Record<string, string> } };
+}): Promise<void> {
+  if (type === 0 /** EventType.PRESS */) {
+    console.log(`${TAG} Notifee background press:`, detail.notification?.data);
+    const data = detail.notification?.data as Record<string, string> | undefined;
+    await handleNotificationTap(data);
+  }
+}
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 

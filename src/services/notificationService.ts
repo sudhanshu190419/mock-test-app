@@ -63,6 +63,11 @@ const DB_EVENT_TYPE_TO_UI: Record<string, Notification['type']> = {
   course_enrolled: 'course',
   pyq_purchased: 'payment',
   pyq_access_granted: 'course',
+  // ── Mock Test ──────────────────────────────────────────────
+  mock_test_assigned: 'mock-test',
+  new_mock_test_available: 'mock-test',
+  // ── Live Class Started ─────────────────────────────────────
+  live_class_started: 'live-class',
 };
 
 /**
@@ -70,9 +75,9 @@ const DB_EVENT_TYPE_TO_UI: Record<string, Notification['type']> = {
  * Used when filtering notifications by type in the Supabase query.
  */
 const UI_TYPE_TO_DB_EVENT_TYPES: Record<string, string[]> = {
-  'mock-test': ['test_published'],
+  'mock-test': ['test_published', 'mock_test_assigned', 'new_mock_test_available'],
   result: ['result_available'],
-  'live-class': ['live_class_reminder'],
+  'live-class': ['live_class_reminder', 'live_class_started'],
   course: [
     'new_content_uploaded',
     'batch_assigned',
@@ -94,8 +99,11 @@ const UI_TYPE_TO_DB_EVENT_TYPES: Record<string, string[]> = {
  *
  * reference_type is free-text (not an enum) — the dispatcher writes values
  * like 'live_class', 'mock_test', 'test_result', 'order', etc.
+ *
+ * Exported so that FCM tap handlers and the navigation service can reuse
+ * the same mapping without duplication.
  */
-function mapReferenceType(refType: string | null): Notification['actionType'] {
+export function mapReferenceType(refType: string | null): Notification['actionType'] {
   switch (refType) {
     case 'live_class':
       return 'liveClassDetails';

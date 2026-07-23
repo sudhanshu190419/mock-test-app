@@ -1,12 +1,12 @@
 /**
- * SubjectDashboardScreen — Assigned Mock Tests
+ * SubjectDashboardScreen — Study Material & Assigned Mock Tests
  *
- * Shows all mock tests assigned to the selected batch (subject).
  * Acts as the learning workspace entry point for a specific subject
- * within a course. Currently displays the "Assigned Mock Tests" section.
+ * within a course. Shows:
+ * - Study Material (content assigned to this batch via `batch_contents`)
+ * - Assigned Mock Tests
  *
  * Future phases will add:
- * - Study Material
  * - Live Classes
  * - Assignments
  * - Course Announcements
@@ -33,8 +33,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import Animated, { FadeInDown, FadeIn, Layout } from 'react-native-reanimated';
 import type { AppStackParamList } from '../../navigation/AppNavigator';
-import { getAssignedMockTests } from '../../services/student/studentDashboardService';
-import type { AssignedMockTestItem } from '../../services/student/studentDashboardService';
+import { getAssignedMockTests, getBatchContent } from '../../services/student/studentDashboardService';
+import type { AssignedMockTestItem, BatchContentItem } from '../../services/student/studentDashboardService';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import Icon from '../../components/home/Icons';
@@ -314,6 +314,131 @@ const MockTestCard = React.memo(function MockTestCard({
 
 MockTestCard.displayName = 'MockTestCard';
 
+// ─── Content Type Helpers ──────────────────────────────────────────────────
+
+function getContentIcon(contentType: string): string {
+  switch (contentType) {
+    case 'video': return '🎥';
+    case 'pdf': return '📄';
+    case 'notes': return '📝';
+    case 'assignment': return '📋';
+    default: return '📄';
+  }
+}
+
+function getContentColor(contentType: string): string {
+  switch (contentType) {
+    case 'video': return '#8B5CF6';
+    case 'pdf': return '#EF4444';
+    case 'notes': return '#3B82F6';
+    case 'assignment': return '#F97316';
+    default: return '#64748B';
+  }
+}
+
+function formatFileSize(bytes: number | null): string | null {
+  if (bytes === null || bytes === 0) return null;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatContentDuration(seconds: number | null): string | null {
+  if (seconds === null || seconds === 0) return null;
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
+}
+
+// ─── Content Card ───────────────────────────────────────────────────────────
+
+interface ContentCardProps {
+  item: BatchContentItem;
+  index: number;
+  onPress?: (item: BatchContentItem) => void;
+}
+
+const ContentCard = React.memo(function ContentCard({
+  item,
+  index,
+  onPress,
+}: ContentCardProps): React.JSX.Element {
+  const emoji = getContentIcon(item.contentType);
+  const accentColor = getContentColor(item.contentType);
+
+  // Format metadata string
+  const metaParts: string[] = [];
+  if (item.contentType === 'video' && item.durationSeconds) {
+    metaParts.push(formatContentDuration(item.durationSeconds) ?? '');
+  } else if (item.contentType === 'pdf' && item.pageCount) {
+    metaParts.push(`${item.pageCount} page${item.pageCount !== 1 ? 's' : ''}`);
+  } else {
+    const size = formatFileSize(item.fileSizeBytes);
+    if (size) metaParts.push(size);
+  }
+  const metaLabel = metaParts.filter(Boolean).join(' · ');
+
+  return (
+    <Animated.View
+      entering={FadeInDown.delay(80 + index * 60).duration(350)}
+      layout={Layout.springify()}
+      style={styles.contentCard}
+    >
+      <TouchableOpacity
+        onPress={() => onPress?.(item)}
+        activeOpacity={0.7}
+        style={styles.contentCardTouchable}
+      >
+        {/* Section Name Header (when available) */}
+        {item.sectionName ? (
+          <View style={styles.sectionHeaderBar}>
+            <View style={[styles.sectionDot, { backgroundColor: accentColor }]} />
+            <Text style={styles.sectionHeaderText}>{item.sectionName}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.contentCardInner}>
+          {/* Type Icon */}
+          <View style={[styles.contentTypeIcon, { backgroundColor: `${accentColor}12` }]}>
+            <Text style={styles.contentTypeEmoji}>{emoji}</Text>
+          </View>
+
+          {/* Info */}
+          <View style={styles.contentCardInfo}>
+            <Text style={styles.contentCardTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
+            {item.description ? (
+              <Text style={styles.contentCardDescription} numberOfLines={2}>
+                {item.description}
+              </Text>
+            ) : null}
+
+            {/* Bottom Row: Type badge + Metadata */}
+            <View style={styles.contentCardMetaRow}>
+              <View style={[styles.contentTypeBadge, { backgroundColor: `${accentColor}12` }]}>
+                <Text style={[styles.contentTypeBadgeText, { color: accentColor }]}>
+                  {item.contentType}
+                </Text>
+              </View>
+              {metaLabel ? (
+                <Text style={styles.contentCardMetaText}>{metaLabel}</Text>
+              ) : null}
+              {item.isOptional ? (
+                <Text style={styles.optionalBadgeText}>Optional</Text>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+});
+
+ContentCard.displayName = 'ContentCard';
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  Screen
 // ═══════════════════════════════════════════════════════════════════════════
@@ -325,6 +450,7 @@ export default function SubjectDashboardScreen(): React.JSX.Element {
   const { subjectName, subjectId } = route.params;
 
   const [mockTests, setMockTests] = useState<AssignedMockTestItem[]>([]);
+  const [contentItems, setContentItems] = useState<BatchContentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -332,18 +458,22 @@ export default function SubjectDashboardScreen(): React.JSX.Element {
   const subjectEmoji = getSubjectEmoji(subjectName);
   const subjectColor = getSubjectColor(subjectName);
 
-  // Fetch assigned mock tests for this batch
-  const fetchMockTests = useCallback(async (silent = false) => {
+  // Fetch assigned content and mock tests for this batch
+  const fetchData = useCallback(async (silent = false) => {
     try {
       if (!silent) {
         setIsLoading(true);
       }
       setLoadError(null);
 
-      const tests = await getAssignedMockTests(subjectId);
+      const [content, tests] = await Promise.all([
+        getBatchContent(subjectId),
+        getAssignedMockTests(subjectId),
+      ]);
+      setContentItems(content);
       setMockTests(tests);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to load mock tests');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -351,17 +481,30 @@ export default function SubjectDashboardScreen(): React.JSX.Element {
   }, [subjectId]);
 
   useEffect(() => {
-    fetchMockTests();
-  }, [fetchMockTests]);
+    fetchData();
+  }, [fetchData]);
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
-    fetchMockTests(true);
-  }, [fetchMockTests]);
+    fetchData(true);
+  }, [fetchData]);
 
   const handleBack = useCallback(() => {
     navigation.goBack();
   }, [navigation]);
+
+  const handleContentPress = useCallback(
+    (item: BatchContentItem) => {
+      navigation.navigate('ContentViewer', {
+        contentId: item.contentId,
+        contentType: item.contentType,
+        storageBucket: item.storageBucket,
+        storagePath: item.storagePath,
+        title: item.title,
+      });
+    },
+    [navigation],
+  );
 
   const handleTestPress = useCallback(
     (test: AssignedMockTestItem) => {
@@ -443,7 +586,7 @@ export default function SubjectDashboardScreen(): React.JSX.Element {
             <Text style={styles.errorDescription}>{loadError}</Text>
             <TouchableOpacity
               style={styles.retryButton}
-              onPress={() => fetchMockTests()}
+              onPress={() => fetchData()}
               activeOpacity={0.8}
             >
               <Text style={styles.retryButtonText}>Try Again</Text>
@@ -477,13 +620,13 @@ export default function SubjectDashboardScreen(): React.JSX.Element {
               <View style={styles.subjectInfoText}>
                 <Text style={styles.subjectInfoTitle}>{subjectName}</Text>
                 <Text style={styles.subjectInfoSubtitle}>
-                  {mockTests.length} Test{mockTests.length !== 1 ? 's' : ''} Assigned
+                  {contentItems.length} Module{contentItems.length !== 1 ? 's' : ''} · {mockTests.length} Test{mockTests.length !== 1 ? 's' : ''}
                 </Text>
                 {availableCount > 0 && (
                   <View style={styles.availableCountRow}>
                     <View style={[styles.availableDot, { backgroundColor: COLORS.accent }]} />
                     <Text style={styles.availableCountText}>
-                      {availableCount} Available Now
+                      {availableCount} Test{availableCount !== 1 ? 's' : ''} Available
                     </Text>
                   </View>
                 )}
@@ -491,9 +634,48 @@ export default function SubjectDashboardScreen(): React.JSX.Element {
             </View>
           </Animated.View>
 
-          {/* ── Section Header ───────────────────────────────────── */}
+          {/* ── Study Material Section ─────────────────────────── */}
           <Animated.View
             entering={FadeInDown.delay(80).duration(300)}
+            style={styles.sectionHeader}
+          >
+            <Text style={styles.sectionTitle}>Study Material</Text>
+            <Text style={styles.sectionSubtitle}>
+              Content assigned to your {subjectName} batch
+            </Text>
+          </Animated.View>
+
+          {/* ── Content Cards or Empty State ────────────────────── */}
+          {contentItems.length === 0 ? (
+            <Animated.View
+              entering={FadeInDown.delay(150).duration(350)}
+              style={styles.emptyState}
+            >
+              <View style={[styles.emptyIconContainer, { backgroundColor: `${COLORS.info}15` }]}>
+                <Text style={styles.emptyEmoji}>📖</Text>
+              </View>
+              <Text style={styles.emptyTitle}>No Study Material Yet</Text>
+              <Text style={styles.emptyDescription}>
+                No content has been assigned to your {subjectName} batch yet.
+                Check back later when your institute publishes new material.
+              </Text>
+            </Animated.View>
+          ) : (
+            <View style={styles.listContainer}>
+              {contentItems.map((item, index) => (
+                <ContentCard
+                  key={item.contentId}
+                  item={item}
+                  index={index}
+                  onPress={handleContentPress}
+                />
+              ))}
+            </View>
+          )}
+
+          {/* ── Mock Tests Section Header ──────────────────────── */}
+          <Animated.View
+            entering={FadeInDown.delay(160 + contentItems.length * 60).duration(300)}
             style={styles.sectionHeader}
           >
             <Text style={styles.sectionTitle}>Assigned Mock Tests</Text>
@@ -537,10 +719,6 @@ export default function SubjectDashboardScreen(): React.JSX.Element {
           >
             <Text style={styles.futureFeaturesTitle}>Coming Soon</Text>
             <View style={styles.futureFeaturesRow}>
-              <View style={styles.futureFeaturePill}>
-                <Text style={styles.futureFeatureEmoji}>📖</Text>
-                <Text style={styles.futureFeatureText}>Study Material</Text>
-              </View>
               <View style={styles.futureFeaturePill}>
                 <Text style={styles.futureFeatureEmoji}>🎥</Text>
                 <Text style={styles.futureFeatureText}>Live Classes</Text>
@@ -881,6 +1059,113 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 19,
+    fontFamily: Platform.OS === 'ios' ? 'Outfit' : 'sans-serif',
+  },
+  // ── Content Card ────────────────────────────────────────────────────
+  contentCardTouchable: {
+    flex: 1,
+  },
+  contentCard: {
+    backgroundColor: COLORS.cardBg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.textPrimary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  contentCardInner: {
+    flexDirection: 'row',
+    padding: spacing[12],
+    gap: spacing[12],
+  },
+  contentTypeIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contentTypeEmoji: {
+    fontSize: 20,
+    lineHeight: 26,
+  },
+  contentCardInfo: {
+    flex: 1,
+  },
+  contentCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    lineHeight: 19,
+    fontFamily: Platform.OS === 'ios' ? 'Outfit' : 'sans-serif',
+  },
+  contentCardDescription: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: COLORS.textSecondary,
+    lineHeight: 17,
+    marginTop: 3,
+    fontFamily: Platform.OS === 'ios' ? 'Outfit' : 'sans-serif',
+  },
+  contentCardMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  contentTypeBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  contentTypeBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontFamily: Platform.OS === 'ios' ? 'Outfit' : 'sans-serif',
+  },
+  contentCardMetaText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: COLORS.textMuted,
+    fontFamily: Platform.OS === 'ios' ? 'Outfit' : 'sans-serif',
+  },
+  optionalBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: COLORS.warning,
+    fontFamily: Platform.OS === 'ios' ? 'Outfit' : 'sans-serif',
+  },
+  // ── Content Section Header Bar ─────────────────────────────────────
+  sectionHeaderBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing[12],
+    paddingTop: spacing[12],
+    paddingBottom: spacing[4],
+  },
+  sectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  sectionHeaderText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
     fontFamily: Platform.OS === 'ios' ? 'Outfit' : 'sans-serif',
   },
   // ── Error State ─────────────────────────────────────────────────────

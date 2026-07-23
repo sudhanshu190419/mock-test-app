@@ -75,7 +75,11 @@ export interface AssignedCourse {
   instructorName: string | null;
   /** Course thumbnail URL (constructed from `courses.thumbnail_bucket/path`). */
   imageUrl: string | null;
-  /** Number of content modules assigned to this course (from `course_content`). */
+  /**
+   * Number of content modules available for this course — resolved from
+   * `batch_contents` across all batches assigned to this course.
+   * Previously counted from `course_content` (legacy).
+   */
   moduleCount: number;
   /** Whether the student has an active enrollment record. */
   isEnrolled: boolean;
