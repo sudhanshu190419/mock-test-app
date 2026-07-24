@@ -563,6 +563,18 @@ export async function getBatchContent(
       };
     });
 
+    // ── [DIAGNOSTIC] Log every content item returned from API ────────
+    for (const item of items) {
+      console.log('[DIAGNOSTIC:API] Content item:', {
+        contentId: item.contentId,
+        title: item.title,
+        contentType: item.contentType,
+        storageBucket: item.storageBucket,
+        storagePath: item.storagePath,
+        mimeType: item.mimeType,
+      });
+    }
+
     return items;
   } catch (err) {
     console.error(

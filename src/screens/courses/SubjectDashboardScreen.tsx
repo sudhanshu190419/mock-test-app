@@ -387,7 +387,18 @@ const ContentCard = React.memo(function ContentCard({
       style={styles.contentCard}
     >
       <TouchableOpacity
-        onPress={() => onPress?.(item)}
+        onPress={() => {
+          // ── [DIAGNOSTIC] Log selected item inside ContentCard onPress ──
+          console.log('[DIAGNOSTIC:CARD] ContentCard onPress fired with item:', {
+            contentId: item.contentId,
+            title: item.title,
+            contentType: item.contentType,
+            storageBucket: item.storageBucket,
+            storagePath: item.storagePath,
+            mimeType: item.mimeType,
+          });
+          onPress?.(item);
+        }}
         activeOpacity={0.7}
         style={styles.contentCardTouchable}
       >
@@ -495,13 +506,24 @@ export default function SubjectDashboardScreen(): React.JSX.Element {
 
   const handleContentPress = useCallback(
     (item: BatchContentItem) => {
-      navigation.navigate('ContentViewer', {
+      // ── [DIAGNOSTIC] Log selected item + navigation params ────────
+      console.log('[DIAGNOSTIC:PRESS] Selected item:', {
+        contentId: item.contentId,
+        title: item.title,
+        contentType: item.contentType,
+        storageBucket: item.storageBucket,
+        storagePath: item.storagePath,
+        mimeType: item.mimeType,
+      });
+      const navParams = {
         contentId: item.contentId,
         contentType: item.contentType,
         storageBucket: item.storageBucket,
         storagePath: item.storagePath,
         title: item.title,
-      });
+      };
+      console.log('[DIAGNOSTIC:NAV] Navigate to ContentViewer with:', navParams);
+      navigation.navigate('ContentViewer', navParams);
     },
     [navigation],
   );
@@ -662,14 +684,25 @@ export default function SubjectDashboardScreen(): React.JSX.Element {
             </Animated.View>
           ) : (
             <View style={styles.listContainer}>
-              {contentItems.map((item, index) => (
-                <ContentCard
-                  key={item.contentId}
-                  item={item}
-                  index={index}
-                  onPress={handleContentPress}
-                />
-              ))}
+              {contentItems.map((item, index) => {
+                // ── [DIAGNOSTIC] Log every item before rendering card ──
+                console.log('[DIAGNOSTIC:RENDER] Card [' + index + ']:', {
+                  contentId: item.contentId,
+                  title: item.title,
+                  contentType: item.contentType,
+                  storageBucket: item.storageBucket,
+                  storagePath: item.storagePath,
+                  mimeType: item.mimeType,
+                });
+                return (
+                  <ContentCard
+                    key={item.contentId}
+                    item={item}
+                    index={index}
+                    onPress={handleContentPress}
+                  />
+                );
+              })}
             </View>
           )}
 
